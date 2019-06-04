@@ -23,5 +23,5 @@ Supported Blender Version: 2.8 Beta (Build dated after May 19, 2019)
 After installation, a new 'Bezier Utilities' tab is displayed in object mode on 'Active Tool and Workspace settings' tab on the properties panel.
 
 # Limitations 
-Exercise caution when using this add-on in production as it's in alpha stage
+Exercise caution when using this add-on in production as it's in alpha stage<br>
 You may report bug as a comment on the youtube video or on the issues page here
