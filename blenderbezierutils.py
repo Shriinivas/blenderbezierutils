@@ -473,8 +473,8 @@ def joinSegs(curves, optimized, straight):
                     newSpline.bezier_points.add(1)
                 copyObjAttr(pt, newSpline.bezier_points[-1], invSrcMW, mw)
     
-        safeRemove(curve)
-    safeRemove(firstCurve)
+        safeRemoveObj(curve)
+    safeRemoveObj(firstCurve)
     return newCurve
 
 # ~ def scaledBezierData(curveData, scale):
