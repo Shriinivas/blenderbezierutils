@@ -727,7 +727,7 @@ class convertTo2DMeshOp(bpy.types.Operator):
             remeshDepth = bpy.context.scene.remeshDepth            
             applyMeshModifiers(meshObj, remeshDepth)
             meshObj.matrix_world = curve.matrix_world
-            safeRemove(curve)
+            safeRemoveObj(curve)
             bpy.context.view_layer.objects.active = meshObj
 
         return {'FINISHED'}
