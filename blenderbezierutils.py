@@ -297,7 +297,7 @@ def splitCurve(context, splitSegs):
     return newObjs, changeCnt
 
 #TODO: Fix this hack if possible
-def copyObjAttr(src, dest, invSrcMW = Matrix(), mw = Matrix()):
+def copyObjAttr(src, dest, invDestMW = Matrix(), mw = Matrix()):
     for att in dir(src):
         try:
             if(att not in ['co', 'handle_left', 'handle_right', 'handle_left_type', 'handle_right_type']):
@@ -309,9 +309,9 @@ def copyObjAttr(src, dest, invSrcMW = Matrix(), mw = Matrix()):
         rt = src.handle_right_type
         dest.handle_left_type = 'FREE'
         dest.handle_right_type = 'FREE'
-        dest.co = invSrcMW @ (mw @ src.co)
-        dest.handle_left = invSrcMW @ (mw @ src.handle_left)
-        dest.handle_right = invSrcMW @ (mw @ src.handle_right)
+        dest.co = invDestMW @ (mw @ src.co)
+        dest.handle_left = invDestMW @ (mw @ src.handle_left)
+        dest.handle_right = invDestMW @ (mw @ src.handle_right)
         dest.handle_left_type = lt
         dest.handle_right_type = rt
         pass
@@ -327,9 +327,13 @@ def reverseCurve(curve):
         ns.bezier_points.add(len(s.bezier_points) - 1)
         for i, p in enumerate(reversed(s.bezier_points)):
             copyObjAttr(p, ns.bezier_points[i])
+            ns.bezier_points[i].handle_left_type = 'FREE'
+            ns.bezier_points[i].handle_right_type = 'FREE'
+
             ns.bezier_points[i].handle_left = p.handle_right
-            ns.bezier_points[i].handle_left_type = p.handle_right_type
             ns.bezier_points[i].handle_right = p.handle_left
+            
+            ns.bezier_points[i].handle_left_type = p.handle_right_type
             ns.bezier_points[i].handle_right_type = p.handle_left_type
     bpy.data.curves.remove(cp)
     
@@ -453,8 +457,8 @@ def joinSegs(curves, optimized, straight):
         for i in range(ptIdx, len(nextSpline.bezier_points)):
             if((i == len(nextSpline.bezier_points) - 1) and 
                 vectCmpWithMargin(mw @ nextSpline.bezier_points[i].co, srcMW @ currSpline.bezier_points[0].co)):
-                    currSpline.bezier_points[0].handle_right_type = 'FREE'
-                    currSpline.bezier_points[0].handle_right = invSrcMW @ (mw @ nextSpline.bezier_points[i].handle_right)
+                    currSpline.bezier_points[0].handle_left_type = 'FREE'
+                    currSpline.bezier_points[0].handle_left = invSrcMW @ (mw @ nextSpline.bezier_points[i].handle_left)
                     currSpline.use_cyclic_u = True
                     break
             currSpline.bezier_points.add(1)
