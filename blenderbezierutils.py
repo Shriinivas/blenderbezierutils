@@ -160,9 +160,13 @@ def safeRemoveObj(obj):
             c.objects.unlink(obj)
             
         if(obj.data.users == 1):
-            bpy.data.meshes.remove(obj.data) #This also removes object?        
-        else:
-            bpy.data.objects.remove(obj)
+            if(obj.type == 'MESH'):
+                bpy.data.meshes.remove(obj.data) 
+            elif(obj.type == 'CURVE'):
+                #Maybe this also removes object
+                bpy.data.curves.remove(obj.data) 
+            #else? TODO            
+        bpy.data.objects.remove(obj)
     except:
         pass
 
