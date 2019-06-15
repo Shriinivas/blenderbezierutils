@@ -298,6 +298,9 @@ def splitCurve(context, splitSegs):
         bpy.data.curves.remove(obj.data)
         changeCnt += 1
 
+    for obj in newObjs:
+        obj.data.splines.active = obj.data.splines[0]
+
     return newObjs, changeCnt
 
 #TODO: Fix this hack if possible
