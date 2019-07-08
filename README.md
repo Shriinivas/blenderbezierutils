@@ -14,6 +14,7 @@ Here is a brief overview of a few of the tools in this add-on:
 - Mark Start Vertex (edit mode): Marks the start vertex of a closed (cyclic) splines of the selected curve objects. If the curves have shape keys, they may get distorted with change in the start vertex. <br>
 
 # Flexi Bezier Tool
+![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/drawdemo.gif)
 This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). It allows drawing Bezier curves by manipulating the control points.<br>
 <b>Drawing the curve: </b> To draw the curve activate the tool by clicking the Flexi Bezier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter will convert the drawing to a curve object. To cancel press escape. <br>
 <b>Undo:</b> You can undo one segment with backspace and entire curve with control+z.<br>
