@@ -24,7 +24,7 @@ The snapping gets adapted to the viewport zoom level. <br>
 <b>Overview of Flexi Bezier Tool:</b> https://youtu.be/C9PXp0XHgYQ
   
 # Installation
-- download blenderbezierutils.py
+- Download blenderbezierutils.py
 - Open Blender and select File->User Preferences
 - Click install Add-ons tab and then Install Add-on from File
 - Select the downloaded file
@@ -33,7 +33,7 @@ The snapping gets adapted to the viewport zoom level. <br>
 After installation, a new 'Bezier Utilities' tab is displayed in object mode on 'Active Tool and Workspace settings' tab on the properties panel.
 
 # Known Issues
-A couple of known issues I am still working on:
+A couple of known (hopefully minor) issues I am still working on:
 - Starting a new blend while the Flexi Bezier is active causes the tool to stop working. The workaround is to select any other tool from the toolbar before starting a new file (or restart Blender to make the tool operational again :)
 - Clicking on the Flexi Bezier button while it is already active starts the curve from under the button on the viewport. In this case just press escape to undo the unwanted curve. The same thing may happen while clicking on the Blender menu.<br>
 
