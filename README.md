@@ -20,7 +20,7 @@ This tool is available in object mode via a new button on the toolshelf (short c
 <b>Snapping Options :</b> Holding down ctrl while moving mouse will snap the point or handle to the grid. By holding down shift key the angle between the new point (or handle) and the previous one will be restricted to fixed values (0, 45, 90 etc). To snap to the end points of the open splines within all the curve objects in the view hold down alt key. <br>
 The snapping gets adapted to the viewport zoom level. <br>
 
-<b>Demo Video:</b> https://youtu.be/Wo-RzVI05po
+<b>Demo Video:</b> https://youtu.be/Wo-RzVI05po<br>
 <b>Overview of Flexi Bezier Tool:</b> https://youtu.be/C9PXp0XHgYQ
   
 # Installation
