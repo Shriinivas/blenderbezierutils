@@ -3,7 +3,7 @@
 This add-on contains several tools for working with Bezier curves. <br>
 Supported Blender Version: 2.8 Beta <br>
 
-Here is a brif overview of a few of the tools in this add-on:
+Here is a brief overview of a few of the tools in this add-on:
 - Separate Bezier Splines (object mode): Create individual objects out of the splines of the selected Curve objects. Only affects curves with multiple splines. This also works with Curves with shape keys. New objects are put in a separate collection.
 - Split Bezier Segments (object mode): Create individual objects out of every segment within the Curve. This also works with Curves with shape keys. New objects are put in a separate collection.
 - Select Objects in collection: Allows selection of objects belonging to the collection of the active object. It's possible to select alternate objects or objects at fixed interval (based on the order in collection) as well as invert the selection. This can be combined with the split / separate ops to work on the newly created segment / spline objects.
