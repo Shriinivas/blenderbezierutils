@@ -1285,19 +1285,19 @@ class ModalDrawBezierOp(Operator):
             self.alt = (event.value == 'PRESS')
             return {'RUNNING_MODAL'}
 
-        if(event.type == 'WHEELDOWNMOUSE' and self.alt):
+        if(event.type == 'WHEELDOWNMOUSE' and self.shift):
             if(self.snapSteps < 10):
                 self.snapSteps += 1
-            return {'RUNNING_MODAL'}
+            return {'PASS_THROUGH'}
 
-        if(event.type == 'WHEELUPMOUSE' and self.alt):
+        if(event.type == 'WHEELUPMOUSE' and self.shift):
             if(self.snapSteps > 1):
                 self.snapSteps -= 1
-            return {'RUNNING_MODAL'}
+            return {'PASS_THROUGH'}
 
-        if(event.type == 'MIDDLEMOUSE' and self.alt):
+        if(event.type == 'MIDDLEMOUSE' and self.shift):
             self.snapSteps = self.defaultSnapSteps
-            return {'RUNNING_MODAL'}
+            return {'PASS_THROUGH'}
 
         if (event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
 
