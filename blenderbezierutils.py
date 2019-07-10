@@ -8,7 +8,6 @@
 
 # License: MIT (https://github.com/Shriinivas/blenderbezierutils/blob/master/LICENSE)
 #
-# Not yet pep8 compliant
 
 import bpy, bmesh, bgl, gpu
 from bpy.props import BoolProperty, IntProperty
@@ -1400,7 +1399,7 @@ class ModalDrawBezierOp(Operator):
 
     def get3dLocWithSnap(self, context, event):
         return self.get3dLoc(context, event, snapToObj = self.alt,
-            snapToGrid = self.ctrl, restrict = self.shift, vec = None, fromActiveObj = True)
+            snapToGrid = self.ctrl, restrict = self.shift, vec = None, fromActiveObj = False)
 
     def get3dLoc(self, context, event, snapToObj,
         snapToGrid, restrict, vec = None, fromActiveObj = True):
@@ -1429,7 +1428,8 @@ class ModalDrawBezierOp(Operator):
             if(fromActiveObj and context.active_object != None):
                 vec = context.active_object.location
             else:
-                vec = region_2d_to_vector_3d(region, rv3d, xy)
+                # ~ vec = region_2d_to_vector_3d(region, rv3d, xy)
+                vec = context.scene.cursor.location
 
         loc = region_2d_to_location_3d(region, rv3d, xy, vec)
 
@@ -1585,6 +1585,13 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
         if(collection == None):
             collection = context.scene.collection
         collection.objects.link(obj)
+        obj.location = context.scene.cursor.location
+
+        depsgraph = context.evaluated_depsgraph_get()
+        depsgraph.update()
+        
+        invM = obj.matrix_world.inverted()
+        
         spline = data.splines.new('BEZIER')
         spline.use_cyclic_u = False
 
@@ -1594,14 +1601,12 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
 
         spline.bezier_points.add(len(self.curvePts) - 1)
         for i, pt in enumerate(self.curvePts):
-            spline.bezier_points[i].handle_left = pt[0]
-            spline.bezier_points[i].co = pt[1]
-            spline.bezier_points[i].handle_right = pt[2]
+            spline.bezier_points[i].handle_left = invM @ pt[0]
+            spline.bezier_points[i].co = invM @ pt[1]
+            spline.bezier_points[i].handle_right = invM @ pt[2]
             spline.bezier_points[i].handle_left_type = 'ALIGNED'
             spline.bezier_points[i].handle_right_type = 'ALIGNED'
 
-        depsgraph = context.evaluated_depsgraph_get()
-        depsgraph.update()
         return obj
 
     def getSnapObj(self, context, loc):
