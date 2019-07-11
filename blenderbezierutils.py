@@ -1243,7 +1243,7 @@ class ModalDrawBezierOp(Operator):
             self.alt = False
             return {'PASS_THROUGH'}
 
-        if(event.type == 'RET'):
+        if(event.type == 'RET' or event.type == 'SPACE'):
             self.confirm(context)   #subclass
             return {'RUNNING_MODAL'}
 
@@ -1628,7 +1628,7 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
         obj = self.createObjFromPts(context)
 
         # Undo stack in case the user does not want to join
-        #special condition don't join if ctrl
+        # special condition: don't join if ctrl
         if((endObj != None or startObj != None) and not self.ctrl): 
             obj.select_set(True)
             bpy.context.view_layer.objects.active = obj
