@@ -37,6 +37,8 @@ After installation, a new 'Bezier Utilities' tab is displayed in object mode on 
 A couple of known (hopefully minor) issues I am still working on:
 - Starting a new blend while the Flexi Bezier is active causes the tool to stop working. The workaround is to select any other tool from the toolbar before starting a new file (or restart Blender to make the tool operational again :)
 - Clicking on the Flexi Bezier button while it is already active starts the curve from under the button on the viewport. In this case just press escape to undo the unwanted curve. The same thing may happen while clicking on the Blender menu.<br>
+- Snapping to end point of separated segment that is snappend (after ctrl+z) may not work. The work-around is select another tool and select the Flexi Bezier tool again.
+- The button probably won't work after Blender restart. This is likely an issue with Blender and I have opened a bug report. Till it gets fixed, to activate the tool again in new session, just disable and enable the add-on from preferences menu (thanks Nic for this work-around).
 
 In general, exercise caution when using this add-on in production, since all possible conditions have not been extensively tested.<br>
 You may report bug as comment on the youtube videos or on the issues page here on Github. I will try and fix them as soon as I can.
