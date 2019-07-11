@@ -1628,7 +1628,8 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
         obj = self.createObjFromPts(context)
 
         # Undo stack in case the user does not want to join
-        if(endObj != None or startObj != None):
+        #special condition don't join if ctrl
+        if((endObj != None or startObj != None) and not self.ctrl): 
             obj.select_set(True)
             bpy.context.view_layer.objects.active = obj
             bpy.ops.ed.undo_push()
