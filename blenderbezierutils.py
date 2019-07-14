@@ -1207,6 +1207,7 @@ class ModalDrawBezierOp(Operator):
     def initialize(self):
         self.curvePts = []
         self.clickT = None #For double click
+        self.pressT = None #For single click
         self.capture = False
         self.ctrl = False
         self.shift = False
@@ -1271,6 +1272,7 @@ class ModalDrawBezierOp(Operator):
                 loc = self.get3dLocWithSnap(context, event)
                 self.curvePts.append([loc, loc, loc])
             self.capture = True
+            self.pressT = time.time()
             return {'PASS_THROUGH'}
 
         if(event.type in {'LEFT_CTRL', 'RIGHT_CTRL'}):
@@ -1309,11 +1311,13 @@ class ModalDrawBezierOp(Operator):
                     return {'RUNNING_MODAL'}
             self.clickT = t
 
-            if(len(self.curvePts) == 1): # len can't be zero
-                loc = self.get3dLocWithSnap(context, event)
-                self.curvePts[0][2] = loc # changes only rt handle
+            if((t - self.pressT) < 0.25):                
+                loc = self.curvePts[-1][1]
             else:
                 loc = self.get3dLocWithSnap(context, event)
+                
+            if(len(self.curvePts) == 1): # len can't be zero
+                self.curvePts[0][2] = loc # changes only rt handle
 
             self.curvePts.append([loc, loc, loc])
             self.createBatch(context, event, handlePtIdx = -2, \
