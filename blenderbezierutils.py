@@ -1212,7 +1212,6 @@ class ModalDrawBezierOp(Operator):
         self.ctrl = False
         self.shift = False
         self.alt = False
-        self.axis = None
         self.snapSteps = self.defaultSnapSteps
         self.drawHandlerRef = bpy.types.SpaceView3D.draw_handler_add(self.drawHandler, \
             (), "WINDOW", "POST_VIEW")
@@ -1413,8 +1412,6 @@ class ModalDrawBezierOp(Operator):
         rv3d = context.space_data.region_3d
         xy = event.mouse_region_x, event.mouse_region_y
 
-        self.axis = None
-
         if(snapToObj):
             minDist = 9e+99
             matchSnapLoc = None
@@ -1448,21 +1445,20 @@ class ModalDrawBezierOp(Operator):
             lastCo = self.curvePts[-1][1] if(self.capture) else self.curvePts[-2][1]
 
             #First decide the main movement axis
-            if(self.axis == None):
-                diff = [abs(v) for v in (actualLoc - lastCo)]
-                maxDiff = max(diff)
-                self.axis = 0 if abs(diff[0]) == maxDiff \
-                    else (1 if abs(diff[1]) == maxDiff else 2)
+            diff = [abs(v) for v in (actualLoc - lastCo)]
+            maxDiff = max(diff)
+            axis = 0 if abs(diff[0]) == maxDiff \
+                else (1 if abs(diff[1]) == maxDiff else 2)
 
             loc = lastCo.copy()
-            loc[self.axis] = actualLoc[self.axis]
+            loc[axis] = actualLoc[axis]
 
             snapIncr = 45 / self.snapSteps
             snapAngles = [radians(snapIncr * a) for a in range(0, self.snapSteps + 1)]
-            l1 =  actualLoc[self.axis] - lastCo[self.axis] #Main axis value
+            l1 =  actualLoc[axis] - lastCo[axis] #Main axis value
 
             for i in range(0, 3):
-                if(i != self.axis):
+                if(i != axis):
                     l2 =  (actualLoc[i] - lastCo[i]) #Minor axis value
                     angle = abs(atan(l2 / l1)) if l1 != 0 else 0
                     dirn = (l1 * l2) / abs(l1 * l2) if (l1 * l2) != 0 else 1
