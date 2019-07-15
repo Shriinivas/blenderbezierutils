@@ -12,7 +12,7 @@
 import bpy, bmesh, bgl, gpu
 from bpy.props import BoolProperty, IntProperty
 from bpy.types import Panel, Operator, WorkSpaceTool
-from mathutils import Vector, Matrix, geometry
+from mathutils import Vector, Matrix, geometry, kdtree
 from math import log, atan, tan, pi, radians
 from bpy_extras.view3d_utils import region_2d_to_vector_3d, region_2d_to_location_3d
 from bpy_extras.view3d_utils import location_3d_to_region_2d
@@ -1148,6 +1148,7 @@ def isOutside(context, event):
 # Get pt coords along curve defined by the four control pts (curvePts)
 # divPerUnitLength: No of subdivisions per unit length
 # (which is the same as no of pts excluding the end pts)
+# (Yes... this should be replaced with interpolate_bezier)
 def getPtsAlongBezier(context, curvePts, curveRes, normalized):
     if(len(curvePts) < 2):
         return []
@@ -1423,17 +1424,15 @@ class ModalDrawBezierOp(Operator):
         xy = event.mouse_region_x, event.mouse_region_y
 
         if(snapToObj):
-            minDist = 9e+99
-            matchSnapLoc = None
-            for snapLoc in self.getSnapLocs():
-                loc = region_2d_to_location_3d(region, rv3d, xy, snapLoc)
-                dist = (loc - snapLoc).length
-                if(dist < (10 ** rounding)):
-                    if(dist < minDist):
-                        minDist = dist
-                        matchSnapLoc = snapLoc
-            if(matchSnapLoc != None):
-                return matchSnapLoc
+            kd = kdtree.KDTree(len(self.getSnapLocs()))            
+            for i, l in enumerate(self.getSnapLocs()):
+                kd.insert(getCoordFromLoc(context, l).to_3d(), i)
+            kd.balance()
+
+            coFind = Vector(xy).to_3d()
+            co, idx, dist = kd.find(coFind)
+            if(dist < 30): # 30 pixel snap distance
+                return self.getSnapLocs()[idx]
 
         if(vec == None):
             if(fromActiveObj and context.active_object != None):
@@ -1678,7 +1677,7 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
 
             if(startObj == endObj and startSplineIdx != endSplineIdx):
                 # If startSplineIdx == endSplineIdx the join call above would take care
-                # but it they are different they need to be joined with a separate call
+                # but if they are different they need to be joined with a separate call
                 obj = joinSegs([startObjs[endSplineIdx], obj], \
                     optimized = True, straight = False, srcCurve = startObjs[endSplineIdx])
 
