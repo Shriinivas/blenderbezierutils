@@ -1534,7 +1534,12 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
     def cancelOp(self, context):
         self.cleanup(context)
         ModalFlexiBezierOp.running = False
+        bpy.app.handlers.undo_post.remove(self.postUndoRedo)
+        bpy.app.handlers.redo_post.remove(self.postUndoRedo)
         return {"CANCELLED"}
+        
+    def postUndoRedo(self, scene):
+        self.updateSnapPts()
 
     def invoke(self, context, event):
         if(ModalFlexiBezierOp.running):
@@ -1545,10 +1550,14 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
 
         ModalFlexiBezierOp.running = True
 
-        #Object name -> [spline index, (startpt, endPt)]
+        # Object name -> [spline index, (startpt, endPt)]
+        # Not used right now (maybe in case of large no of curves)
         self.snapInfos = {}
 
-        self.updateSnapPts([o.name for o in bpy.data.objects])
+        self.updateSnapPts()
+        bpy.app.handlers.undo_post.append(self.postUndoRedo)
+        bpy.app.handlers.redo_post.append(self.postUndoRedo)
+        
         return super(ModalFlexiBezierOp, self).invoke(context, event)
 
     def modal(self, context, event):
@@ -1568,21 +1577,25 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
 
         return locs
 
-    def updateSnapPts(self, objNames):
+    def updateSnapPts(self, objNames = None):
+        if(objNames == None):
+            objNames = [o.name for o in bpy.data.objects]
+            invalOs = self.snapInfos.keys() - set(objNames) # In case of redo
+            for o in invalOs:
+                del self.snapInfos[o]
+            
         for objName in objNames:
             obj = bpy.data.objects.get(objName)
-            if(obj == None or not isBezier(obj) or not obj.visible_get()):
-                if(self.snapInfos.get(objName) != None):
-                    del self.snapInfos[objName] #Just in case
-                continue
-
-            self.snapInfos[objName] = []
-            mw = obj.matrix_world
-            for i, s in enumerate(obj.data.splines):
-                if(s.use_cyclic_u == True):
-                    continue
-                ends = [mw @ s.bezier_points[0].co, mw @ s.bezier_points[-1].co]
-                self.snapInfos[objName].append([i, ends])
+            if(obj != None and isBezier(obj) and obj.visible_get()):
+                self.snapInfos[objName] = []
+                mw = obj.matrix_world
+                for i, s in enumerate(obj.data.splines):
+                    if(s.use_cyclic_u == True):
+                        continue
+                    ends = [mw @ s.bezier_points[0].co, mw @ s.bezier_points[-1].co]
+                    self.snapInfos[objName].append([i, ends])
+            elif(self.snapInfos.get(objName) != None):
+                del self.snapInfos[objName]
 
     def addPtToSpline(invMW, spline, idx, pt, handleType):
         spline.bezier_points[i].handle_left = invMW @pt[0]
