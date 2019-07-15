@@ -10,7 +10,7 @@
 #
 
 import bpy, bmesh, bgl, gpu
-from bpy.props import BoolProperty, IntProperty
+from bpy.props import BoolProperty, IntProperty, EnumProperty
 from bpy.types import Panel, Operator, WorkSpaceTool
 from mathutils import Vector, Matrix, geometry, kdtree
 from math import log, atan, tan, pi, radians
@@ -678,8 +678,6 @@ class CloseStraightOp(Operator):
                 spline.bezier_points[-1].handle_right_type = 'VECTOR'
                 spline.use_cyclic_u = True
 
-        bpy.context.view_layer.objects.active = curve
-
         return {'FINISHED'}
 
 
@@ -699,8 +697,6 @@ class CloseSplinesOp(Operator):
                 spline.bezier_points[-1].handle_right_type = 'ALIGNED'
                 spline.use_cyclic_u = True
 
-        bpy.context.view_layer.objects.active = curve
-
         return {'FINISHED'}
 
 
@@ -718,7 +714,25 @@ class OpenSplinesOp(Operator):
             for spline in curve.data.splines:
                 spline.use_cyclic_u = False
 
-        bpy.context.view_layer.objects.active = curve
+        return {'FINISHED'}
+
+
+class SetHandleTypesOp(Operator):
+    bl_idname = "object.set_handle_types"
+    bl_label = "Set Handle Type of All Points"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Set the handle type of all the points of the selected curves"
+    
+    def execute(self, context):
+        ht = bpy.context.scene.handleType
+        curves = [o for o in bpy.data.objects \
+            if o in bpy.context.selected_objects and isBezier(o)]
+
+        for curve in curves:
+            for spline in curve.data.splines:
+                for pt in spline.bezier_points:
+                    pt.handle_left_type = ht
+                    pt.handle_right_type = ht
 
         return {'FINISHED'}
 
@@ -735,8 +749,6 @@ class RemoveDupliVertCurveOp(Operator):
 
         for curve in curves:
             removeDupliVert(curve)
-
-        bpy.context.view_layer.objects.active = curve
 
         return {'FINISHED'}
 
@@ -989,6 +1001,14 @@ class BezierUtilsPanel(Panel):
         description='Interval between selected objects', \
             default = 0, min = 0)
 
+    bpy.types.Scene.handleType = EnumProperty(name="Handle Type", items = \
+        [("AUTO", 'Automatic', "Automatic"), \
+         ('VECTOR', 'Vector', 'Straight line'), \
+         ('ALIGNED', 'Aligned', 'Left and right aligned'), \
+         ('FREE', 'Free', 'Left and right independent')], \
+        description = 'Handle type of the control points',
+        default = 'ALIGNED')
+
     bpy.types.Scene.remeshDepth = IntProperty(name="Remesh Depth", \
         description='Remesh depth for converting to mesh', \
             default = 4, min = 1, max = 10)
@@ -1015,6 +1035,9 @@ class BezierUtilsPanel(Panel):
             default = False)
 
     bpy.types.Scene.convertExpanded = BoolProperty(name="Convert Expanded State",
+            default = False)
+
+    bpy.types.Scene.handleTypesExpanded = BoolProperty(name="Set Handle Types State",
             default = False)
 
     bpy.types.Scene.otherExpanded = BoolProperty(name="Other Expanded State",
@@ -1096,6 +1119,23 @@ class BezierUtilsPanel(Panel):
                 row.prop(context.scene, 'unsubdivide')
                 col = layout.column()
                 col.operator('object.convert_2d_mesh')
+
+            col = layout.column()
+            col.separator()
+
+            row = layout.row()
+            row.prop(context.scene, "handleTypesExpanded",
+                icon="TRIA_DOWN" if context.scene.convertExpanded else "TRIA_RIGHT",
+                icon_only=True, emboss=False
+            )
+            row.label(text='Set Handle Type', icon='MOD_CURVE')
+
+            if context.scene.handleTypesExpanded:
+                col = layout.column()
+                row = col.row()
+                col.prop(context.scene, 'handleType')
+                col = layout.column()
+                col.operator('object.set_handle_types')
 
             col = layout.column()
             col.separator()
@@ -1766,6 +1806,7 @@ def register():
     bpy.utils.register_class(OpenSplinesOp)
     bpy.utils.register_class(RemoveDupliVertCurveOp)
     bpy.utils.register_class(convertTo2DMeshOp)
+    bpy.utils.register_class(SetHandleTypesOp)
     bpy.utils.register_class(SelectInCollOp)
     bpy.utils.register_class(InvertSelOp)
     bpy.utils.register_class(BezierUtilsPanel)
@@ -1783,6 +1824,7 @@ def unregister():
     bpy.utils.unregister_class(OpenSplinesOp)
     bpy.utils.unregister_class(RemoveDupliVertCurveOp)
     bpy.utils.unregister_class(convertTo2DMeshOp)
+    bpy.utils.unregister_class(SetHandleTypesOp)
     bpy.utils.unregister_class(SelectInCollOp)
     bpy.utils.unregister_class(InvertSelOp)
     bpy.utils.unregister_class(BezierUtilsPanel)
