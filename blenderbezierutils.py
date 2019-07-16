@@ -1253,7 +1253,7 @@ class ModalDrawBezierOp(Operator):
         self.ctrl = False
         self.shift = False
         self.alt = False
-        self.lockAxis = None
+        self.lockAxes = []
         self.snapSteps = self.defaultSnapSteps
         self.drawHandlerRef = bpy.types.SpaceView3D.draw_handler_add(self.drawHandler, \
             (), "WINDOW", "POST_VIEW")
@@ -1307,7 +1307,7 @@ class ModalDrawBezierOp(Operator):
             else:
                 self.curvePts = []
                 self.capture = False
-            self.lockAxis = None                
+            self.lockAxes = []                
             return {'RUNNING_MODAL'}
 
         if (event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
@@ -1315,6 +1315,7 @@ class ModalDrawBezierOp(Operator):
                 loc = self.get3dLocWithSnap(context, event)
                 self.curvePts.append([loc, loc, loc])
             self.capture = True
+            self.lockAxes = []            
             self.pressT = time.time()
             return {'PASS_THROUGH'} # Needed for other buttons on toolbar
 
@@ -1346,13 +1347,15 @@ class ModalDrawBezierOp(Operator):
 
         if (event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
             self.capture = False            
-            self.lockAxis = None
+            self.lockAxes = []            
+            
             #Looks like no 'DOUBLE_CLICK' event?
             t = time.time()
             if(self.clickT !=  None):
                 if((t - self.clickT) < 0.25):
                     self.confirm(context)
                     return {'RUNNING_MODAL'}
+                    
             self.clickT = t
 
             if((t - self.pressT) < 0.25):                
@@ -1377,9 +1380,12 @@ class ModalDrawBezierOp(Operator):
 
         if(len(self.curvePts) > 0 and event.type in {'X', 'Y', 'Z', 'U'}):
             if(event.type == 'U'):
-                self.lockAxis = None
+                self.lockAxes = []
             else:
-                self.lockAxis = event.type            
+                self.lockAxes = [ord(event.type) - ord('X')]
+                if(self.shift):
+                    self.lockAxes = list({0, 1, 2} - set(self.lockAxes))
+
             return {'RUNNING_MODAL'}
         
         return {'PASS_THROUGH'}
@@ -1454,7 +1460,18 @@ class ModalDrawBezierOp(Operator):
     def get3dLocWithSnap(self, context, event):
         return self.get3dLoc(context, event, snapToObj = self.alt,
             snapToGrid = self.ctrl, restrict = self.shift, vec = None, fromActiveObj = False)
-
+    
+    #Reference point for restrict angle or lock axis
+    def getPrevRefCo(self):
+        if(len(self.curvePts) > 0): 
+            if(self.capture):
+                return self.curvePts[-1][1]
+            # There should always be min 2 pts if not capture, check anyway
+            elif(len(self.curvePts) > 1): 
+                return self.curvePts[-2][1]
+        return None
+    
+    # TODO Maybe too tightly coupled with the data structure
     def get3dLoc(self, context, event, snapToObj,
         snapToGrid, restrict, vec = None, fromActiveObj = True):
 
@@ -1482,50 +1499,47 @@ class ModalDrawBezierOp(Operator):
                 vec = context.scene.cursor.location
 
         loc = region_2d_to_location_3d(region, rv3d, xy, vec)
-
+        
+        lastCo = self.getPrevRefCo()
+        if(len(self.lockAxes) > 0 and lastCo != None):
+            actualLoc = loc[:]
+            loc = lastCo.copy()
+            for axis in self.lockAxes: loc[axis] = actualLoc[axis]
+                
         if(snapToGrid):
             loc = roundedVect(loc, rounding)
         
-        if((self.lockAxis != None or restrict) and len(self.curvePts) > 0):
-            if(len(self.curvePts) == 1 and not self.capture):
-                return loc
-
+        if(restrict and lastCo != None):
             actualLoc = loc.copy()
-            lastCo = self.curvePts[-1][1] if(self.capture) else self.curvePts[-2][1]
             
-            if(self.lockAxis != None): #i.e. lockAxis
-                axis = ord(self.lockAxis) - ord('X')
-                loc = lastCo.copy()
-                loc[axis] = actualLoc[axis]
-            else:
-                #First decide the main movement axis
-                diff = [abs(v) for v in (actualLoc - lastCo)]
-                maxDiff = max(diff)
-                axis = 0 if abs(diff[0]) == maxDiff \
-                    else (1 if abs(diff[1]) == maxDiff else 2)
+            #First decide the main movement axis
+            diff = [abs(v) for v in (actualLoc - lastCo)]
+            maxDiff = max(diff)
+            axis = 0 if abs(diff[0]) == maxDiff \
+                else (1 if abs(diff[1]) == maxDiff else 2)
 
-                loc = lastCo.copy()
-                loc[axis] = actualLoc[axis]
+            loc = lastCo.copy()
+            loc[axis] = actualLoc[axis]
 
-                snapIncr = 45 / self.snapSteps
-                snapAngles = [radians(snapIncr * a) for a in range(0, self.snapSteps + 1)]
-                l1 =  actualLoc[axis] - lastCo[axis] #Main axis value
+            snapIncr = 45 / self.snapSteps
+            snapAngles = [radians(snapIncr * a) for a in range(0, self.snapSteps + 1)]
+            l1 =  actualLoc[axis] - lastCo[axis] #Main axis value
 
-                for i in range(0, 3):
-                    if(i != axis):
-                        l2 =  (actualLoc[i] - lastCo[i]) #Minor axis value
-                        angle = abs(atan(l2 / l1)) if l1 != 0 else 0
-                        dirn = (l1 * l2) / abs(l1 * l2) if (l1 * l2) != 0 else 1
-                        prevDiff = 9e+99
-                        for j in range(0, len(snapAngles) + 1):
-                            if(j == len(snapAngles)):
-                                loc[i] = lastCo[i] + dirn * l1 * tan(snapAngles[-1])
-                                break
-                            cmpAngle = snapAngles[j]
-                            if(abs(angle - cmpAngle) > prevDiff):
-                                loc[i] = lastCo[i] + dirn * l1 * tan(snapAngles[j-1])
-                                break
-                            prevDiff = abs(angle - cmpAngle)
+            for i in range(0, 3):
+                if(i != axis):
+                    l2 =  (actualLoc[i] - lastCo[i]) #Minor axis value
+                    angle = abs(atan(l2 / l1)) if l1 != 0 else 0
+                    dirn = (l1 * l2) / abs(l1 * l2) if (l1 * l2) != 0 else 1
+                    prevDiff = 9e+99
+                    for j in range(0, len(snapAngles) + 1):
+                        if(j == len(snapAngles)):
+                            loc[i] = lastCo[i] + dirn * l1 * tan(snapAngles[-1])
+                            break
+                        cmpAngle = snapAngles[j]
+                        if(abs(angle - cmpAngle) > prevDiff):
+                            loc[i] = lastCo[i] + dirn * l1 * tan(snapAngles[j-1])
+                            break
+                        prevDiff = abs(angle - cmpAngle)
 
         return loc
 
