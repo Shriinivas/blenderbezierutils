@@ -21,7 +21,7 @@ This tool is available in object mode via a new button on the toolshelf (short c
 <b>Snapping Options</b> 
 - Holding down ctrl while moving mouse will snap the point or handle to the grid. 
 - By holding down shift key the angle between the new point (or handle) and the previous one will be restricted to fixed values (0, 45, 90 etc). 
-- Pressing X, Y, Z while the curve is being drawn will lock the segment to the corresponding axis. Press U to get out of the lock mode. 
+- Pressing X, Y, Z while the curve is being drawn will lock the segment to the corresponding axis. Pressing shift together with these buttons will lock it to axes other than the axis denoted by the button (e.g. shift+Z - lock to XY). Press U to get out of the lock mode. 
 - To snap to the end points of the open splines within all the curve objects in the view hold down alt key. <br>
 
 The snapping gets adapted to the viewport zoom level. <br>
