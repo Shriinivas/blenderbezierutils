@@ -1267,8 +1267,8 @@ class ModalDrawBezierOp(Operator):
                 context.area.tag_redraw()
             self.drawHandlerRef = None
 
-    def confirm(self, context):
-        self.save(context)
+    def confirm(self, context, event):
+        self.save(context, event)
         self.curvePts = []
         self.capture = False
         self.cleanup(context)
@@ -1286,7 +1286,7 @@ class ModalDrawBezierOp(Operator):
             return {'PASS_THROUGH'}
 
         if(event.type == 'RET' or event.type == 'SPACE'):
-            self.confirm(context)   #subclass
+            self.confirm(context, event)   #subclass
             return {'RUNNING_MODAL'}
 
         if(event.type == 'ESC'):
@@ -1353,7 +1353,7 @@ class ModalDrawBezierOp(Operator):
             t = time.time()
             if(self.clickT !=  None):
                 if((t - self.clickT) < 0.25):
-                    self.confirm(context)
+                    self.confirm(context, event)
                     return {'RUNNING_MODAL'}
                     
             self.clickT = t
@@ -1704,13 +1704,13 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
 
         return None, 0, 0
 
-    def createCurveObj(self, context, startObj, startSplineIdx, endObj, endSplineIdx):
+    def createCurveObj(self, context, startObj = None, \
+        startSplineIdx = None, endObj = None, endSplineIdx = None):
         # First create the new curve
         obj = self.createObjFromPts(context)
 
         # Undo stack in case the user does not want to join
-        # special condition: don't join if ctrl
-        if((endObj != None or startObj != None) and not self.ctrl): 
+        if(endObj != None or startObj != None): 
             obj.select_set(True)
             bpy.context.view_layer.objects.active = obj
             bpy.ops.ed.undo_push()
@@ -1765,22 +1765,33 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
 
         return obj
 
-    def save(self, context):
+    def save(self, context, event):
         if(len(self.curvePts) > 0):
             self.curvePts.pop()
 
         if(len(self.curvePts) > 1):
+
             endObj, endSplineIdx, ptIdx1 = \
                 self.getSnapObj(context, self.curvePts[-1][1])
             startObj, startSplineIdx, ptIdx2 = \
                 self.getSnapObj(context, self.curvePts[0][1])
 
-            startObjName = startObj.name if(startObj != None) else ''
-            endObjName = endObj.name if(endObj != None) else ''
+            # ctrl pressed and there IS a snapped end obj, so user does not want connection
+            # (no option to only connect to starting curve when end object exists)
+            if(self.ctrl and endObj != None):
+                obj = self.createCurveObj(context)
+                endObj = None
+            else:
+                startObjName = startObj.name if(startObj != None) else ''
+                endObjName = endObj.name if(endObj != None) else ''
 
-            obj = self.createCurveObj(context, \
-                startObj, startSplineIdx, endObj, endSplineIdx)
+                obj = self.createCurveObj(context, \
+                    startObj, startSplineIdx, endObj, endSplineIdx)
 
+            if(endObj == None  and self.shift \
+                and (event.type == 'SPACE' or event.type == 'RET')):
+                obj.data.splines[-1].use_cyclic_u = True
+            
             #TODO: Why try?
             try:
                 obj.select_set(True)
