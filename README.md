@@ -16,16 +16,19 @@ Here is a brief overview of a few of the tools in this add-on:
 # Flexi Bezier Tool
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/drawdemo.gif)<br>
 This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). It allows drawing Bezier curves by manipulating the control points.<br>
-<b>Drawing the curve: </b> To draw the curve activate the tool by clicking the Flexi Bezier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter will convert the drawing to a curve object. <br>
+<b>Drawing the curve: </b> To draw the curve activate the tool by clicking the Flexi Bezier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. <br>
 <b>Undo:</b> While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve op can be undone by pressing ctrl-Z  <br><br>
 <b>Snapping Options</b> 
 - Holding down ctrl while moving mouse will snap the point or handle to the grid. 
 - By holding down shift key the angle between the new point (or handle) and the previous one will be restricted to fixed values (0, 45, 90 etc). 
-- Pressing X, Y, Z while the curve is being drawn will lock the segment to the corresponding axis. Pressing shift together with these buttons will lock it to axes other than the axis denoted by the button (e.g. shift+Z - lock to XY). Press U to get out of the lock mode. 
-- To snap to the end points of the open splines within all the curve objects in the view hold down alt key. <br>
+- To snap to the end points of the open splines within all the curve objects in the view hold down alt key. By default snapping to the end points joins the new curve to the curve(s) it is being snapped to. You can hold down ctrl while ending the curve (by double click or space or return key) to keep the curve separate. The curve can also be separated from the snapped curves be pressing ctrl-Z after confirming. <br>
+The snapping gets adapted to the viewport zoom level. <br><br>
+<b>Locking Options</b>
+- Pressing X, Y, Z while the curve is being drawn will lock the segment to the corresponding axis. 
+- Pressing shift together with one of these buttons will lock the segment to the axes other than the one denoted by the button (e.g. shift+Z - lock to XY plane). This option can be very useful to draw planar segments in perspective view.
+- Press U to get out of the lock mode. 
 
-The snapping gets adapted to the viewport zoom level. <br>
-
+Snapping and locking can be combined together. So user can hold down both control and shift to snap to grid as well as restrict the angle. Likewise, user can press shift-Z to lock to XY plane and then hold shift while moving the mouse to restrict the angle between the segment end points.
 
 <b>Demo Video:</b> https://youtu.be/Wo-RzVI05po<br>
 <b>Overview of Flexi Bezier Tool:</b> https://youtu.be/C9PXp0XHgYQ
