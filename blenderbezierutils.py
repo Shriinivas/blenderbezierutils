@@ -1359,8 +1359,10 @@ class ModalDrawBezierOp(Operator):
                     
             self.clickT = t
 
-            if((t - self.pressT) < 0.25):                
+            if((t - self.pressT) < 0.1):                
                 loc = self.curvePts[-1][1]
+                self.curvePts[-1][0] = loc
+                self.curvePts[-1][2] = loc
             else:
                 loc = self.get3dLocWithSnap(context, event)
                 
@@ -1566,7 +1568,7 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
     running = False
 
     def __init__(self):
-        curveDispRes = 100
+        curveDispRes = 200
         defLineWidth = 1.5
         defPointSize = 7
         super(ModalFlexiBezierOp, self).__init__(curveDispRes, defLineWidth, defPointSize)
@@ -1682,12 +1684,26 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
             self.curvePts.pop()
 
         spline.bezier_points.add(len(self.curvePts) - 1)
+        prevPt = None
         for i, pt in enumerate(self.curvePts):
-            spline.bezier_points[i].handle_left = invM @ pt[0]
-            spline.bezier_points[i].co = invM @ pt[1]
-            spline.bezier_points[i].handle_right = invM @ pt[2]
-            spline.bezier_points[i].handle_left_type = 'ALIGNED'
-            spline.bezier_points[i].handle_right_type = 'ALIGNED'
+            currPt = spline.bezier_points[i]
+            currPt.co = invM @ pt[1]
+            currPt.handle_right = invM @ pt[2]
+            if(prevPt != None and prevPt.handle_right == prevPt.co \
+                and pt[0] == pt[1]): # straight line
+                    diffV = (currPt.co - prevPt.co)
+                    if(prevPt.handle_left_type == 'ALIGNED'):
+                        prevPt.handle_left_type = 'FREE'
+                    prevPt.handle_right_type = 'VECTOR'
+                    prevPt.handle_right = .33 * diffV / diffV.length
+                    currPt.handle_left = -.33 * diffV / diffV.length
+                    currPt.handle_left_type = 'VECTOR'
+                    currPt.handle_right_type = 'FREE'
+            else:
+                currPt.handle_left = invM @ pt[0]
+                currPt.handle_left_type = 'ALIGNED'
+                currPt.handle_right_type = 'ALIGNED'
+            prevPt = currPt
 
         return obj
 
