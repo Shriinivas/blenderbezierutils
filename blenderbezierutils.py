@@ -23,7 +23,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 51),
+    "version": (0, 55),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -1181,11 +1181,31 @@ def roundedVect(vect, rounding):
     fact = (10 ** rounding) / 10
     return Vector([round(l / fact) * fact for l in vect])
 
+# To be called only from 3d view
+def getCurrAreaRegion(context):
+    a, r = [(a, r) for a in bpy.context.screen.areas if a.type == 'VIEW_3D' for r in a.regions \
+        if(r == context.region)][0]
+    return a, r
+    
 def isOutside(context, event):
     x = event.mouse_region_x
     y = event.mouse_region_y
     region = context.region
-    return (x < 0 or x > region.width or y < 0 or y > region.height)
+
+    if(x < 0 or x > region.width or y < 0 or y > region.height):
+        return True
+
+    area, r = getCurrAreaRegion(context)
+        
+    for r in area.regions:
+        if(r == region):
+            continue
+        xR = r.x - region.x
+        yR = r.y - region.y
+        if(x >= xR and y >= yR and x <= (xR + r.width) and y <= (yR + r.height)):
+            return True
+            
+    return False
 
 # Get pt coords along curve defined by the four control pts (curvePts)
 # divPerUnitLength: No of subdivisions per unit length
@@ -1245,14 +1265,6 @@ class ModalDrawBezierOp(Operator):
     def removeHandler():
         bpy.types.SpaceView3D.draw_handler_remove(ModalDrawBezierOp.drawHandlerRef, "WINDOW")    
         
-    def drawHandler():
-        if(ModalDrawBezierOp.shader != None):
-            bgl.glLineWidth(ModalDrawBezierOp.defLineWidth)
-            bgl.glPointSize(ModalDrawBezierOp.defPointSize)
-
-            ModalDrawBezierOp.batch.draw(ModalDrawBezierOp.shader)
-            ModalDrawBezierOp.batch2.draw(ModalDrawBezierOp.shader)
-
     @persistent
     def loadPostHandler(dummy):
         ModalDrawBezierOp.addDrawHandler()
@@ -1269,8 +1281,6 @@ class ModalDrawBezierOp(Operator):
         self.defaultSnapSteps = 3
 
     def invoke(self, context, event):
-        # ~ if(ModalDrawBezierOp.running):
-            # ~ return {"CANCELLED"}
         ModalDrawBezierOp.running = True
 
         self.cleanup(context)
@@ -1325,6 +1335,12 @@ class ModalDrawBezierOp(Operator):
             self.alt = False
             return {'PASS_THROUGH'}
 
+        if(isOutside(context, event)):
+            # ~ self.refreshAfterMove(context, event)
+            if(len(self.curvePts) > 0):
+                return {'RUNNING_MODAL'}
+            return {'PASS_THROUGH'}
+
         if(event.type == 'RET' or event.type == 'SPACE'):
             self.confirm(context, event)
             return {'RUNNING_MODAL'}
@@ -1332,13 +1348,8 @@ class ModalDrawBezierOp(Operator):
         if(event.type == 'ESC'):
             self.cleanup(context)
             self.initialize()
-            return {'PASS_THROUGH'}
-
-        if(isOutside(context, event)):
-            if(len(self.curvePts) > 0):
-                return {'RUNNING_MODAL'}
-        
-            return {'PASS_THROUGH'}
+            self.refreshAfterMove(context, event)
+            return {'RUNNING_MODAL'}
 
         if(event.type == 'BACK_SPACE' and event.value == 'RELEASE'):
             if(len(self.curvePts) > 1):
@@ -1349,15 +1360,6 @@ class ModalDrawBezierOp(Operator):
                 self.capture = False
             self.lockAxes = []                
             return {'RUNNING_MODAL'}
-
-        if (event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
-            if(len(self.curvePts) == 0):
-                loc = self.get3dLocWithSnap(context, event)
-                self.curvePts.append([loc, loc, loc])
-            self.capture = True
-            self.lockAxes = []            
-            self.pressT = time.time()
-            return {'PASS_THROUGH'} # Needed for other buttons on toolbar
 
         if(event.type in {'LEFT_CTRL', 'RIGHT_CTRL'}):
             self.ctrl = (event.value == 'PRESS')
@@ -1385,10 +1387,26 @@ class ModalDrawBezierOp(Operator):
             self.snapSteps = self.defaultSnapSteps
             return {'PASS_THROUGH'}
 
+        if (event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
+            if(len(self.curvePts) == 0):
+                loc = self.get3dLocWithSnap(context, event)
+                self.curvePts.append([loc, loc, loc])
+            self.capture = True
+            self.lockAxes = []            
+            self.pressT = time.time()
+            return {'RUNNING_MODAL'} 
+
         if (event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
             self.capture = False            
             self.lockAxes = []            
             
+            # Rare condition: This happens e. g. when user clicks on header menu 
+            # like Object->Transform->Move. These ops consume press event but not release
+            # So update the snap locations anyways if there was some transformation
+            if(len(self.curvePts) == 0): 
+                self.updateSnapLocs() # Subclass (TODO: have a relook)
+                return {'RUNNING_MODAL'}
+                
             #Looks like no 'DOUBLE_CLICK' event?
             t = time.time()
             if(self.clickT !=  None):
@@ -1398,7 +1416,7 @@ class ModalDrawBezierOp(Operator):
                     
             self.clickT = t
 
-            if((t - self.pressT) < 0.1):                
+            if((self.pressT != None) and (t - self.pressT) < 0.1):                
                 loc = self.curvePts[-1][1]
                 self.curvePts[-1][0] = loc
                 self.curvePts[-1][2] = loc
@@ -1414,11 +1432,9 @@ class ModalDrawBezierOp(Operator):
             return {'RUNNING_MODAL'}
 
         if (event.type == 'MOUSEMOVE'):
+            bpy.context.window.cursor_set("DEFAULT")            
             self.refreshAfterMove(context, event)
-            if(self.capture):
-                return {'RUNNING_MODAL'}
-            else:
-                return {'PASS_THROUGH'}
+            return {'RUNNING_MODAL'}
 
         if(len(self.curvePts) > 0 and event.type in {'X', 'Y', 'Z', 'U'}):
             if(event.type == 'U'):
@@ -1427,7 +1443,6 @@ class ModalDrawBezierOp(Operator):
                 self.lockAxes = [ord(event.type) - ord('X')]
                 if(self.shift):
                     self.lockAxes = list({0, 1, 2} - set(self.lockAxes))
-
             return {'RUNNING_MODAL'}
         
         return {'PASS_THROUGH'}
@@ -1498,6 +1513,18 @@ class ModalDrawBezierOp(Operator):
 
         if context.area:
             context.area.tag_redraw()
+            
+    #static method
+    def drawHandler():
+        if(ModalDrawBezierOp.shader != None):
+            bgl.glLineWidth(ModalDrawBezierOp.defLineWidth)
+            bgl.glPointSize(ModalDrawBezierOp.defPointSize)
+
+            if(ModalDrawBezierOp.batch != None):
+                ModalDrawBezierOp.batch.draw(ModalDrawBezierOp.shader)
+                
+            if(ModalDrawBezierOp.batch2 != None):
+                ModalDrawBezierOp.batch2.draw(ModalDrawBezierOp.shader)
 
     def get3dLocWithSnap(self, context, event):
         return self.get3dLoc(context, event, snapToObj = self.alt,
@@ -1613,19 +1640,19 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
         bpy.app.handlers.redo_post.remove(self.postUndoRedo)
         
     def postUndoRedo(self, scene):
-        self.updateSnapPts()
+        self.updateSnapLocs()
 
     def invoke(self, context, event):
 
         # If the operator is invoked from context menu, enable the tool on toolbar
-        # ~ if(not self.isDrawToolSelected(context) and context.mode == 'OBJECT'):
-            # ~ bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
+        if(not self.isDrawToolSelected(context) and context.mode == 'OBJECT'):
+            bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
 
         # Object name -> [spline index, (startpt, endPt)]
         # Not used right now (maybe in case of large no of curves)
         self.snapInfos = {}
 
-        self.updateSnapPts()
+        self.updateSnapLocs()
         bpy.app.handlers.undo_post.append(self.postUndoRedo)
         bpy.app.handlers.redo_post.append(self.postUndoRedo)
         
@@ -1649,7 +1676,7 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
 
         return locs
 
-    def updateSnapPts(self, objNames = None):
+    def updateSnapLocs(self, objNames = None):
         if(objNames == None):
             objNames = [o.name for o in bpy.data.objects]
             invalOs = self.snapInfos.keys() - set(objNames) # In case of redo
@@ -1705,7 +1732,7 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
             currPt.co = invM @ pt[1]
             currPt.handle_right = invM @ pt[2]
             if(prevPt != None and prevPt.handle_right == prevPt.co \
-                and pt[0] == pt[1]): # straight line
+                and pt[0] == pt[1] and currPt.co != prevPt.co): # straight line
                     diffV = (currPt.co - prevPt.co)
                     if(prevPt.handle_left_type == 'ALIGNED'):
                         prevPt.handle_left_type = 'FREE'
@@ -1828,7 +1855,7 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
             try:
                 obj.select_set(True)
                 bpy.context.view_layer.objects.active = obj
-                self.updateSnapPts([obj.name, startObjName, endObjName])
+                self.updateSnapLocs([obj.name, startObjName, endObjName])
             except Exception as e:
                 pass
         bpy.ops.ed.undo_push()
