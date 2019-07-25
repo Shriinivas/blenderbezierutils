@@ -1,6 +1,6 @@
 
 # Blender Add-on with Bezier Utility Operations
-<b>Add-on Version: 0.51 </b>
+<b>Add-on Version: 0.55 </b>
 
 This add-on contains several tools for working with Bezier curves. <br>
 Supported Blender Version: 2.8 Beta <br>
@@ -49,11 +49,13 @@ Snapping and locking can be combined together. So user can hold down both contro
 After installation, a new 'Bezier Utilities' tab is displayed in object mode on 'Active Tool and Workspace settings' tab on the properties panel. There will also appear a new button - Flexi Bezier Tool - on the toolshelf.
 
 # Known Issues
-A couple of known (hopefully minor) issues I am still working on:
+A few known issues I am still working on:
 - <strike>Starting a new blend while the Flexi Bezier is active causes the tool to stop working. The workaround is to select any other tool from the toolbar before starting a new file.</strike> This is fixed in version 0.51.
-- Clicking on the Flexi Bezier button while it is already active starts the curve from under the button on the viewport. In this case just press escape to undo the unwanted curve. The same thing may happen while clicking on the Blender menu.<br>
-- The button probably won't work after Blender restart. This is likely an issue with Blender and I have opened a bug report. Till it gets fixed, to activate the tool again in new session, just disable and enable the add-on from preferences menu (thanks Nic for this work-around).
-- Snapping does not work for curves with modifiers.
+- <strike>Clicking on the Flexi Bezier button while it is already active starts the curve from under the button on the viewport. In this case just press escape to undo the unwanted curve. The same thing may happen while clicking on the Blender menu.</strike> This is fixed in version 0.55.<br>
+- <strike> Snapping does not work for curves with modifiers. </strike> This is intended functionality.<br>
+- The Flexi Bezier button probably won't work after Blender restart. This is likely an issue with Blender and I have opened a bug report. Till it gets fixed, to activate the tool again in new session, just disable and enable the add-on from preferences menu (thanks Nic for this work-around).<br>
+- The part of the area under toolshelf and properties panel is excluded from drawing. Hide these elements to maximize the drawing area.<br>
+- Sometimes it may be necessary to reactivate the Flexi Bezier tool (click on some other tool and click back on Flexi Bezier button) to enable snapping.<br>
 
 In general, exercise caution when using this add-on in production, since all possible conditions have not been extensively tested.<br>
 You may report bug as comment on the youtube videos or on the issues page here on Github. I will try and fix them as soon as I can.
