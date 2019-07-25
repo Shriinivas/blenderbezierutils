@@ -18,6 +18,7 @@ from bpy_extras.view3d_utils import region_2d_to_vector_3d, region_2d_to_locatio
 from bpy_extras.view3d_utils import location_3d_to_region_2d
 from gpu_extras.batch import batch_for_shader
 import time
+from bpy.app.handlers import persistent
 
 bl_info = {
     "name": "Bezier Utilities",
@@ -1224,22 +1225,59 @@ def getPtsAlongBezier(context, curvePts, curveRes, normalized):
 
 class ModalDrawBezierOp(Operator):
 
-    def __init__(self, curveDispRes = 20, defLineWidth = 1.5, defPointSize = 7):
-        self.defLineWidth = defLineWidth
-        self.defPointSize = defPointSize
+    drawHandlerRef = None
+    batch = None
+    batch2 = None
+    shader = None
+    defLineWidth = 1.5
+    defPointSize = 7
+    running = False
+    
+    @classmethod
+    def poll(cls, context):
+        return not ModalDrawBezierOp.running
 
+    def addDrawHandler():
+        ModalDrawBezierOp.drawHandlerRef = \
+            bpy.types.SpaceView3D.draw_handler_add(ModalDrawBezierOp.drawHandler, \
+                (), "WINDOW", "POST_VIEW")
+
+    def removeHandler():
+        bpy.types.SpaceView3D.draw_handler_remove(ModalDrawBezierOp.drawHandlerRef, "WINDOW")    
+        
+    def drawHandler():
+        if(ModalDrawBezierOp.shader != None):
+            bgl.glLineWidth(ModalDrawBezierOp.defLineWidth)
+            bgl.glPointSize(ModalDrawBezierOp.defPointSize)
+
+            ModalDrawBezierOp.batch.draw(ModalDrawBezierOp.shader)
+            ModalDrawBezierOp.batch2.draw(ModalDrawBezierOp.shader)
+
+    @persistent
+    def loadPostHandler(dummy):
+        ModalDrawBezierOp.addDrawHandler()
+        ModalDrawBezierOp.running = False
+
+    def loadPreHandler(dummy):
+        ModalDrawBezierOp.removeHandler()
+    
+    def __init__(self, curveDispRes = 20):
         #No of subdivisions in the displayed curve with view dist 1
         self.curveDispRes = curveDispRes
-        self.drawHandlerRef = None
+        ModalDrawBezierOp.drawHandlerRef = None
         self.addHandle = True
         self.defaultSnapSteps = 3
 
     def invoke(self, context, event):
+        # ~ if(ModalDrawBezierOp.running):
+            # ~ return {"CANCELLED"}
+        ModalDrawBezierOp.running = True
+
         self.cleanup(context)
         self.initialize()
 
-        self.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
-        self.shader.bind()
+        ModalDrawBezierOp.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
+        ModalDrawBezierOp.shader.bind()
         
         context.window_manager.modal_handler_add(self)
 
@@ -1256,17 +1294,18 @@ class ModalDrawBezierOp(Operator):
         self.alt = False
         self.lockAxes = []
         self.snapSteps = self.defaultSnapSteps
-        self.drawHandlerRef = bpy.types.SpaceView3D.draw_handler_add(self.drawHandler, \
-            (), "WINDOW", "POST_VIEW")
-        self.batch = None
-        self.batch2 = None
+        ModalDrawBezierOp.addDrawHandler()
 
     def cleanup(self, context):
-        if(self.drawHandlerRef != None):
-            bpy.types.SpaceView3D.draw_handler_remove(self.drawHandlerRef, "WINDOW")
+        if(ModalDrawBezierOp.drawHandlerRef != None):
+            ModalDrawBezierOp.removeHandler()
             if(context.area and hasattr(context.space_data, 'region_3d')):
                 context.area.tag_redraw()
-            self.drawHandlerRef = None
+            ModalDrawBezierOp.drawHandlerRef = None
+
+    def cancelOp(self, context):
+        self.cleanup(context)
+        ModalDrawBezierOp.running = False
 
     def confirm(self, context, event):
         self.save(context, event)
@@ -1287,7 +1326,7 @@ class ModalDrawBezierOp(Operator):
             return {'PASS_THROUGH'}
 
         if(event.type == 'RET' or event.type == 'SPACE'):
-            self.confirm(context, event)   #subclass
+            self.confirm(context, event)
             return {'RUNNING_MODAL'}
 
         if(event.type == 'ESC'):
@@ -1449,12 +1488,12 @@ class ModalDrawBezierOp(Operator):
         else:
             colors.append(finishedColor)
 
-        self.batch = batch_for_shader(self.shader, \
+        ModalDrawBezierOp.batch = batch_for_shader(self.shader, \
             "LINES", {"pos": positions, "color": colors})
 
         if(addHandle and len(positions) >= 2):
             pos2 = [positions[-1], positions[-2]]
-            self.batch2 = batch_for_shader(self.shader, \
+            ModalDrawBezierOp.batch2 = batch_for_shader(self.shader, \
                 "POINTS", {"pos": pos2, "color": [tipColor, tipColor]})
 
         if context.area:
@@ -1546,38 +1585,18 @@ class ModalDrawBezierOp(Operator):
 
         return loc
 
-    def drawHandler(self):
-        if(not hasattr(self, 'batch') or self.batch == None):
-            return
-
-        bgl.glLineWidth(self.defLineWidth)
-        bgl.glPointSize(self.defPointSize)
-
-        self.batch.draw(self.shader)
-
-        if(hasattr(self, 'batch2') and self.batch2 != None):
-            self.batch2.draw(self.shader)
-
 
 class ModalFlexiBezierOp(ModalDrawBezierOp):
     bl_description = "Draw Bezier curves by manipulating end point handles"
     bl_idname = "wm.draw_flexi_bezier_curves"
-    bl_label = "Draw Bezier Curves"
+    bl_label = "Draw Flexi Bezier Curves"
     bl_options = {'REGISTER', 'UNDO'}
-
-    running = False
 
     def __init__(self):
         curveDispRes = 200
-        defLineWidth = 1.5
-        defPointSize = 7
-        super(ModalFlexiBezierOp, self).__init__(curveDispRes, defLineWidth, defPointSize)
+        super(ModalFlexiBezierOp, self).__init__(curveDispRes)
 
-    @classmethod
-    def poll(cls, context):
-        return not ModalFlexiBezierOp.running
-
-    def isValidContext(self, context):
+    def isDrawToolSelected(self, context):
         if(context.mode != 'OBJECT'):
             return False
 
@@ -1589,23 +1608,18 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
         return True
     
     def cancelOp(self, context):
-        self.cleanup(context)
-        ModalFlexiBezierOp.running = False
+        super(ModalFlexiBezierOp, self).cancelOp(context)
         bpy.app.handlers.undo_post.remove(self.postUndoRedo)
         bpy.app.handlers.redo_post.remove(self.postUndoRedo)
-        return {"CANCELLED"}
         
     def postUndoRedo(self, scene):
         self.updateSnapPts()
 
     def invoke(self, context, event):
-        if(ModalFlexiBezierOp.running):
-            return {"CANCELLED"}
 
-        if(not self.isValidContext(context)):
-            return self.cancelOp(context)
-
-        ModalFlexiBezierOp.running = True
+        # If the operator is invoked from context menu, enable the tool on toolbar
+        # ~ if(not self.isDrawToolSelected(context) and context.mode == 'OBJECT'):
+            # ~ bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
 
         # Object name -> [spline index, (startpt, endPt)]
         # Not used right now (maybe in case of large no of curves)
@@ -1618,8 +1632,9 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
         return super(ModalFlexiBezierOp, self).invoke(context, event)
 
     def modal(self, context, event):
-        if(not self.isValidContext(context)):
-            return self.cancelOp(context)
+        if(not self.isDrawToolSelected(context)):
+            self.cancelOp(context)
+            return {"CANCELLED"}
 
         return super(ModalFlexiBezierOp, self).modal(context, event)
 
@@ -1854,6 +1869,8 @@ def register():
     bpy.utils.register_class(BezierUtilsPanel)
     bpy.utils.register_class(ModalFlexiBezierOp)
     bpy.utils.register_tool(DrawFlexiBezierTool)
+    bpy.app.handlers.load_post.append(ModalDrawBezierOp.loadPostHandler)
+    bpy.app.handlers.load_pre.append(ModalDrawBezierOp.loadPreHandler)
 
 def unregister():
     bpy.utils.unregister_class(ModalMarkSegStartOp)
@@ -1872,3 +1889,5 @@ def unregister():
     bpy.utils.unregister_class(BezierUtilsPanel)
     bpy.utils.unregister_class(ModalFlexiBezierOp)
     bpy.utils.unregister_tool(DrawFlexiBezierTool)
+    bpy.app.handlers.load_post.remove(ModalDrawBezierOp.loadPostHandler)
+    bpy.app.handlers.load_pre.remove(ModalDrawBezierOp.loadPreHandler)
