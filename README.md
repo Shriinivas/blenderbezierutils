@@ -55,7 +55,7 @@ A few known issues I am still working on:
 - <strike> Snapping does not work for curves with modifiers. </strike> This is intended functionality.<br>
 - The Flexi Bezier button probably won't work after Blender restart. This is likely an issue with Blender and I have opened a bug report. Till it gets fixed, to activate the tool again in new session, just disable and enable the add-on from preferences menu (thanks Nic for this work-around).<br>
 - The part of the area under toolshelf and properties panel is excluded from drawing. Hide these elements to maximize the drawing area.<br>
-- Sometimes it may be necessary to reactivate the Flexi Bezier tool (click on some other tool and click back on Flexi Bezier button) to enable snapping.<br>
+- Sometimes it may be necessary to reactivate the Flexi Bezier tool (by clicking on some other tool and clicking back on Flexi Bezier button) to enable snapping.<br>
 
 In general, exercise caution when using this add-on in production, since all possible conditions have not been extensively tested.<br>
 You may report bug as comment on the youtube videos or on the issues page here on Github. I will try and fix them as soon as I can.
