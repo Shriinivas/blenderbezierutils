@@ -23,7 +23,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 55),
+    "version": (0, 58),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -1210,14 +1210,14 @@ def isOutside(context, event):
 # Get pt coords along curve defined by the four control pts (curvePts)
 # divPerUnitLength: No of subdivisions per unit length
 # (which is the same as no of pts excluding the end pts)
-# (Yes... this should be replaced with interpolate_bezier)
-def getPtsAlongBezier(context, curvePts, curveRes, normalized):
+def getPtsAlongBezier(curvePts, curveRes, context = None):
     if(len(curvePts) < 2):
         return []
 
     pts = []
+    minRes = 20
 
-    if(normalized):
+    if(context != None):
         viewDist = context.space_data.region_3d.view_distance
 
         # (the smaller the view dist (higher zoom level),
@@ -1230,27 +1230,93 @@ def getPtsAlongBezier(context, curvePts, curveRes, normalized):
         curve = [pt0[1], pt0[2], pt1[0], pt1[1]]
 
         #Add 2 for start and end
-        res = 2 + int((curve[2] - curve[1]).length * curveRes)
-        incr = 1 / (res - 1)
-
-        for j in range(0, res):
-            t = j * incr
-            c = (1 - t)
-            loc = (c ** 3) * curve[0] + 3 * (c ** 2) * t * curve[1] + \
-                3 * c * (t ** 2) * curve[2] + (t ** 3) * curve[3]
-            pts.append(loc)
+        res = int((curve[2] - curve[1]).length * curveRes)
+        if(res < minRes):
+            res = minRes
+            
+        locs = geometry.interpolate_bezier(pt0[1], pt0[2], pt1[0], pt1[1], res)
+        pts += locs
 
     return pts
+
+
+
+class SegDisplayInfo:
+    # Some static constants
+    SEL_SEG_COLOR = (.6, .8, 1, 1)
+    ADJ_SEG_COLOR = (.1, .4, .6, 1)
+    NONADJ_SEG_COLOR = (.2, .5, .8, 1)
+    SEL_TIP_COLOR = (1, 1, 1, 1)        
+    TIP_COLOR = (.8, .8, 0, 1)
+    MARKER_COLOR = (.8, 1, 0, 1)
+
+    DEF_CURVE_RES = 100
+            
+    HANDLE_COLOR_MAP ={'FREE': (.6, .05, .05, 1), 'VECTOR': (.4, .5, .2, 1), \
+        'ALIGNED': (1, .3, .3, 1), 'AUTO': (.8, .5, .2, 1)}
+        
+    # handleNos: 0: seg1-left, 1: seg1-right, 2: seg2-left, 3: seg2-right
+    # tipColors: leftHdl, pt, rightHdl for both ends (total 6) (None: don't show tip)
+    # Caller to make sure there are no tips without handle
+    def __init__(self, segPts, segColor, handleNos, tipColors):
+        self.segPts = segPts
+        self.segColor = segColor
+        self.handleNos = handleNos
+        self.tipColors = tipColors
+
+def getLinesFromPts(pts):
+    positions = []
+    for i, pt in enumerate(pts):
+        positions.append(pt)
+        if(i > 0 and i < (len(pts)-1)):
+            positions.append(pt)
+    return positions
+
+def getBezierBatches(shader, displayInfos, context = None, defHdlType = 'ALIGNED'):
+    lineCos = [] #segment is also made up of lines
+    lineColors = []
+    tipCos = []
+    tipColors = []
+
+    for i, displayInfo in enumerate(displayInfos):
+        segPts = displayInfo.segPts        
+        pts = getPtsAlongBezier(segPts, SegDisplayInfo.DEF_CURVE_RES, context)
+        segLineCos = getLinesFromPts(pts)
+        lineCos += segLineCos
+        lineColors += [displayInfo.segColor for j in range(0, len(segLineCos))]
+
+        for handleNo in displayInfo.handleNos:
+            ptIdx = int(handleNo / 2)
+            hdlIdx = handleNo % 2
+            lineCos += [segPts[ptIdx][hdlIdx], segPts[ptIdx][hdlIdx + 1]]
+            if(len(segPts[ptIdx]) < 5):
+                htype = defHdlType
+            else:
+                htype = segPts[ptIdx][3 + hdlIdx]
+                
+            lineColors += [SegDisplayInfo.HANDLE_COLOR_MAP[htype], \
+                SegDisplayInfo.HANDLE_COLOR_MAP[htype]]
+            
+        for j, tipColor in enumerate(displayInfo.tipColors):
+            if(tipColor != None):                
+                ptIdx = int(j / 3)
+                hdlIdx = j % 3            
+                tipCos.append(segPts[ptIdx][hdlIdx])
+                tipColors.append(tipColor)
+    lineBatch = batch_for_shader(shader, "LINES", {"pos": lineCos, "color": lineColors})
+    tipBatch = batch_for_shader(shader, "POINTS", {"pos": tipCos, "color": tipColors})
+
+    return lineBatch, tipBatch
 
 
 class ModalDrawBezierOp(Operator):
 
     drawHandlerRef = None
-    batch = None
-    batch2 = None
+    segBatch = None
+    tipBatch = None
     shader = None
     defLineWidth = 1.5
-    defPointSize = 7
+    defPointSize = 5
     running = False
     
     @classmethod
@@ -1273,11 +1339,51 @@ class ModalDrawBezierOp(Operator):
     def loadPreHandler(dummy):
         ModalDrawBezierOp.removeHandler()
     
+    #static method
+    def createBatch(context, curvePts, handlePtIdx, segColor = None, tipColor = None):
+        if(tipColor == None): tipColor = SegDisplayInfo.TIP_COLOR
+        ptCnt = len(curvePts)
+        displayInfos = []
+        for i in range(0, ptCnt - 1):
+            segPts = [curvePts[i], curvePts[i+1]]
+            if(i == ptCnt - 2):
+                handleNos = [[0, 1], [2, 3]][handlePtIdx]
+                tipColors = [None for i in range (0, 6)]
+                tipColors[handlePtIdx * 3: handlePtIdx * 3 + 3] = \
+                    [tipColor, None, tipColor]
+                sc = SegDisplayInfo.SEL_SEG_COLOR
+            else:
+                handleNos = []
+                tipColors = []
+                sc = SegDisplayInfo.NONADJ_SEG_COLOR
+
+            if(segColor != None):#overrides earlier setting
+                sc = segColor
+            
+            displayInfos.append(SegDisplayInfo(segPts, sc, handleNos, tipColors))
+                
+        ModalDrawBezierOp.segBatch, ModalDrawBezierOp.tipBatch = \
+            getBezierBatches(ModalDrawBezierOp.shader, displayInfos, context)
+        
+        if context.area:
+            context.area.tag_redraw()
+            
+    #static method
+    def drawHandler():
+        if(ModalDrawBezierOp.shader != None):
+            bgl.glLineWidth(ModalDrawBezierOp.defLineWidth)
+            bgl.glPointSize(ModalDrawBezierOp.defPointSize)
+
+            if(ModalDrawBezierOp.segBatch != None):
+                ModalDrawBezierOp.segBatch.draw(ModalDrawBezierOp.shader)
+                
+            if(ModalDrawBezierOp.tipBatch != None):
+                ModalDrawBezierOp.tipBatch.draw(ModalDrawBezierOp.shader)
+
     def __init__(self, curveDispRes = 20):
         #No of subdivisions in the displayed curve with view dist 1
         self.curveDispRes = curveDispRes
         ModalDrawBezierOp.drawHandlerRef = None
-        self.addHandle = True
         self.defaultSnapSteps = 3
 
     def invoke(self, context, event):
@@ -1336,29 +1442,29 @@ class ModalDrawBezierOp(Operator):
             return {'PASS_THROUGH'}
 
         if(isOutside(context, event)):
-            # ~ self.refreshAfterMove(context, event)
             if(len(self.curvePts) > 0):
                 return {'RUNNING_MODAL'}
             return {'PASS_THROUGH'}
 
         if(event.type == 'RET' or event.type == 'SPACE'):
             self.confirm(context, event)
+            self.redrawBezier(context, event)
             return {'RUNNING_MODAL'}
 
         if(event.type == 'ESC'):
             self.cleanup(context)
             self.initialize()
-            self.refreshAfterMove(context, event)
+            self.redrawBezier(context, event)
             return {'RUNNING_MODAL'}
 
         if(event.type == 'BACK_SPACE' and event.value == 'RELEASE'):
-            if(len(self.curvePts) > 1):
+            self.lockAxes = []                
+            if(len(self.curvePts) > 0):
                 self.curvePts.pop()
-                self.refreshAfterMove(context, event)
-            else:
+            if(len(self.curvePts) <= 1): #Because there is an extra point (the current one)
                 self.curvePts = []
                 self.capture = False
-            self.lockAxes = []                
+            self.redrawBezier(context, event)
             return {'RUNNING_MODAL'}
 
         if(event.type in {'LEFT_CTRL', 'RIGHT_CTRL'}):
@@ -1412,6 +1518,7 @@ class ModalDrawBezierOp(Operator):
             if(self.clickT !=  None):
                 if((t - self.clickT) < 0.25):
                     self.confirm(context, event)
+                    self.redrawBezier(context, event)                    
                     return {'RUNNING_MODAL'}
                     
             self.clickT = t
@@ -1423,17 +1530,16 @@ class ModalDrawBezierOp(Operator):
             else:
                 loc = self.get3dLocWithSnap(context, event)
                 
-            if(len(self.curvePts) == 1): # len can't be zero
+            if(len(self.curvePts) == 1): 
                 self.curvePts[0][2] = loc # changes only rt handle
 
             self.curvePts.append([loc, loc, loc])
-            self.createBatch(context, event, handlePtIdx = -2, \
-                addHandle = self.addHandle)
+            self.redrawBezier(context, event)
             return {'RUNNING_MODAL'}
 
         if (event.type == 'MOUSEMOVE'):
             bpy.context.window.cursor_set("DEFAULT")            
-            self.refreshAfterMove(context, event)
+            self.redrawBezier(context, event)
             return {'RUNNING_MODAL'}
 
         if(len(self.curvePts) > 0 and event.type in {'X', 'Y', 'Z', 'U'}):
@@ -1447,84 +1553,35 @@ class ModalDrawBezierOp(Operator):
         
         return {'PASS_THROUGH'}
 
-    def refreshAfterMove(self, context, event):
+    def redrawBezier(self, context, event):
         loc = self.get3dLocWithSnap(context, event)
-        if(not self.capture and len(self.curvePts) > 0):
-            self.curvePts[-1] = [loc, loc, loc]
-            handlePtIdx = -2
+        rtHandlePt = [] # additional things to draw other than curves and handles
+        segColor = None
+        tipColor = None
+        if(not self.capture):
+            if(len(self.curvePts) == 0):
+                # Marker (dot), if drawing not started 
+                # (drawn as seg with all six pts at the same location)
+                rtHandlePt = [[loc, loc, loc], [loc, loc, loc]] 
+                tipColor = SegDisplayInfo.MARKER_COLOR
+            else:
+                self.curvePts[-1] = [loc, loc, loc]
+            handlePtIdx = 0
         else:
-            if(len(self.curvePts) > 1):
+            if(len(self.curvePts) == 1):
+                # First handle (straight line), if user drags first pt
+                # (first point from CurvePts, second the current location)
+                rtHandlePt = [[loc, loc, loc]]
+                segColor = SegDisplayInfo.HANDLE_COLOR_MAP['ALIGNED']
+            elif(len(self.curvePts) > 1):
                 end = self.curvePts[-1][1]
                 ltHandle = end - (loc - end)
                 rtHandle = end + (loc - end)
                 self.curvePts[-1][0] = ltHandle
                 self.curvePts[-1][2] = rtHandle
-            handlePtIdx  = -1
-        self.createBatch(context, event, handlePtIdx = handlePtIdx, \
-            addHandle = self.addHandle)
-
-    def getLinesFromPts(self, pts):
-        positions = []
-        for i, pt in enumerate(pts):
-            positions.append(pt)
-            if(i > 0 and i < (len(pts)-1)):
-                positions.append(pt)
-        return positions
-
-
-    def getPositions(self, context, event, handlePtIdx, addHandle):
-        if(len(self.curvePts) <= 1):
-            loc = self.get3dLocWithSnap(context, event)
-            if(len(self.curvePts) == 1):
-                #Draw straight line (no change in pts)
-                positions = [self.curvePts[0][1], loc]
-            else:
-                positions = [loc, loc] #Will draw the dot twice.. ok for now.
-        else:
-            pts = getPtsAlongBezier(context, self.curvePts,
-                self.curveDispRes, normalized = True)
-
-            positions = self.getLinesFromPts(pts)
-            if(addHandle == True):
-                positions += [self.curvePts[handlePtIdx][0],
-                    self.curvePts[handlePtIdx][2]]
-
-        return positions
-
-    def createBatch(self, context, event, handlePtIdx, addHandle):
-        positions = self.getPositions(context, event, handlePtIdx, addHandle)
-        finishedColor = (1, 0, 0, 1)
-        handleColor = (0, 1, 1, 1)
-        tipColor = (.8, 1, 0, 1)
-
-        colors = [finishedColor for i in range(0, len(positions) - 1)]
-        if(addHandle):
-            colors.append(handleColor)
-        else:
-            colors.append(finishedColor)
-
-        ModalDrawBezierOp.batch = batch_for_shader(self.shader, \
-            "LINES", {"pos": positions, "color": colors})
-
-        if(addHandle and len(positions) >= 2):
-            pos2 = [positions[-1], positions[-2]]
-            ModalDrawBezierOp.batch2 = batch_for_shader(self.shader, \
-                "POINTS", {"pos": pos2, "color": [tipColor, tipColor]})
-
-        if context.area:
-            context.area.tag_redraw()
-            
-    #static method
-    def drawHandler():
-        if(ModalDrawBezierOp.shader != None):
-            bgl.glLineWidth(ModalDrawBezierOp.defLineWidth)
-            bgl.glPointSize(ModalDrawBezierOp.defPointSize)
-
-            if(ModalDrawBezierOp.batch != None):
-                ModalDrawBezierOp.batch.draw(ModalDrawBezierOp.shader)
-                
-            if(ModalDrawBezierOp.batch2 != None):
-                ModalDrawBezierOp.batch2.draw(ModalDrawBezierOp.shader)
+            handlePtIdx  = 1
+        ModalDrawBezierOp.createBatch(context, self.curvePts + rtHandlePt, \
+            handlePtIdx = handlePtIdx, segColor = segColor, tipColor = tipColor)
 
     def get3dLocWithSnap(self, context, event):
         return self.get3dLoc(context, event, snapToObj = self.alt,
