@@ -23,7 +23,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 585),
+    "version": (0, 58, 6),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -1862,16 +1862,29 @@ class ModalFlexiBezierOp(ModalDrawBezierOp):
                     diffV = (currPt.co - prevPt.co)
                     if(prevPt.handle_left_type == 'ALIGNED'):
                         prevPt.handle_left_type = 'FREE'
-                    prevPt.handle_right_type = 'VECTOR'
-                    prevPt.handle_right = .33 * diffV / diffV.length
-                    currPt.handle_left = -.33 * diffV / diffV.length
-                    currPt.handle_left_type = 'VECTOR'
+                    prevPt.handle_right_type = 'FREE'
+                    prevPt.handle_right = prevPt.co +  0.25 * diffV
+                    currPt.handle_left = currPt.co -  0.25 * diffV
+                    currPt.handle_left_type = 'FREE'
                     currPt.handle_right_type = 'FREE'
             else:
                 currPt.handle_left = invM @ pt[0]
-                currPt.handle_left_type = 'ALIGNED'
-                currPt.handle_right_type = 'ALIGNED'
+                if(i == 0 or i == len(self.curvePts) -1):
+                    currPt.handle_left_type = 'FREE'  
+                    currPt.handle_right_type = 'FREE'                    
+                else:
+                    currPt.handle_left_type = 'ALIGNED'  
+                    currPt.handle_right_type = 'ALIGNED'
             prevPt = currPt
+            
+        diffV = (spline.bezier_points[-1].co - spline.bezier_points[0].co)
+        pt0 = spline.bezier_points[0]
+        pt1 = spline.bezier_points[-1]
+        if(diffV.length > 0 and pt0.handle_left == pt0.co and pt1.handle_right == pt1.co):
+            pt0.handle_left = pt0.co + .25 * diffV
+            pt0.handle_left_type = 'FREE'
+            pt1.handle_right = pt1.co - .25 * diffV
+            pt1.handle_right_type = 'FREE'
 
         return obj
 
