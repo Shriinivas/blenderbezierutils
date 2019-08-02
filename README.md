@@ -3,7 +3,7 @@
 <b>Add-on Version: 0.58.6 </b>
 
 This add-on contains several tools for working with Bezier curves. <br>
-Supported Blender Version: 2.8 Beta <br>
+Supported Blender Version: 2.8 <br>
 
 The tools are arranged in a collapsible Panel, grouped according to the functionality type. 
 Here is a brief overview of a few of the tools in this add-on:
