@@ -44,7 +44,8 @@ This tool is available in object mode via a new button on the toolshelf (short c
 <b>Edit Curve and move handles and end points: </b> When the tool is activated, moving a mouse cursor in the 3d viewport would highlight the individual curve segments under the mouse cursor. Clicking on a segment will make the segment active and it's handles will be visible. You can drag any point on the curve to edit it. Releasing the button will apply the changes to the curve. Also when the handles are visible, bringing the mouse cursor in the vicinity of any of the handle points will highlight that point (bright green), indicating the mouse click will operate on it. You can move the handles and segment points by dragging the mouse pointer. Releasing the mouse button makes the changes permanent.<br><br>
 <b>Adding a vertex: </b> Hold down control and click the mouse on any location on curve to add a vertex at that position. If you also hold down shift along with control the added point will have aligned handles. The handles will be of type vector if alt and control are held down while pressing the mouse button.<br><br>
 <b>Deleting a vertex or handle point: </b> 
-Select any end point (the selected point is marked in dark green) and press del to delete it. Pressing del when a handle point is selected will align it with the other point of the segment. <br>
+Select any end point (the selected point is marked in dark green) and press del to delete it. Pressing del when a handle point is selected will align it with the other point of the segment. <br><br>
+You can toggle between Flexi Draw and Flexi Edit by pressing e.<br>
 
 # Installation
 - Download blenderbezierutils.py
