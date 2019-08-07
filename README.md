@@ -37,7 +37,7 @@ The snapping gets adapted to the viewport zoom level. <br>
 Snapping and locking can be combined together. So user can hold down both control and shift to snap to grid as well as restrict the angle. Likewise, user can press shift-Z to lock to XY plane and then hold shift while moving the mouse to restrict the angle between the segment end points.
 
 <b>Demo Video:</b> https://youtu.be/Wo-RzVI05po<br>
-<b>Overview of Flexi Bezier Tool:</b> https://youtu.be/C9PXp0XHgYQ
+<b>Overview of Flexi Draw Bezier Tool:</b> https://youtu.be/C9PXp0XHgYQ
 
 # Flexi Edit Bezier Tool
 This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). With it You can 1) edit a Bezier curve by dragging a point on the curve 2) Move Segment endpoints and manipulate handles 3) Add or delete a vertex at any arbitrary location on the curve <br><br>
@@ -48,7 +48,7 @@ Select any end point (the selected point is marked in dark green) and press del 
 You can toggle between Flexi Draw and Flexi Edit by pressing e.<br>
 
 <b>Demo Video:</b> https://youtu.be/80ZLjjgwPAw<br>
-<b>Overview of Flexi Bezier Tool:</b> https://youtu.be/enQHGmluQIw
+<b>Overview of Flexi Edit Bezier Tool:</b> https://youtu.be/enQHGmluQIw
 
 # Installation
 - Download blenderbezierutils.py
