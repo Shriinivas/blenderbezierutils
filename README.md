@@ -58,7 +58,7 @@ After installation, a new 'Bezier Utilities' tab is displayed in object mode on 
 
 # Credits
 The functionality of editing curve by grabbing a point on it is adapted from Inkscape edit curve tool: https://gitlab.com/inkscape/inkscape/blob/master/src/ui/tool/curve-drag-point.cpp <br>
-I am grateful to the author of the module for granting the permission to publish the adaptation under MIT license.
+I am grateful to the authors of the module for making this great piece of code accessible to everyone and also for granting me the permission to publish the adaptation under MIT license.
 
 # Known Issues
 A few known issues, which need to be fixed:
