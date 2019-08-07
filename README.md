@@ -17,10 +17,10 @@ Here is a brief overview of a few of the tools in this add-on:
 - Join Bezier Curves. Joins the selected objects at their end points. If the 'Join optimized' option is unchecked the curves are joined in their order in the collection (alphabetical order of their names). If it is checked, the next curve to join is chosen based on its distance (shortest) from the current curve; the curve direction is reversed if needed. With the 'Join With Straight Segments' option, the curve objects are joined with straight line segments, regardless of the end point handle types.
 - Mark Start Vertex (edit mode): Marks the start vertex of a closed (cyclic) splines of the selected curve objects. If the curves have shape keys, they may get distorted with change in the start vertex. (This tool is the same as the one included in the <a href ='https://github.com/Shriinivas/assignshapekey'>Assign Shape Keys</a> add-on.)<br> 
 
-# Flexi Bezier Tool
+# Flexi Draw Bezier Tool
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/drawdemo.gif)<br>
 This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). It allows drawing Bezier curves by manipulating the control points.<br>
-<b>Drawing the curve: </b> To draw the curve activate the tool by clicking the Flexi Bezier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. <br>
+<b>Drawing the curve: </b> To draw the curve activate the tool by clicking the Flexi Draw Bezier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. <br>
 <b>Undo:</b> While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve op can be undone by pressing ctrl-Z  <br><br>
 <b>Snapping Options</b> 
 - Holding down ctrl while moving mouse will snap the point or handle to the grid. 
@@ -38,7 +38,14 @@ Snapping and locking can be combined together. So user can hold down both contro
 
 <b>Demo Video:</b> https://youtu.be/Wo-RzVI05po<br>
 <b>Overview of Flexi Bezier Tool:</b> https://youtu.be/C9PXp0XHgYQ
-  
+
+# Flexi Edit Bezier Tool
+This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). With it You can 1) edit a Bezier curve by dragging a point on the curve 2) Move Segment endpoints and manipulate handles 3) Add or delete a vertex at any arbitrary location on the curve <br><br>
+<b>Edit Curve and move handles and end points: </b> When the tool is activated, moving a mouse cursor in the 3d viewport would highlight the individual curve segments under the mouse cursor. Clicking on a segment will make the segment active and it's handles will be visible. You can drag any point on the curve to edit it. Releasing the button will apply the changes to the curve. Also when the handles are visible, bringing the mouse cursor in the vicinity of any of the handle points will highlight that point (bright green), indicating the mouse click will operate on it. You can move the handles and segment points by dragging the mouse pointer. Releasing the mouse button makes the changes permanent.<br><br>
+<b>Adding a vertex: </b> Hold down control and click the mouse on any location on curve to add a vertex at that position. If you also hold down shift along with control the added point will have aligned handles. The handles will be of type vector if alt and control are held down while pressing the mouse button.<br><br>
+<b>Deleting a vertex or handle point: </b> 
+Select any end point (the selected point is marked in dark green) and press del to delete it. Pressing del when a handle point is selected will align it with the other point of the segment. <br>
+
 # Installation
 - Download blenderbezierutils.py
 - Open Blender and select File->User Preferences
@@ -46,18 +53,22 @@ Snapping and locking can be combined together. So user can hold down both contro
 - Select the downloaded file
 - Check the 'Bezier Utilities' option in the add-ons dialog
 
-After installation, a new 'Bezier Utilities' tab is displayed in object mode on 'Active Tool and Workspace settings' tab on the properties panel. There will also appear a new button - Flexi Bezier Tool - on the toolshelf.
+After installation, a new 'Bezier Utilities' tab is displayed in object mode on 'Active Tool and Workspace settings' tab on the properties panel. There will also appear two new buttons - Flexi Draw Bezier and Flexi Edit Bezier - on the toolshelf.
+
+# Credits
+The functionality of editing curve by grabbing a point on it is adapted from Inkscape edit curve tool: https://gitlab.com/inkscape/inkscape/blob/master/src/ui/tool/curve-drag-point.cpp <br>
+I am grateful to the author of the module for granting the permission to publish the adaptation under MIT license.
 
 # Known Issues
-A few known issues I am still working on:
+A few known issues, which need to be fixed:
 - <strike>Starting a new blend while the Flexi Bezier is active causes the tool to stop working. The workaround is to select any other tool from the toolbar before starting a new file.</strike> This is fixed in version 0.51.
 - <strike>Clicking on the Flexi Bezier button while it is already active starts the curve from under the button on the viewport. In this case just press escape to undo the unwanted curve. The same thing may happen while clicking on the Blender menu.</strike> This is fixed in version 0.55.<br>
-- The Flexi Bezier button probably won't work after Blender restart. This is likely an issue with Blender and I have opened a bug report. Till it gets fixed, to activate the tool again in new session, just disable and enable the add-on from preferences menu (thanks Nic for this work-around).<br>
-- To enable snapping, sometimes it may be required to reactivate the Flexi Bezier tool (by clicking on some other tool and clicking back on Flexi Bezier button).<br>
+- The Flexi Draw Bezier and Flexi Edit Bezier probably won't work after Blender restart. This is likely an issue with Blender and there is a bug report open related to it ( https://developer.blender.org/T60766 ). Till it gets fixed, to activate the tools again in the new session, just disable and enable the add-on from preferences menu (thanks Nic for this work-around).<br>
+- In Flexi Draw Bezier, to enable snapping, sometimes it may be required to reactivate the Flexi Bezier tool (by clicking on some other tool and clicking back on Flexi Bezier button).<br>
 
 # Limitations
-- Snapping does not work for curves with modifiers. This is intended functionality.<br>
-- The part of the area under toolshelf and properties panel is excluded from drawing. Hide these elements to maximize the drawing area.<br>
+- In Flexi Draw Bezier, snapping does not work for curves with modifiers. This is intended functionality.<br>
+- In Flexi Draw Bezier, the part of the area under toolshelf and properties panel is excluded from drawing. Hide these elements to maximize the drawing area.<br>
 
 In general, exercise caution when using this add-on in production, since all possible conditions have not been extensively tested.<br>
 You may report bug as comment on the youtube videos or on the issues page here on Github. I will try and fix them as soon as I can.
