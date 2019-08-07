@@ -47,6 +47,9 @@ This tool is available in object mode via a new button on the toolshelf (short c
 Select any end point (the selected point is marked in dark green) and press del to delete it. Pressing del when a handle point is selected will align it with the other point of the segment. <br><br>
 You can toggle between Flexi Draw and Flexi Edit by pressing e.<br>
 
+<b>Demo Video:</b> https://youtu.be/80ZLjjgwPAw<br>
+<b>Overview of Flexi Bezier Tool:</b> https://youtu.be/enQHGmluQIw
+
 # Installation
 - Download blenderbezierutils.py
 - Open Blender and select File->User Preferences
