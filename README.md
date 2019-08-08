@@ -1,6 +1,6 @@
 
 # Blender Add-on with Bezier Utility Operations
-<b>Add-on Version: 0.8 </b>
+<b>Add-on Version: 0.8.1 </b>
 
 This add-on contains several tools for working with Bezier curves. <br>
 Supported Blender Version: 2.8 <br>
@@ -62,7 +62,7 @@ After installation, a new 'Bezier Utilities' tab is displayed in object mode on 
 
 # Credits
 The functionality of editing curve by grabbing a point on it is adapted from Inkscape edit curve tool: https://gitlab.com/inkscape/inkscape/blob/master/src/ui/tool/curve-drag-point.cpp <br>
-I am grateful to the authors of the module for making this great piece of code accessible to everyone and also for granting me the permission to publish the adaptation under MIT license.
+I am grateful to the authors of the module for making this great piece of code accessible to everyone.
 
 # Known Issues
 A few known issues, which need to be fixed:
