@@ -10,8 +10,8 @@
 #
 
 import bpy, bmesh, bgl, gpu
-from bpy.props import BoolProperty, IntProperty, EnumProperty
-from bpy.types import Panel, Operator, WorkSpaceTool
+from bpy.props import BoolProperty, IntProperty, EnumProperty, StringProperty
+from bpy.types import Panel, Operator, WorkSpaceTool, AddonPreferences
 from mathutils import Vector, Matrix, geometry, kdtree
 from math import log, atan, tan, pi, radians
 from bpy_extras.view3d_utils import region_2d_to_vector_3d, region_2d_to_location_3d
@@ -23,7 +23,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 8),
+    "version": (0, 8, 1),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -2996,49 +2996,75 @@ class FlexiEditBezierTool(WorkSpaceTool):
          {"properties": []}),
     )
 
+
+def updatePanel(self, context):
+    try:
+        panel = BezierUtilsPanel
+        if "bl_rna" in panel.__dict__:
+            bpy.utils.unregister_class(panel)
+
+        panel.bl_category = context.preferences.addons[__name__].preferences.category
+        bpy.utils.register_class(panel)
+
+    except:
+        print("BezierUtils: Updating Panel locations has failed")
+        
+class BezierUtilsPreferences(AddonPreferences):
+    bl_idname = __name__
+
+    category: StringProperty(
+            name = "Tab Category",
+            description = "Choose a name for the category of the panel",
+            default = "Tool",
+            update = updatePanel
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row()
+        col = row.column()
+        col.label(text="Tab Category:")
+        col.prop(self, "category", text="")
+
+classes = (
+    ModalMarkSegStartOp,
+    SeparateSplinesObjsOp,
+    SplitBezierObjsOp,
+    splitBezierObjsPtsOp,
+    JoinBezierSegsOp,
+    CloseSplinesOp,
+    CloseStraightOp,
+    OpenSplinesOp,
+    RemoveDupliVertCurveOp,
+    convertTo2DMeshOp,
+    SetHandleTypesOp,
+    SelectInCollOp,
+    InvertSelOp,
+    BezierUtilsPanel,
+    ModalFlexiDrawBezierOp,
+    ModalFlexiEditBezierOp,
+    BezierUtilsPreferences,
+)
+
 def register():
-    bpy.utils.register_class(ModalMarkSegStartOp)
-    bpy.utils.register_class(SeparateSplinesObjsOp)
-    bpy.utils.register_class(SplitBezierObjsOp)
-    bpy.utils.register_class(splitBezierObjsPtsOp)
-    bpy.utils.register_class(JoinBezierSegsOp)
-    bpy.utils.register_class(CloseSplinesOp)
-    bpy.utils.register_class(CloseStraightOp)
-    bpy.utils.register_class(OpenSplinesOp)
-    bpy.utils.register_class(RemoveDupliVertCurveOp)
-    bpy.utils.register_class(convertTo2DMeshOp)
-    bpy.utils.register_class(SetHandleTypesOp)
-    bpy.utils.register_class(SelectInCollOp)
-    bpy.utils.register_class(InvertSelOp)
-    bpy.utils.register_class(BezierUtilsPanel)
-    bpy.utils.register_class(ModalFlexiDrawBezierOp)
-    bpy.utils.register_class(ModalFlexiEditBezierOp)
+    for cls in classes:
+        bpy.utils.register_class(cls)
+    
     bpy.utils.register_tool(FlexiDrawBezierTool)
     bpy.utils.register_tool(FlexiEditBezierTool)
+    
     bpy.app.handlers.load_post.append(ModalDrawBezierOp.loadPostHandler)
     bpy.app.handlers.load_pre.append(ModalDrawBezierOp.loadPreHandler)
     bpy.app.handlers.load_post.append(ModalFlexiEditBezierOp.loadPostHandler)
     bpy.app.handlers.load_pre.append(ModalFlexiEditBezierOp.loadPreHandler)
 
 def unregister():
-    bpy.utils.unregister_class(ModalMarkSegStartOp)
-    bpy.utils.unregister_class(SeparateSplinesObjsOp)
-    bpy.utils.unregister_class(SplitBezierObjsOp)
-    bpy.utils.unregister_class(splitBezierObjsPtsOp)
-    bpy.utils.unregister_class(JoinBezierSegsOp)
-    bpy.utils.unregister_class(CloseSplinesOp)
-    bpy.utils.unregister_class(CloseStraightOp)
-    bpy.utils.unregister_class(OpenSplinesOp)
-    bpy.utils.unregister_class(RemoveDupliVertCurveOp)
-    bpy.utils.unregister_class(convertTo2DMeshOp)
-    bpy.utils.unregister_class(SetHandleTypesOp)
-    bpy.utils.unregister_class(SelectInCollOp)
-    bpy.utils.unregister_class(InvertSelOp)
-    bpy.utils.unregister_class(BezierUtilsPanel)
-    bpy.utils.unregister_class(ModalFlexiDrawBezierOp)
-    bpy.utils.unregister_class(ModalFlexiEditBezierOp)
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+        
     bpy.utils.unregister_tool(FlexiDrawBezierTool)
     bpy.utils.unregister_tool(FlexiEditBezierTool)
+    
     bpy.app.handlers.load_post.remove(ModalDrawBezierOp.loadPostHandler)
     bpy.app.handlers.load_pre.remove(ModalDrawBezierOp.loadPreHandler)
     bpy.app.handlers.load_post.remove(ModalFlexiEditBezierOp.loadPostHandler)
