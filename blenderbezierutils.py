@@ -1354,8 +1354,8 @@ def getPtsAlongBezier(curvePts, curveRes, context = None):
     pts = []
     minRes = 20
 
-    if(context != None and context.space_data != None and \
-        hasattr(context.space_data, 'region_3d')):
+    if(context != None and hasattr(context, 'space_data') and \
+        context.space_data != None and hasattr(context.space_data, 'region_3d')):
         viewDist = context.space_data.region_3d.view_distance
 
         # (the smaller the view dist (higher zoom level),
@@ -1552,9 +1552,11 @@ class ModalDrawBezierOp(Operator):
     @persistent
     def loadPostHandler(dummy):
         ModalDrawBezierOp.addDrawHandler()
-        ModalDrawBezierOp.createBatch(bpy.context, [], [])
+        if(ModalDrawBezierOp.shader != None):
+            ModalDrawBezierOp.createBatch(bpy.context, [], [])
         ModalDrawBezierOp.running = False
 
+    @persistent
     def loadPreHandler(dummy):
         ModalDrawBezierOp.removeDrawHandler()
 
@@ -2690,22 +2692,23 @@ class ModalFlexiEditBezierOp(Operator):
         ModalFlexiEditBezierOp.lineBatch, ModalFlexiEditBezierOp.pointBatch = \
             getBezierBatches(ModalFlexiEditBezierOp.shader, displayInfos, context)
 
-        if context.area:
+        if(hasattr(context, 'area') and context.area != None):
             context.area.tag_redraw()
 
     @persistent
     def loadPostHandler(dummy):
         ModalFlexiEditBezierOp.addDrawHandler()
-        ModalFlexiEditBezierOp.refreshDisplay(bpy.context, [])
+        if(ModalFlexiEditBezierOp.shader != None):
+            ModalFlexiEditBezierOp.refreshDisplay(bpy.context, [])
         ModalFlexiEditBezierOp.running = False
 
+    @persistent
     def loadPreHandler(dummy):
         ModalFlexiEditBezierOp.removeDrawHandler(bpy.context)
 
     # Will be called after the curve is changed (by the tool or externally)
     # So handle all possible conditions
     def updateAfterGeomChange(self, scene = None, context = bpy.context):
-        print(type(scene))
         ei = self.editCurveInfo
         displayInfos = []
         if(ei != None and bpy.data.objects.get(ei.objName) != None):
