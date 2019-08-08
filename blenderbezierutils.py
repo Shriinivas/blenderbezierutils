@@ -1054,13 +1054,12 @@ class ModalMarkSegStartOp(bpy.types.Operator):
         wm.event_timer_remove(self._timer)
         self.markerState.removeMarkers(context)
         MarkerController.resetShowHandleState(context, self.handleStates)
-        context.window_manager.AssignShapeKeyParams.markVertex = False
+        bpy.context.scene.markVertex = False
 
     def modal (self, context, event):
-        params = context.window_manager.AssignShapeKeyParams
 
         if(context.mode  == 'OBJECT' or event.type == "ESC" or\
-            not context.window_manager.AssignShapeKeyParams.markVertex):
+            not bpy.context.scene.markVertex):
             self.cleanup(context)
             return {'CANCELLED'}
 
