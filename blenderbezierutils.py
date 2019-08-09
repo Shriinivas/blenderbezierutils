@@ -23,7 +23,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 8, 1),
+    "version": (0, 8, 2),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -1645,7 +1645,8 @@ class ModalDrawBezierOp(Operator):
             return {'PASS_THROUGH'}
 
         if((event.type == 'E' or event.type == 'e') and event.value == 'RELEASE'):
-            bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname)
+            # ~ bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname) (T60766)
+            bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
             return {"RUNNING_MODAL"}
 
         if(event.type == 'RET' or event.type == 'SPACE'):
@@ -1889,7 +1890,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
         tool = context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
 
-        if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname):
+        # ~ if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname): (T60766)
+        if(tool == None or tool.idname != 'flexi_bezier.draw_tool'):
             return False
 
         return True
@@ -1906,7 +1908,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
         # If the operator is invoked from context menu, enable the tool on toolbar
         if(not self.isDrawToolSelected(context) and context.mode == 'OBJECT'):
-            bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname)
+            # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
+            bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
 
         # Object name -> [spline index, (startpt, endPt)]
         # Not used right now (maybe in case of large no of curves)
@@ -2133,21 +2136,21 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 pass
         bpy.ops.ed.undo_push()
 
+#(T60766)
+# ~ class FlexiDrawBezierTool(WorkSpaceTool):
+    # ~ bl_space_type='VIEW_3D'
+    # ~ bl_context_mode='OBJECT'
 
-class FlexiDrawBezierTool(WorkSpaceTool):
-    bl_space_type='VIEW_3D'
-    bl_context_mode='OBJECT'
-
-    bl_idname = "flexi_bezier.draw_tool"
-    bl_label = "Flexi Draw Bezier"
-    bl_description = ("Flexible drawing of Bezier curves in object mode")
-    bl_icon = "ops.gpencil.extrude_move"
-    bl_widget = None
-    bl_operator = "wm.flexi_draw_bezier_curves"
-    bl_keymap = (
-        ("wm.flexi_draw_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
-         {"properties": []}),
-    )
+    # ~ bl_idname = "flexi_bezier.draw_tool"
+    # ~ bl_label = "Flexi Draw Bezier"
+    # ~ bl_description = ("Flexible drawing of Bezier curves in object mode")
+    # ~ bl_icon = "ops.gpencil.extrude_move"
+    # ~ bl_widget = None
+    # ~ bl_operator = "wm.flexi_draw_bezier_curves"
+    # ~ bl_keymap = (
+        # ~ ("wm.flexi_draw_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
+         # ~ {"properties": []}),
+    # ~ )
 
 ################### Flexi Edit Bezier Curve ###################
 
@@ -2673,7 +2676,8 @@ class ModalFlexiEditBezierOp(Operator):
             return False
 
         tool = context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
-        if(tool == None or tool.idname != FlexiEditBezierTool.bl_idname):
+        # ~ if(tool == None or tool.idname != FlexiEditBezierTool.bl_idname): (T60766)
+        if(tool == None or tool.idname != 'flexi_bezier.edit_tool'):
             return False
         return True
 
@@ -2793,7 +2797,8 @@ class ModalFlexiEditBezierOp(Operator):
             bpy.context.window.cursor_set("DEFAULT")
 
         if((event.type == 'E' or event.type == 'e') and event.value == 'RELEASE'):
-            bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname)
+            # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
+            bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
             return {"RUNNING_MODAL"}
 
         if(event.type == 'DEL' and event.value == 'PRESS'):
@@ -2984,21 +2989,129 @@ class ModalFlexiEditBezierOp(Operator):
 
 
 
-class FlexiEditBezierTool(WorkSpaceTool):
-    bl_space_type='VIEW_3D'
-    bl_context_mode='OBJECT'
+# ~ class FlexiEditBezierTool(WorkSpaceTool):
+    # ~ bl_space_type='VIEW_3D'
+    # ~ bl_context_mode='OBJECT'
 
-    bl_idname = "flexi_bezier.edit_tool"
-    bl_label = "Flexi Edit Bezier"
-    bl_description = ("Flexible editing of Bezier curves in object mode")
-    bl_icon = "ops.pose.breakdowner"
-    bl_widget = None
-    bl_operator = "wm.modal_flexi_edit_bezier"
-    bl_keymap = (
-        ("wm.modal_flexi_edit_bezier", {"type": 'MOUSEMOVE', "value": 'ANY'},
-         {"properties": []}),
-    )
+    # ~ bl_idname = "flexi_bezier.edit_tool"
+    # ~ bl_label = "Flexi Edit Bezier"
+    # ~ bl_description = ("Flexible editing of Bezier curves in object mode")
+    # ~ bl_icon = "ops.pose.breakdowner"
+    # ~ bl_widget = None
+    # ~ bl_operator = "wm.modal_flexi_edit_bezier"
+    # ~ bl_keymap = (
+        # ~ ("wm.modal_flexi_edit_bezier", {"type": 'MOUSEMOVE', "value": 'ANY'},
+         # ~ {"properties": []}),
+    # ~ )
 
+# ****** Temporary Workaround for Tool Not working on restart (T60766) *******
+
+from bpy.utils.toolsystem import ToolDef
+kmToolFlexiDrawBezier = "3D View Tool: Object, Flexi Draw Bezier"
+kmToolFlexiEditBezier = "3D View Tool: Object, Flexi Edit Bezier"
+
+@ToolDef.from_fn
+def toolFlexiDraw():
+    return dict(idname = "flexi_bezier.draw_tool",
+        label = "Flexi Draw Bezier",
+        description = "Flexible drawing of Bezier curves in object mode",
+        icon = "ops.gpencil.extrude_move",
+        widget = None,
+        keymap = kmToolFlexiDrawBezier,)
+
+@ToolDef.from_fn
+def toolFlexiEdit():
+    return dict(idname = "flexi_bezier.edit_tool",
+        label = "Flexi Edit Bezier",
+        description = "Flexible editing of Bezier curves in object mode",
+        icon = "ops.pose.breakdowner",
+        widget = None,
+        keymap = kmToolFlexiEditBezier,)
+
+def getToolList(spaceType, contextMode):
+    from bl_ui.space_toolsystem_common import ToolSelectPanelHelper
+    cls = ToolSelectPanelHelper._tool_class_from_space_type(spaceType)
+    return cls._tools[contextMode]
+    
+def registerFlexiBezierTools():
+    tools = getToolList('VIEW_3D', 'OBJECT')
+    tools += None, toolFlexiDraw
+    tools += None, toolFlexiEdit
+    del tools
+
+def unregisterFlexiBezierTools():
+    tools = getToolList('VIEW_3D', 'OBJECT')
+    index = tools.index(toolFlexiDraw) - 1 #None
+    tools.pop(index)
+    tools.remove(toolFlexiDraw)
+    del index
+
+    index = tools.index(toolFlexiEdit) - 1 #None
+    tools.pop(index)
+    tools.remove(toolFlexiEdit)
+
+    del tools
+    del index
+
+keymapDraw = (kmToolFlexiDrawBezier,
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": [
+            ("wm.flexi_draw_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
+             {"properties": []}),
+        ]},)
+
+emptyKeymapDraw = (kmToolFlexiDrawBezier,
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": []},)
+
+keymapEdit = (kmToolFlexiEditBezier,
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": [
+            ("wm.modal_flexi_edit_bezier", {"type": 'MOUSEMOVE', "value": 'ANY'},
+             {"properties": []}),
+        ]},)
+
+emptyKeymapEdit = (kmToolFlexiEditBezier,
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": []},)
+
+def registerFlexiBezierKeymaps():
+    keyconfigs = bpy.context.window_manager.keyconfigs
+    kc_defaultconf = keyconfigs.default
+    kc_addonconf = keyconfigs.addon
+
+    from bl_keymap_utils.io import keyconfig_init_from_data
+    keyconfig_init_from_data(kc_defaultconf, [emptyKeymapDraw, emptyKeymapEdit])    
+    keyconfig_init_from_data(kc_addonconf, [keymapDraw, keymapEdit])
+
+def unregisterFlexiBezierKeymaps():
+    keyconfigs = bpy.context.window_manager.keyconfigs
+    defaultmap = keyconfigs.get("blender").keymaps
+    addonmap   = keyconfigs.get("blender addon").keymaps
+
+    km_name, km_args, km_content = keymapDraw
+    keymap = addonmap.find(km_name, **km_args)
+    keymap_items = keymap.keymap_items
+    for item in km_content['items']:
+        item_id = keymap_items.find(item[0])
+        if item_id != -1:
+            keymap_items.remove(keymap_items[item_id])
+    addonmap.remove(keymap)
+    
+    defaultmap.remove(defaultmap.find(km_name, **km_args))
+
+    km_name, km_args, km_content = keymapEdit
+    keymap = addonmap.find(km_name, **km_args)
+    keymap_items = keymap.keymap_items
+    for item in km_content['items']:
+        item_id = keymap_items.find(item[0])
+        if item_id != -1:
+            keymap_items.remove(keymap_items[item_id])
+    addonmap.remove(keymap)
+    
+    defaultmap.remove(defaultmap.find(km_name, **km_args))
+
+# ****************** Category Configuration In User Preferences ******************
 
 def updatePanel(self, context):
     try:
@@ -3053,22 +3166,28 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     
-    bpy.utils.register_tool(FlexiDrawBezierTool)
-    bpy.utils.register_tool(FlexiEditBezierTool)
-    
+    # ~ bpy.utils.register_tool(FlexiDrawBezierTool) (T60766)
+    # ~ bpy.utils.register_tool(FlexiEditBezierTool) (T60766)
+    registerFlexiBezierTools()
+    registerFlexiBezierKeymaps()
+   
     bpy.app.handlers.load_post.append(ModalDrawBezierOp.loadPostHandler)
     bpy.app.handlers.load_pre.append(ModalDrawBezierOp.loadPreHandler)
     bpy.app.handlers.load_post.append(ModalFlexiEditBezierOp.loadPostHandler)
     bpy.app.handlers.load_pre.append(ModalFlexiEditBezierOp.loadPreHandler)
 
 def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
-        
-    bpy.utils.unregister_tool(FlexiDrawBezierTool)
-    bpy.utils.unregister_tool(FlexiEditBezierTool)
-    
     bpy.app.handlers.load_post.remove(ModalDrawBezierOp.loadPostHandler)
     bpy.app.handlers.load_pre.remove(ModalDrawBezierOp.loadPreHandler)
     bpy.app.handlers.load_post.remove(ModalFlexiEditBezierOp.loadPostHandler)
     bpy.app.handlers.load_pre.remove(ModalFlexiEditBezierOp.loadPreHandler)
+
+    unregisterFlexiBezierKeymaps()
+    unregisterFlexiBezierTools()
+
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+        
+    # ~ bpy.utils.unregister_tool(FlexiDrawBezierTool) (T60766)
+    # ~ bpy.utils.unregister_tool(FlexiEditBezierTool) (T60766)
+    
