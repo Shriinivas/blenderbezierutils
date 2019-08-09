@@ -1,6 +1,6 @@
 
 # Blender Add-on with Bezier Utility Operations
-<b>Add-on Version: 0.8.1 </b>
+<b>Add-on Version: 0.8.2 </b>
 
 This add-on contains several tools for working with Bezier curves. <br>
 Supported Blender Version: 2.8 <br>
@@ -68,11 +68,12 @@ I am grateful to the authors of the module for making this great piece of code a
 A few known issues, which need to be fixed:
 - <strike>Starting a new blend while the Flexi Bezier is active causes the tool to stop working. The workaround is to select any other tool from the toolbar before starting a new file.</strike> This is fixed in version 0.51.
 - <strike>Clicking on the Flexi Bezier button while it is already active starts the curve from under the button on the viewport. In this case just press escape to undo the unwanted curve. The same thing may happen while clicking on the Blender menu.</strike> This is fixed in version 0.55.<br>
-- The Flexi Draw Bezier and Flexi Edit Bezier probably won't work after Blender restart. This is likely an issue with Blender and there is a bug report open related to it ( https://developer.blender.org/T60766 ). Till it gets fixed, to activate the tools again in the new session, just disable and enable the add-on from preferences menu (thanks Nic for this work-around).<br>
+<strike>- The Flexi Draw Bezier and Flexi Edit Bezier probably won't work after Blender restart. This is likely an issue with Blender and there is a bug report open related to it ( https://developer.blender.org/T60766 ). Till it gets fixed, to activate the tools again in the new session, just disable and enable the add-on from preferences menu (thanks Nic for this work-around).<br></strike> This is fixed in version 0.8.2 (Thanks to the tip from Sakana3 about workaround in add-on from Germano Cavalcante)
 - In Flexi Draw Bezier, to enable snapping, sometimes it may be required to reactivate the Flexi Bezier tool (by clicking on some other tool and clicking back on Flexi Bezier button).<br>
+- Uninstalling the tool when Flexi Edit Tool is active may give errors. Suggestion: if you are uninstalling the add-on, select a tool other than Flexi Draw or Flexi Bezier first and then unstall it.<br>
 
 # Limitations
-- In Flexi Draw Bezier, snapping does not work for curves with modifiers. This is intended functionality.<br>
+- In Flexi Draw Bezier, snapping does not work for curves with modifiers. This is the intended functionality.<br>
 - In Flexi Draw Bezier, the part of the area under toolshelf and properties panel is excluded from drawing. Hide these elements to maximize the drawing area.<br>
 
 In general, exercise caution when using this add-on in production, since all possible conditions have not been extensively tested.<br>
