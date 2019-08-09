@@ -1470,6 +1470,8 @@ def getBezierBatches(shader, displayInfos, context = None, defHdlType = 'ALIGNED
         lineCos += segLineCos
         lineColors += [displayInfo.segColor for j in range(0, len(segLineCos))]
 
+    for i, displayInfo in enumerate(displayInfos):
+        segPts = displayInfo.segPts
         for handleNo in displayInfo.handleNos:
             # [4] array to [2][2] array
             ptIdx = int(handleNo / 2)
