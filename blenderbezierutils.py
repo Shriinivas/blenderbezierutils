@@ -2867,9 +2867,11 @@ class ModalFlexiEditBezierOp(Operator):
             resType, obj, splineIdx, ptIdx, dist = searchResult
 
             # Search for more precise clickLoc
+            # Even more precise for adding point
+            res = ADD_PT_CURVE_SEARCH_RES if self.ctrl else SEL_CURVE_SEARCH_RES
             searchResult = getClosestPt2dWithinSeg(context, coFind, selObj = obj, \
                     selSplineIdx = splineIdx, selSegIdx = ptIdx, \
-                        selObjRes = SEL_CURVE_SEARCH_RES, withHandles = False, withEndPts = False)
+                        selObjRes = res, withHandles = False, withEndPts = False)
 
             # rare condition, selection of one of the end pts (TODO: Handle better)
             if(searchResult == None): 
