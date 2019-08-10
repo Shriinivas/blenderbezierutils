@@ -2615,24 +2615,30 @@ class EditCurveInfo:
         if(hltHdlIdx != None):
             tipColors[hltHdlIdx] = HLT_TIP_COLOR
 
-        displayInfos.append(SegDisplayInfo(pts, SEL_SEG_COLOR, \
-            [0, 1, 2, 3], tipColors))
+        selSegDisplayInfo = SegDisplayInfo(pts, SEL_SEG_COLOR, \
+            [0, 1, 2, 3], tipColors)
 
         # Display of non-selected segments...
         endPtTipList = [None, ADJ_ENDPT_TIP_COLOR, None]
 
         # Adj segs change in case of aligned and auto handles
         prevPts = self.getPrevSegPts()
-        if(len(prevPts) > 1):
-            prevPts[1] = pts[0][:]
-            displayInfos.append(SegDisplayInfo(prevPts, ADJ_SEG_COLOR, \
-                [],  endPtTipList + [None, None, None]))
-
         nextPts = self.getNextSegPts()
-        if(len(nextPts) > 1):
-            nextPts[0] = pts[1][:]
-            displayInfos.append(SegDisplayInfo(nextPts, ADJ_SEG_COLOR, \
-                [], [None, None, None] + endPtTipList))
+        if((len(prevPts) > 1) and (prevPts == nextPts)):
+            prevPts[1] = pts[0][:]
+            prevPts[0] = pts[1][:]
+            displayInfos.append(SegDisplayInfo(prevPts, ADJ_SEG_COLOR, \
+                [],  endPtTipList + [None, None, None]))            
+        else:            
+            if(len(prevPts) > 1):
+                prevPts[1] = pts[0][:]
+                displayInfos.append(SegDisplayInfo(prevPts, ADJ_SEG_COLOR, \
+                    [],  endPtTipList + [None, None, None]))
+
+            if(len(nextPts) > 1):
+                nextPts[0] = pts[1][:]
+                displayInfos.append(SegDisplayInfo(nextPts, ADJ_SEG_COLOR, \
+                    [], [None, None, None] + endPtTipList))
 
         i = self.splineIdx
         spline = self.obj.data.splines[i]
@@ -2651,6 +2657,8 @@ class EditCurveInfo:
                 di = SegDisplayInfo(segPts, ADJ_SEG_COLOR, [], startTips)
                 displayInfos.append(di)
                 
+        # Append at the end so it's displayed on top of everything else
+        displayInfos.append(selSegDisplayInfo)
         return displayInfos
 
 class ModalFlexiEditBezierOp(Operator):
@@ -2753,7 +2761,7 @@ class ModalFlexiEditBezierOp(Operator):
                     if(ei.splineIdx >= (len(splines))):                    
                         ei.splineIdx = len(splines) - 1
             elif(ei.segIdx >= len(bpts) - 1):
-                ei.segIdx = len(bpts) - 2
+                ei.segIdx = ei.getLastSegIdx()
         else:
             self.editCurveInfo = None
 
