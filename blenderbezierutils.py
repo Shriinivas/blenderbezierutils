@@ -23,7 +23,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 8, 2),
+    "version": (0, 8, 25),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -234,44 +234,72 @@ def removeBezierPts(obj, splineIdx, removePtIdxs):
         createSpline(obj.data, oldSpline, False, False)
         obj.data.splines.remove(oldSpline)
 
-# segPts is list of pts of format [left, co, right, ltype, rtype]
-def insertBezierPts(obj, splineIdx, startIdx, segPts, firstRight, lastLeft):
+def insertBezierPts(obj, splineIdx, startIdx, ts, handleType):
+
     spline = obj.data.splines[splineIdx]
     bpts = spline.bezier_points
-    if(startIdx > len(bpts) or (startIdx == len(bpts) and not spline.use_cyclic_u)):
-        return
 
-    adjIdxs = [startIdx - 1, startIdx if startIdx < len(bpts) else 0]
-    for idx in adjIdxs:
-        if(bpts[idx].handle_right_type == 'AUTO'):
-            bpts[idx].handle_right_type = 'ALIGNED'
-        if(bpts[idx].handle_left_type == 'AUTO'):
-            bpts[idx].handle_left_type = 'ALIGNED'
+    nextIdx = getAdjIdx(obj, splineIdx, startIdx)
 
-    addCnt = len(segPts)
-    tmpSpline = createSpline(obj.data, spline, False, False)
-    bptsCp = tmpSpline.bezier_points
+    firstPt = bpts[startIdx]
+    nextPt = bpts[nextIdx]
+    
+    if(firstPt.handle_right_type == 'AUTO'):
+        firstPt.handle_left_type = 'ALIGNED'
+        firstPt.handle_right_type = 'ALIGNED'
+    if(nextPt.handle_left_type == 'AUTO'):
+        nextPt.handle_left_type = 'ALIGNED'
+        nextPt.handle_right_type = 'ALIGNED'
+    
+    fhdl = firstPt.handle_right_type
+    nhdl = nextPt.handle_left_type
+    
+    firstPt.handle_right_type = 'FREE'
+    nextPt.handle_left_type = 'FREE'
+
     ptCnt = len(bpts)
+    addCnt = len(ts)
+    
     bpts.add(addCnt)
+    nextIdx = startIdx + 1
+    
+    for i in range(0, (ptCnt - nextIdx)):
+        idx = ptCnt - i - 1# reversed
+        offsetIdx = idx + addCnt
+        copyObjAttr(bpts[idx], bpts[offsetIdx])
 
-    for i, pt in enumerate(bpts[startIdx:ptCnt]):
-        copyObjAttr(bptsCp[startIdx + i], bpts[startIdx + i + addCnt])
+    endIdx = getAdjIdx(obj, splineIdx, nextIdx, addCnt)
+    firstPt = bpts[startIdx]
+    nextPt = bpts[endIdx]
 
-    for i, pt in enumerate(bpts[startIdx:startIdx + addCnt]):
+    prevPt = firstPt
+    for i, pt in enumerate(bpts[nextIdx:nextIdx + addCnt]):
         pt.handle_left_type = 'FREE'
         pt.handle_right_type = 'FREE'
-        pt.handle_left = segPts[i][0]
-        pt.co = segPts[i][1]
-        pt.handle_right = segPts[i][2]
-        pt.handle_left_type = segPts[i][3]
-        pt.handle_right_type = segPts[i][4]
 
-    endPtIdx = startIdx + addCnt if(startIdx < ptCnt) else 0
+        t = ts[i]
+        seg = [prevPt.co, prevPt.handle_right, nextPt.handle_left, nextPt.co]
+        ctrlPts0 = getPartialSeg(seg, 0, t)
+        ctrlPts1 = getPartialSeg(seg, t, 1)
 
-    bpts[startIdx - 1].handle_right = firstRight
-    bpts[endPtIdx].handle_left = lastLeft
+        segPt = [ctrlPts0[2], ctrlPts1[0], ctrlPts1[1]]
+            
+        prevRight = ctrlPts0[1]
+        nextLeft =  ctrlPts1[2] 
+    
+        pt.handle_left = segPt[0]
+        pt.co = segPt[1]
+        pt.handle_right = segPt[2]
+        pt.handle_left_type = handleType
+        pt.handle_right_type = handleType
+        prevPt.handle_right = prevRight
+        
+        prevPt = pt
+        
+    nextPt.handle_left = nextLeft
 
-    obj.data.splines.remove(tmpSpline)
+    firstPt.handle_right_type = fhdl
+    nextPt.handle_left_type = nhdl
 
 #Change position of bezier points according to new matrix_world
 def changeMW(obj, newMW):
@@ -2506,16 +2534,9 @@ class EditCurveInfo:
     def insertNode(self, handleType, select = True):
         if(self._t == None):
             return
-        seg = self.getCtrlPts()
-        ctrlPts0 = getPartialSeg(seg, 0, self._t)
-        ctrlPts1 = getPartialSeg(seg, self._t, 1)
         invMw = self.obj.matrix_world.inverted()
-
-        segPt = [invMw @ ctrlPts0[2], invMw @ ctrlPts0[3], \
-            invMw @ ctrlPts1[1], handleType, handleType]
-
-        insertBezierPts(self.obj, self.splineIdx, self.segIdx + 1, [segPt], \
-            firstRight = invMw @ ctrlPts0[1], lastLeft = invMw @ ctrlPts1[2])
+        bpts = self.getSegBezierPts()
+        insertBezierPts(self.obj, self.splineIdx, self.segIdx, [self._t], handleType)
 
         if(select):
             self.setCtrlIdxSafe(4)
@@ -2785,11 +2806,19 @@ class ModalFlexiEditBezierOp(Operator):
                 return {'RUNNING_MODAL'}
             return {'PASS_THROUGH'}
 
-        km = {'LEFT_CTRL': 'self.ctrl', 'RIGHT_CTRL': 'self.ctrl', 'LEFT_SHIFT': 'self.shift', \
-            'RIGHT_SHIFT': 'self.shift', 'LEFT_ALT': 'self.alt', 'RIGHT_ALT': 'self.alt'}
-        if(event.type in km.keys()):
-            if(event.value == 'PRESS'): exec(km[event.type]+' = True')
-            elif(event.value == 'RELEASE'): exec(km[event.type]+' = False')
+        if(event.type in {'LEFT_CTRL', 'RIGHT_CTRL'}):
+            if(event.value == 'PRESS'): self.ctrl = True
+            elif(event.value == 'RELEASE'): self.ctrl = False
+            return {'PASS_THROUGH'}
+
+        if(event.type in {'LEFT_SHIFT', 'RIGHT_SHIFT'}):
+            if(event.value == 'PRESS'): self.shift = True
+            elif(event.value == 'RELEASE'): self.shift = False
+            return {'PASS_THROUGH'}
+
+        if(event.type in {'LEFT_ALT', 'RIGHT_ALT'}):
+            if(event.value == 'PRESS'): self.alt = True
+            elif(event.value == 'RELEASE'): self.alt = False
             return {'PASS_THROUGH'}
 
         if(self.ctrl and (not self.isEditing or (self.pressT != None and \
