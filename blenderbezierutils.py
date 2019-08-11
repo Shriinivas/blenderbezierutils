@@ -23,7 +23,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 8, 25),
+    "version": (0, 8, 26),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -2360,7 +2360,7 @@ def search2dFromPtsList(ptsList, coFind, searchRange):
     return searchResults
 
 class EditCurveInfo:
-    def __init__(self, obj, splineIdx, ptIdx):
+    def __init__(self, obj, splineIdx, ptIdx, hideHdls = False):
         self.obj = obj
         self.splineIdx = splineIdx
         self.segIdx = ptIdx
@@ -2373,7 +2373,8 @@ class EditCurveInfo:
 
         # Can be derived from clickLoc, but stored to avoid repeated computation
         self._t = None
-
+        self.hideHdls = hideHdls
+        
     def getClickLoc(self):
         return self._clickLoc
 
@@ -2608,18 +2609,19 @@ class EditCurveInfo:
         # Display of selected segment...
         tipColors = [TIP_COLOR, ENDPT_TIP_COLOR, TIP_COLOR, TIP_COLOR, \
             ENDPT_TIP_COLOR, TIP_COLOR]
-
-        if(self._ctrlIdx != None):
-            tipColors[self._ctrlIdx] = SEL_TIP_COLOR
-
-        if(hltHdlIdx != None):
-            tipColors[hltHdlIdx] = HLT_TIP_COLOR
-
-        selSegDisplayInfo = SegDisplayInfo(pts, SEL_SEG_COLOR, \
-            [0, 1, 2, 3], tipColors)
-
+        if(self._ctrlIdx != None): tipColors[self._ctrlIdx] = SEL_TIP_COLOR
+        if(hltHdlIdx != None): tipColors[hltHdlIdx] = HLT_TIP_COLOR
+        hdlIdxs = [0, 1, 2, 3]
+        
         # Display of non-selected segments...
         endPtTipList = [None, ADJ_ENDPT_TIP_COLOR, None]
+
+        if(self.hideHdls):
+            hdlIdxs = []
+            for i in [0, 2, 3, 5]: tipColors[i] = None
+            
+        selSegDisplayInfo = SegDisplayInfo(pts, SEL_SEG_COLOR, \
+            hdlIdxs, tipColors)
 
         # Adj segs change in case of aligned and auto handles
         prevPts = self.getPrevSegPts()
@@ -2649,12 +2651,10 @@ class EditCurveInfo:
             segPts = getBezierPtsForSeg(self.obj, i, j)
 
             if(segPts != []):
-                startTips = endPtTipList[:] + endPtTipList[:]
-                if(hltEndPtIdx == j):
-                    startTips[1] = HLT_TIP_COLOR
-                if(hltEndPtIdx == j + 1):
-                    startTips[4] = HLT_TIP_COLOR
-                di = SegDisplayInfo(segPts, ADJ_SEG_COLOR, [], startTips)
+                naEndPtTipList = endPtTipList[:] + endPtTipList[:]
+                if(hltEndPtIdx == j): naEndPtTipList[1] = HLT_TIP_COLOR
+                if(hltEndPtIdx == j + 1): naEndPtTipList[4] = HLT_TIP_COLOR
+                di = SegDisplayInfo(segPts, ADJ_SEG_COLOR, [], naEndPtTipList)
                 displayInfos.append(di)
                 
         # Append at the end so it's displayed on top of everything else
@@ -2793,6 +2793,7 @@ class ModalFlexiEditBezierOp(Operator):
         self.ctrl = False
         self.shift = False
         self.alt = False
+        self.h = False
         return  {"RUNNING_MODAL"}
 
     def getEditableCurveObjs(self):
@@ -2800,6 +2801,12 @@ class ModalFlexiEditBezierOp(Operator):
                 and len(b.data.splines[0].bezier_points) > 1]
 
     def modal(self, context, event):
+        if(event.type == 'WINDOW_DEACTIVATE' and event.value == 'PRESS'):
+            self.ctrl = False
+            self.shift = False
+            self.alt = False
+            return {'PASS_THROUGH'}
+        
         if(not self.isEditToolSelected(context)):
             self.cancelOp(context)
             return {"CANCELLED"}
@@ -2812,22 +2819,18 @@ class ModalFlexiEditBezierOp(Operator):
         if(isOutside(context, event, exclInRgns = False)):
             if(self.isEditing):
                 return {'RUNNING_MODAL'}
-            return {'PASS_THROUGH'}
 
         if(event.type in {'LEFT_CTRL', 'RIGHT_CTRL'}):
             if(event.value == 'PRESS'): self.ctrl = True
             elif(event.value == 'RELEASE'): self.ctrl = False
-            return {'PASS_THROUGH'}
 
         if(event.type in {'LEFT_SHIFT', 'RIGHT_SHIFT'}):
             if(event.value == 'PRESS'): self.shift = True
             elif(event.value == 'RELEASE'): self.shift = False
-            return {'PASS_THROUGH'}
 
         if(event.type in {'LEFT_ALT', 'RIGHT_ALT'}):
             if(event.value == 'PRESS'): self.alt = True
             elif(event.value == 'RELEASE'): self.alt = False
-            return {'PASS_THROUGH'}
 
         if(self.ctrl and (not self.isEditing or (self.pressT != None and \
             time.time() - self.pressT) < SNGL_CLK_DURN)):
@@ -2840,6 +2843,17 @@ class ModalFlexiEditBezierOp(Operator):
             bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
             return {"RUNNING_MODAL"}
 
+        if((event.type == 'H' or event.type == 'h') and event.value == 'PRESS'):
+            return {"RUNNING_MODAL"} if self.editCurveInfo != None else {"PASS_THROUGH"}
+            
+        if((event.type == 'H' or event.type == 'h') and event.value == 'RELEASE'):
+            if(self.editCurveInfo != None):
+                self.h = not self.alt
+                self.editCurveInfo.hideHdls = self.h
+                ModalFlexiEditBezierOp.refreshDisplay(context, \
+                    self.editCurveInfo.getDisplayInfos())
+                return {"RUNNING_MODAL"}
+            
         if(event.type == 'DEL' and event.value == 'PRESS'):
             return {"RUNNING_MODAL"} if self.editCurveInfo != None and \
                 self.editCurveInfo._ctrlIdx != None  else {"PASS_THROUGH"}
@@ -2918,7 +2932,7 @@ class ModalFlexiEditBezierOp(Operator):
 
             co = searchResult[1]
 
-            self.editCurveInfo = EditCurveInfo(obj, splineIdx, ptIdx)
+            self.editCurveInfo = EditCurveInfo(obj, splineIdx, ptIdx, self.h)
             self.editCurveInfo.setClickLocSafe(co, lowerT = .1, higherT = .9)
             self.isEditing = True
 
@@ -2973,7 +2987,7 @@ class ModalFlexiEditBezierOp(Operator):
                     resType, selObj, splineIdx, ptIdx, dist = searchResult
                     if(ci == None or selObj != ci.obj or splineIdx != ci.splineIdx \
                         or ptIdx != ci.segIdx):
-                        editCurveInfo = EditCurveInfo(selObj, splineIdx, ptIdx)
+                        editCurveInfo = EditCurveInfo(selObj, splineIdx, ptIdx, self.h)
                         displayInfos = [SegDisplayInfo(editCurveInfo.getSegPts(), \
                             NONADJ_SEG_COLOR, [], [])]
 
