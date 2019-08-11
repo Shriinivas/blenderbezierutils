@@ -1,6 +1,6 @@
 
 # Blender Add-on with Bezier Utility Operations
-<b>Add-on Version: 0.8.25 </b>
+<b>Add-on Version: 0.8.26 </b>
 
 This add-on contains several tools for working with Bezier curves. <br>
 Supported Blender Version: 2.8 <br>
@@ -46,8 +46,9 @@ This tool is available in object mode via a new button on the toolshelf (short c
 <b>Adding a vertex: </b> Hold down control and click the mouse on any location on curve to add a vertex at that position. If you also hold down shift along with control the added point will have aligned handles. The handles will be of type vector if alt and control are held down while pressing the mouse button.<br><br>
 <b>Deleting a vertex or handle point: </b> 
 Select any end point (the selected point is marked in dark green) and press del to delete it. Pressing del when a handle point is selected will align it with the other point of the segment. <br><br>
-You can toggle between Flexi Draw and Flexi Edit by pressing e.<br>
-
+You can toggle between Flexi Draw and Flexi Edit by pressing <b>e</b>.<br>
+Press <b>h</b> to hide and <b>alt+h</b> to unhide the handles of the selected segment.<br>
+  
 <b>Demo Video:</b> https://youtu.be/80ZLjjgwPAw<br>
 <b>Overview of Flexi Edit Bezier Tool:</b> https://youtu.be/enQHGmluQIw
 
