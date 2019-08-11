@@ -2883,7 +2883,8 @@ class ModalFlexiEditBezierOp(Operator):
                 searchResult = getClosestPt2d(context, coFind, objs,
                     objRes = NONSEL_CURVE_SEARCH_RES, selObj = ci.obj, \
                         selSplineIdx = ci.splineIdx, selSegIdx = ci.segIdx, selObjRes = res, 
-                            withHandles = not self.ctrl, withEndPts = not self.ctrl)
+                            withHandles = (not self.ctrl and not self.h), \
+                                withEndPts = not self.ctrl)
                 if(searchResult != None):
                     resType = searchResult[0]
                     if(resType in {'Handles', 'SegLoc', 'EndPts' }):
