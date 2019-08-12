@@ -23,7 +23,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 8, 27),
+    "version": (0, 8, 28),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -1449,7 +1449,7 @@ def getPartialSeg(seg, t0, t1):
 # Some static constants
 SEL_SEG_COLOR = (.6, .8, 1, 1)
 ADJ_SEG_COLOR = (.1, .4, .6, 1)
-NONADJ_SEG_COLOR = (.2, .5, .8, 1)
+NONADJ_SEG_COLOR = (.2, .5, .9, 1)
 SEL_TIP_COLOR = (.2, .7, .3, 1)
 HLT_TIP_COLOR = (.2, 1, .9, 1)
 ENDPT_TIP_COLOR = (1, 1, 0, 1)
@@ -1459,6 +1459,8 @@ MARKER_COLOR = (.7, 1, .7, 1)
 
 TIP_COL_PRIORITY = {ADJ_ENDPT_TIP_COLOR: 0, TIP_COLOR: 1,
     ENDPT_TIP_COLOR: 2, SEL_TIP_COLOR : 3, HLT_TIP_COLOR : 4, MARKER_COLOR: 5}
+
+SEG_COL_PRIORITY = {ADJ_SEG_COLOR: 0, NONADJ_SEG_COLOR: 1, SEL_SEG_COLOR: 2}
 
 HANDLE_COLOR_MAP ={'FREE': (.6, .05, .05, 1), 'VECTOR': (.4, .5, .2, 1), \
     'ALIGNED': (1, .3, .3, 1), 'AUTO': (.8, .5, .2, 1)}
@@ -2361,21 +2363,18 @@ def search2dFromPtsList(ptsList, coFind, searchRange):
 
     return searchResults
 
-class EditCurveInfo:
-    def __init__(self, obj, splineIdx, ptIdx, hideHdls = False):
+class SelectCurveInfo:
+    def __init__(self, obj, splineIdx, ptIdx):
         self.obj = obj
         self.splineIdx = splineIdx
         self.segIdx = ptIdx
-        self._ctrlIdx = None # Handle and end points: 0, 1, 2 and 3, 4, 5
-        self._clickLoc = None
-
+        
         # obj.name gives exception if obj is not in bpy.data.objects collection,
         # so keep a copy
         self.objName = obj.name
 
         # Can be derived from clickLoc, but stored to avoid repeated computation
         self._t = None
-        self.hideHdls = hideHdls
 
     def getClickLoc(self):
         return self._clickLoc
@@ -2385,6 +2384,135 @@ class EditCurveInfo:
         ptCnt = len(spline.bezier_points)
         # ~ if(ptCnt <= 1): return None # Condition not handled
         return ptCnt - 1 if(spline.use_cyclic_u) else ptCnt - 2
+
+    def getSegBezierPts(self):
+        spline = self.obj.data.splines[self.splineIdx]
+        return [spline.bezier_points[self.segIdx], \
+            spline.bezier_points[self.getSegAdjIdx()]]
+
+    def getPrevSegBezierPts(self):
+        prevSegIdx = self.getSegAdjIdx(-1)
+        if(prevSegIdx != None):
+            spline = self.obj.data.splines[self.splineIdx]
+            return [spline.bezier_points[prevSegIdx], \
+                spline.bezier_points[self.segIdx]]
+        return []
+
+    def getNextSegBezierPts(self):
+        nextSegIdx = self.getSegAdjIdx(1)
+        if(nextSegIdx != None):
+            spline = self.obj.data.splines[self.splineIdx]
+            return [spline.bezier_points[self.segIdx], \
+                spline.bezier_points[nextSegIdx]]
+        return []
+
+    # For convenience
+    def getCtrlPts(self):
+        return getCtrlPtsForSeg(self.obj, self.splineIdx, self.segIdx)
+
+    def getSegPts(self):
+        return getBezierPtsForSeg(self.obj, self.splineIdx, self.segIdx)
+
+    def getSegAdjIdx(self, offset = 1):
+        return getAdjIdx(self.obj, self.splineIdx, self.segIdx, offset)
+
+    def getPrevSegPts(self):
+        idx = getAdjIdx(self.obj, self.splineIdx, self.segIdx, -1)
+        return getBezierPtsForSeg(self.obj, self.splineIdx, idx) if idx != None else []
+
+    def getNextSegPts(self):
+        idx = getAdjIdx(self.obj, self.splineIdx, self.segIdx)
+        return getBezierPtsForSeg(self.obj, self.splineIdx, idx) if idx != None else []
+
+    def getCtrlIdxFromSearchInfo(self, info):
+        if(info[0] == 'Handles'):
+            return {0:0, 1:2, 2:3, 3:5}[info[1]]
+        elif(info[0] == 'SelEndPts'):
+            return {0:1, 1:4}[info[1]]
+        else:
+            return None
+
+    #TODO: Redundant data structures
+    def getDisplayInfos(self, segPts = None, hltInfo = None, hideHdls = False):
+
+        def getTipList(hltIdx, idx):
+            # Display of non-selected segments...
+            tipList = [None, ADJ_ENDPT_TIP_COLOR, None, None, ADJ_ENDPT_TIP_COLOR, None]
+            if(hltIdx == idx): tipList[1] = HLT_TIP_COLOR
+            if(hltIdx == idx + 1): tipList[4] = HLT_TIP_COLOR
+            return tipList
+
+        displayInfos = []
+
+        if(segPts == None):
+            segPts = self.getSegPts()
+
+        hltHdlIdx = None
+        hltEndPtIdx = None
+
+        if(hltInfo != None):
+            hltHdlIdx = self.getCtrlIdxFromSearchInfo(hltInfo)
+            hltEndPtIdx = hltInfo[1] if(hltHdlIdx == None) else None
+
+        # Display of selected segment...
+        tipColors = [TIP_COLOR, ENDPT_TIP_COLOR, TIP_COLOR, TIP_COLOR, \
+            ENDPT_TIP_COLOR, TIP_COLOR]
+        if(self._ctrlIdx != None): tipColors[self._ctrlIdx] = SEL_TIP_COLOR
+        if(hltHdlIdx != None): tipColors[hltHdlIdx] = HLT_TIP_COLOR
+        hdlIdxs = [0, 1, 2, 3]
+
+        if(hideHdls):
+            hdlIdxs = []
+            for i in [0, 2, 3, 5]: tipColors[i] = None
+
+        selSegDisplayInfo = SegDisplayInfo(segPts, SEL_SEG_COLOR, \
+            hdlIdxs, tipColors)
+
+        # Adj segs change in case of aligned and auto handles
+        prevPts = self.getPrevSegPts()
+        nextPts = self.getNextSegPts()
+        nextIdx = self.getSegAdjIdx()
+        prevIdx = self.getSegAdjIdx(-1)
+        if((len(prevPts) > 1) and (prevPts == nextPts)):
+            prevPts[1] = segPts[0][:]
+            prevPts[0] = segPts[1][:]
+            displayInfos.append(SegDisplayInfo(prevPts, ADJ_SEG_COLOR, [],  []))
+        else:
+            if(len(prevPts) > 1):
+                prevPts[1] = segPts[0][:]
+                tipList = getTipList(hltEndPtIdx, prevIdx)
+                displayInfos.append(SegDisplayInfo(prevPts, ADJ_SEG_COLOR, [],  tipList))
+            if(len(nextPts) > 1):
+                nextPts[0] = segPts[1][:]
+                tipList = getTipList(hltEndPtIdx, nextIdx)
+                displayInfos.append(SegDisplayInfo(nextPts, ADJ_SEG_COLOR, [], tipList))
+                
+        spline = self.obj.data.splines[self.splineIdx]
+        for j, pt in enumerate(spline.bezier_points):
+            if(j == self.segIdx or j == nextIdx or j == prevIdx):
+                continue
+            segPts = getBezierPtsForSeg(self.obj, self.splineIdx, j)
+            if(segPts != []):
+                tipList = [] if(j == (len(spline.bezier_points) - 1)) \
+                    else getTipList(hltEndPtIdx, j)
+                displayInfos.append(SegDisplayInfo(segPts, ADJ_SEG_COLOR, [], tipList))
+
+        # Append at the end so it's displayed on top of everything else
+        displayInfos.append(selSegDisplayInfo)
+        return displayInfos
+
+
+class EditCurveInfo(SelectCurveInfo):
+    def __init__(self, obj, splineIdx, ptIdx):
+        super(EditCurveInfo, self).__init__(obj, splineIdx, ptIdx)
+        self._ctrlIdx = None # Handle and end points: 0, 1, 2 and 3, 4, 5
+        self._clickLoc = None
+
+        # Can be derived from clickLoc, but stored to avoid repeated computation
+        self._t = None
+
+    def getClickLoc(self):
+        return self._clickLoc
 
     def setClickLocSafe(self, clickLoc, lowerT = 0.05, higherT = .95):
         self._clickLoc = clickLoc
@@ -2452,6 +2580,7 @@ class EditCurveInfo:
     # Get seg points after change in position of handles or drag curve
     def getOffsetSegPts(self, newPos):
         pts = self.getSegPts()
+        if(newPos == None): return pts
 
         # If ctrilIdx and clickLoc both are valid clickLoc gets priority
         if(self.getClickLoc() != None):
@@ -2493,27 +2622,6 @@ class EditCurveInfo:
             pts = self.getPtsAfterCtrlPtChange(pts, ptIdx, hdlIdx, oldPts)
 
         return pts
-
-    def getSegBezierPts(self):
-        spline = self.obj.data.splines[self.splineIdx]
-        return [spline.bezier_points[self.segIdx], \
-            spline.bezier_points[self.getSegAdjIdx()]]
-
-    def getPrevSegBezierPts(self):
-        prevSegIdx = self.getSegAdjIdx(-1)
-        if(prevSegIdx != None):
-            spline = self.obj.data.splines[self.splineIdx]
-            return [spline.bezier_points[prevSegIdx], \
-                spline.bezier_points[self.segIdx]]
-        return []
-
-    def getNextSegBezierPts(self):
-        nextSegIdx = self.getSegAdjIdx(1)
-        if(nextSegIdx != None):
-            spline = self.obj.data.splines[self.splineIdx]
-            return [spline.bezier_points[self.segIdx], \
-                spline.bezier_points[nextSegIdx]]
-        return []
 
     def moveSeg(self, newPos):
         pts = self.getOffsetSegPts(newPos)
@@ -2582,104 +2690,6 @@ class EditCurveInfo:
             # Alway select the main point after this (should be done by caller actually)
             self._ctrlIdx = ptIdx * 3 + 1
 
-    # For convenience
-    def getCtrlPts(self):
-        return getCtrlPtsForSeg(self.obj, self.splineIdx, self.segIdx)
-
-    def getSegPts(self):
-        return getBezierPtsForSeg(self.obj, self.splineIdx, self.segIdx)
-
-    def getSegAdjIdx(self, offset = 1):
-        return getAdjIdx(self.obj, self.splineIdx, self.segIdx, offset)
-
-    def getPrevSegPts(self):
-        idx = getAdjIdx(self.obj, self.splineIdx, self.segIdx, -1)
-        return getBezierPtsForSeg(self.obj, self.splineIdx, idx) if idx != None else []
-
-    def getNextSegPts(self):
-        idx = getAdjIdx(self.obj, self.splineIdx, self.segIdx)
-        return getBezierPtsForSeg(self.obj, self.splineIdx, idx) if idx != None else []
-
-    def getCtrlIdxFromSearchInfo(self, info):
-        if(info[0] == 'Handles'):
-            return {0:0, 1:2, 2:3, 3:5}[info[1]]
-        elif(info[0] == 'SelEndPts'):
-            return {0:1, 1:4}[info[1]]
-        else:
-            return None
-
-    #TODO: Redundant data structures
-    def getDisplayInfos(self, newPos = None, hltInfo = None):
-
-        def getTipList(hltIdx, idx):
-            # Display of non-selected segments...
-            tipList = [None, ADJ_ENDPT_TIP_COLOR, None, None, ADJ_ENDPT_TIP_COLOR, None]
-            if(hltIdx == idx): tipList[1] = HLT_TIP_COLOR
-            if(hltIdx == idx + 1): tipList[4] = HLT_TIP_COLOR
-            return tipList
-
-        displayInfos = []
-
-        if(newPos == None):
-            pts = self.getSegPts()
-        else:
-            pts = self.getOffsetSegPts(newPos)
-
-        hltHdlIdx = None
-        hltEndPtIdx = None
-
-        if(hltInfo != None):
-            hltHdlIdx = self.getCtrlIdxFromSearchInfo(hltInfo)
-            hltEndPtIdx = hltInfo[1] if(hltHdlIdx == None) else None
-
-        # Display of selected segment...
-        tipColors = [TIP_COLOR, ENDPT_TIP_COLOR, TIP_COLOR, TIP_COLOR, \
-            ENDPT_TIP_COLOR, TIP_COLOR]
-        if(self._ctrlIdx != None): tipColors[self._ctrlIdx] = SEL_TIP_COLOR
-        if(hltHdlIdx != None): tipColors[hltHdlIdx] = HLT_TIP_COLOR
-        hdlIdxs = [0, 1, 2, 3]
-
-        if(self.hideHdls):
-            hdlIdxs = []
-            for i in [0, 2, 3, 5]: tipColors[i] = None
-
-        selSegDisplayInfo = SegDisplayInfo(pts, SEL_SEG_COLOR, \
-            hdlIdxs, tipColors)
-
-        # Adj segs change in case of aligned and auto handles
-        prevPts = self.getPrevSegPts()
-        nextPts = self.getNextSegPts()
-        nextIdx = self.getSegAdjIdx()
-        prevIdx = self.getSegAdjIdx(-1)
-        if((len(prevPts) > 1) and (prevPts == nextPts)):
-            prevPts[1] = pts[0][:]
-            prevPts[0] = pts[1][:]
-            displayInfos.append(SegDisplayInfo(prevPts, ADJ_SEG_COLOR, [],  []))
-        else:
-            if(len(prevPts) > 1):
-                prevPts[1] = pts[0][:]
-                tipList = getTipList(hltEndPtIdx, prevIdx)
-                displayInfos.append(SegDisplayInfo(prevPts, ADJ_SEG_COLOR, [],  tipList))
-
-            if(len(nextPts) > 1):
-                nextPts[0] = pts[1][:]
-                tipList = getTipList(hltEndPtIdx, nextIdx)
-                displayInfos.append(SegDisplayInfo(nextPts, ADJ_SEG_COLOR, [], tipList))
-
-        spline = self.obj.data.splines[self.splineIdx]
-        for j, pt in enumerate(spline.bezier_points):
-            if(j == self.segIdx or j == nextIdx or j == prevIdx):
-                continue
-            segPts = getBezierPtsForSeg(self.obj, self.splineIdx, j)
-            if(segPts != []):
-                tipList = [] if(j == (len(spline.bezier_points) - 1)) \
-                    else getTipList(hltEndPtIdx, j)
-                displayInfos.append(SegDisplayInfo(segPts, ADJ_SEG_COLOR, [], tipList))
-
-        # Append at the end so it's displayed on top of everything else
-        displayInfos.append(selSegDisplayInfo)
-        return displayInfos
-
 class ModalFlexiEditBezierOp(Operator):
     bl_description = "Flexi editing of Bezier curves in object mode"
     bl_idname = "wm.modal_flexi_edit_bezier"
@@ -2707,30 +2717,6 @@ class ModalFlexiEditBezierOp(Operator):
                 "WINDOW")
             ModalFlexiEditBezierOp.drawHandlerRef = None
 
-    def reset(self, context):
-        self.ctrl = False
-        self.alt = False
-        self.shift = False
-        ModalFlexiEditBezierOp.refreshDisplay(context, [])
-
-    def cancelOp(self, context):
-        ModalFlexiEditBezierOp.refreshDisplay(context, [])
-        ModalFlexiEditBezierOp.removeDrawHandler(context)
-        bpy.app.handlers.undo_post.remove(self.updateAfterGeomChange)
-        bpy.app.handlers.redo_post.remove(self.updateAfterGeomChange)
-        bpy.app.handlers.depsgraph_update_post.remove(self.updateAfterGeomChange)
-        ModalFlexiEditBezierOp.running = False
-
-    def isEditToolSelected(self, context):
-        if(context.mode != 'OBJECT'):
-            return False
-
-        tool = context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
-        # ~ if(tool == None or tool.idname != FlexiEditBezierTool.bl_idname): (T60766)
-        if(tool == None or tool.idname != 'flexi_bezier.edit_tool'):
-            return False
-        return True
-
     def drawHandler():
         defLineWidth = 1.5
         defPointSize = 4
@@ -2741,6 +2727,7 @@ class ModalFlexiEditBezierOp(Operator):
         if(ModalFlexiEditBezierOp.pointBatch != None):
             ModalFlexiEditBezierOp.pointBatch.draw(ModalFlexiEditBezierOp.shader)
 
+    # static method
     def refreshDisplay(context, displayInfos):
         #Only 3d space
         ModalFlexiEditBezierOp.lineBatch, ModalFlexiEditBezierOp.pointBatch = \
@@ -2759,6 +2746,42 @@ class ModalFlexiEditBezierOp(Operator):
     @persistent
     def loadPreHandler(dummy):
         ModalFlexiEditBezierOp.removeDrawHandler(bpy.context)
+
+    # Refresh display with existing curves (nonstatic)
+    def refreshDisplaySelCurves(self, context, newPos = None, \
+        hltInfo = None, displayInfos = None):
+        if(displayInfos == None): displayInfos = []            
+        if(self.editCurveInfo != None):
+            segPts = self.editCurveInfo.getOffsetSegPts(newPos)
+            displayInfos += self.editCurveInfo.getDisplayInfos(segPts, hltInfo, self.h)
+            for c in self.selectCurveInfos:
+                displayInfos += c.getDisplayInfos(hideHdls = True)
+
+        displayInfos = sorted(displayInfos, key = lambda x:SEG_COL_PRIORITY[x.segColor])
+        ModalFlexiEditBezierOp.refreshDisplay(context, displayInfos)
+
+    def reset(self, context):
+        self.editCurveInfo = None        
+        self.selectCurveInfos = set()        
+        self.refreshDisplaySelCurves(context)
+
+    def cancelOp(self, context):
+        self.reset(context)
+        ModalFlexiEditBezierOp.removeDrawHandler(context)
+        bpy.app.handlers.undo_post.remove(self.updateAfterGeomChange)
+        bpy.app.handlers.redo_post.remove(self.updateAfterGeomChange)
+        bpy.app.handlers.depsgraph_update_post.remove(self.updateAfterGeomChange)
+        ModalFlexiEditBezierOp.running = False
+
+    def isEditToolSelected(self, context):
+        if(context.mode != 'OBJECT'):
+            return False
+
+        tool = context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
+        # ~ if(tool == None or tool.idname != FlexiEditBezierTool.bl_idname): (T60766)
+        if(tool == None or tool.idname != 'flexi_bezier.edit_tool'):
+            return False
+        return True
 
     # Will be called after the curve is changed (by the tool or externally)
     # So handle all possible conditions
@@ -2781,15 +2804,16 @@ class ModalFlexiEditBezierOp(Operator):
                         ei.splineIdx = len(splines) - 1
             elif(ei.segIdx >= len(bpts) - 1):
                 ei.segIdx = ei.getLastSegIdx()
+            
+            for c in self.selectCurveInfos.copy():
+                if(bpy.data.objects.get(c.objName) != None):
+                    c.obj = bpy.data.objects.get(c.objName)
+                else:
+                    self.selectCurveInfos.remove(c)
         else:
             self.editCurveInfo = None
 
-        if(self.editCurveInfo != None):
-            displayInfos = self.editCurveInfo.getDisplayInfos()
-        else:
-            displayInfos = []
-
-        ModalFlexiEditBezierOp.refreshDisplay(context, displayInfos)
+        self.refreshDisplaySelCurves(context)
 
     def invoke(self, context, event):
         ModalFlexiEditBezierOp.running = True
@@ -2806,6 +2830,7 @@ class ModalFlexiEditBezierOp(Operator):
         ModalFlexiEditBezierOp.pointBatch = None
 
         self.editCurveInfo = None
+        self.selectCurveInfos = set()
         self.clickT = None
         self.pressT = None
         self.isEditing = False
@@ -2831,7 +2856,6 @@ class ModalFlexiEditBezierOp(Operator):
             return {"CANCELLED"}
 
         if(not self.isEditing and event.type == 'ESC' and event.value == 'RELEASE'):
-            self.editCurveInfo = None
             self.reset(context)
             return {"RUNNING_MODAL"}
 
@@ -2858,6 +2882,7 @@ class ModalFlexiEditBezierOp(Operator):
 
         if((event.type == 'E' or event.type == 'e') and event.value == 'RELEASE'):
             # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
+            self.reset(context)
             bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
             return {"RUNNING_MODAL"}
 
@@ -2867,9 +2892,7 @@ class ModalFlexiEditBezierOp(Operator):
         if((event.type == 'H' or event.type == 'h') and event.value == 'RELEASE'):
             if(self.editCurveInfo != None):
                 self.h = not self.alt
-                self.editCurveInfo.hideHdls = self.h
-                ModalFlexiEditBezierOp.refreshDisplay(context, \
-                    self.editCurveInfo.getDisplayInfos())
+                self.refreshDisplaySelCurves(context)
                 return {"RUNNING_MODAL"}
 
         if(event.type == 'DEL' and event.value == 'PRESS'):
@@ -2891,19 +2914,22 @@ class ModalFlexiEditBezierOp(Operator):
             coFind = Vector((event.mouse_region_x, event.mouse_region_y)).to_3d()
             newPos = self.get3dLoc(context, event)
             objs = self.getEditableCurveObjs()
-            searchResult = 'NA' # No search done
 
             selObj = None
             splineIdx = None
             segIdx = None
+
             # More precise for adding point
             selRes = ADD_PT_CURVE_SEARCH_RES if self.ctrl else SEL_CURVE_SEARCH_RES
-            ci = self.editCurveInfo
+            ei = self.editCurveInfo
 
-            if(ci != None):
-                selObj = ci.obj
-                splineIdx = ci.splineIdx
-                segIdx = ci.segIdx
+            if(not self.shift or self.ctrl):
+                self.selectCurveInfos = set()
+                
+            if(ei != None):
+                selObj = ei.obj
+                splineIdx = ei.splineIdx
+                segIdx = ei.segIdx
 
             searchResult = getClosestPt2d(context, coFind, objs, \
                 objRes = NONSEL_CURVE_SEARCH_RES, selObj = selObj, \
@@ -2912,27 +2938,27 @@ class ModalFlexiEditBezierOp(Operator):
                 withSelEndPts = not self.ctrl, withEndPts = not self.ctrl)
 
             if(searchResult == None):
+                self.reset(context)
                 return {"PASS_THROUGH"}
 
             resType = searchResult[0]
             if(resType in {'Handles', 'SelEndPts', 'SegLoc', 'EndPts' }):
                 if(resType in {'Handles', 'SelEndPts'}):
-                    ci.setCtrlIdxSafe(ci.getCtrlIdxFromSearchInfo([searchResult[0], \
+                    ei.setCtrlIdxSafe(ei.getCtrlIdxFromSearchInfo([searchResult[0], \
                         searchResult[1]]))
                 elif(resType == 'SegLoc'):
-                    ci.setClickLocSafe(searchResult[1])
+                    ei.setClickLocSafe(searchResult[1])
                 else:
                     ptIdx = searchResult[1]
-                    if(getAdjIdx(ci.obj, ci.splineIdx, ptIdx) != None):
-                        ci.segIdx = ptIdx
-                        ci.setCtrlIdxSafe(1)
+                    if(getAdjIdx(ei.obj, ei.splineIdx, ptIdx) != None):
+                        ei.segIdx = ptIdx
+                        ei.setCtrlIdxSafe(1)
                     # If this is the last pt, select seg ending on this pt
                     else:
-                        ci.segIdx = ptIdx - 1
-                        ci.setCtrlIdxSafe(4)
+                        ei.segIdx = ptIdx - 1
+                        ei.setCtrlIdxSafe(4)
 
-                displayInfos = ci.getDisplayInfos()
-                ModalFlexiEditBezierOp.refreshDisplay(context, displayInfos)
+                self.refreshDisplaySelCurves(context)
                 self.isEditing = True
                 self.pressT = time.time()
                 return {"RUNNING_MODAL"}
@@ -2943,19 +2969,18 @@ class ModalFlexiEditBezierOp(Operator):
                     selSplineIdx = splineIdx, selSegIdx = ptIdx, selObjRes = selRes, \
                         withHandles = False, withSelEndPts = True, withEndPts = False)
 
-            self.editCurveInfo = EditCurveInfo(obj, splineIdx, ptIdx, self.h)
-            ci = self.editCurveInfo
+            if(self.shift and not self.ctrl and ei != None):
+                self.selectCurveInfos.add(ei)
+                
+            self.editCurveInfo = EditCurveInfo(obj, splineIdx, ptIdx)
             if(searchResult[0] == 'SelEndPts'):
-                ci.setCtrlIdxSafe(ci.getCtrlIdxFromSearchInfo([searchResult[0], \
+                self.editCurveInfo.setCtrlIdxSafe(self.editCurveInfo.getCtrlIdxFromSearchInfo([searchResult[0], \
                     searchResult[1]]))
             else:
-                self.editCurveInfo.setClickLocSafe(searchResult[1], \
-                    lowerT = .1, higherT = .9)
-                    
+                self.editCurveInfo.setClickLocSafe(searchResult[1], lowerT = .1, higherT = .9)
             self.isEditing = True
 
-            displayInfos = self.editCurveInfo.getDisplayInfos()
-            ModalFlexiEditBezierOp.refreshDisplay(context, displayInfos)
+            self.refreshDisplaySelCurves(context)
             self.pressT = time.time()
 
             return {"RUNNING_MODAL"}
@@ -2965,23 +2990,19 @@ class ModalFlexiEditBezierOp(Operator):
             splineIdx = None
             ptIdx = None
             displayInfos = []
-            selObjDispInfos = []
-            ci = self.editCurveInfo
-
-            if(ci != None):
-                obj = ci.obj
-                splineIdx = ci.splineIdx
-                ptIdx = ci.segIdx
+            ei = self.editCurveInfo
+            hltInfo = None
+            
+            if(ei != None):
+                obj = ei.obj
+                splineIdx = ei.splineIdx
+                ptIdx = ei.segIdx
                 # User is editing curve or control points (left mouse pressed)
                 if(self.isEditing):
-                    selCo = ci.getSelCo()
+                    selCo = ei.getSelCo()
                     newPos = self.get3dLoc(context, event, selCo)
-
-                    displayInfos = ci.getDisplayInfos(newPos)
-                    ModalFlexiEditBezierOp.refreshDisplay(context, displayInfos)
+                    self.refreshDisplaySelCurves(context, newPos)
                     return {"RUNNING_MODAL"}
-                else:
-                    selObjDispInfos = ci.getDisplayInfos()
             coFind = Vector((event.mouse_region_x, event.mouse_region_y)).to_3d()
 
             objs = self.getEditableCurveObjs()
@@ -2994,17 +3015,18 @@ class ModalFlexiEditBezierOp(Operator):
             if(searchResult != None):
                 resType = searchResult[0]
                 if(resType in {'Handles', 'SelEndPts', 'EndPts'}):
-                    selObjDispInfos = ci.getDisplayInfos(newPos = None, \
-                        hltInfo = [resType, searchResult[1]])
+                    hltInfo = [resType, searchResult[1]]
                 elif(resType == 'ObjLoc'):
                     resType, selObj, splineIdx, ptIdx, dist = searchResult
-                    if(ci == None or selObj != ci.obj or splineIdx != ci.splineIdx \
-                        or ptIdx != ci.segIdx):
-                        editCurveInfo = EditCurveInfo(selObj, splineIdx, ptIdx, self.h)
-                        displayInfos = [SegDisplayInfo(editCurveInfo.getSegPts(), \
+                    if(ei == None or selObj != ei.obj or splineIdx != ei.splineIdx \
+                        or ptIdx != ei.segIdx):
+                        eci = EditCurveInfo(selObj, splineIdx, ptIdx)
+                        displayInfos += [SegDisplayInfo(eci.getSegPts(), \
                             NONADJ_SEG_COLOR, [], [])]
 
-            ModalFlexiEditBezierOp.refreshDisplay(context, selObjDispInfos + displayInfos)
+            self.refreshDisplaySelCurves(context, newPos = None, hltInfo = hltInfo, 
+                displayInfos = displayInfos)
+                
             return {"PASS_THROUGH"}
 
         if(event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
@@ -3030,11 +3052,11 @@ class ModalFlexiEditBezierOp(Operator):
                     ei.insertNode(handleType)
                     bpy.ops.ed.undo_push()
                     self.clickT = None
-                    ModalFlexiEditBezierOp.refreshDisplay(context, ei.getDisplayInfos())
+                    self.refreshDisplaySelCurves(context)
                     return {"RUNNING_MODAL"}
                 # Gib dem Benutzer Zeit zum Atmen!
                 else:
-                    ModalFlexiEditBezierOp.refreshDisplay(context, ei.getDisplayInfos())
+                    self.refreshDisplaySelCurves(context)
                     return {"RUNNING_MODAL"}
 
             self.pressT = None
