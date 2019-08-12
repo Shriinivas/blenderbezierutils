@@ -2941,12 +2941,17 @@ class ModalFlexiEditBezierOp(Operator):
 
             searchResult = getClosestPt2dWithinSeg(context, coFind, selObj = obj, \
                     selSplineIdx = splineIdx, selSegIdx = ptIdx, selObjRes = selRes, \
-                        withHandles = False, withSelEndPts = False, withEndPts = False)
-
-            co = searchResult[1]
+                        withHandles = False, withSelEndPts = True, withEndPts = False)
 
             self.editCurveInfo = EditCurveInfo(obj, splineIdx, ptIdx, self.h)
-            self.editCurveInfo.setClickLocSafe(co, lowerT = .1, higherT = .9)
+            ci = self.editCurveInfo
+            if(searchResult[0] == 'SelEndPts'):
+                ci.setCtrlIdxSafe(ci.getCtrlIdxFromSearchInfo([searchResult[0], \
+                    searchResult[1]]))
+            else:
+                self.editCurveInfo.setClickLocSafe(searchResult[1], \
+                    lowerT = .1, higherT = .9)
+                    
             self.isEditing = True
 
             displayInfos = self.editCurveInfo.getDisplayInfos()
