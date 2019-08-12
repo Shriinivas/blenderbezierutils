@@ -2373,12 +2373,6 @@ class SelectCurveInfo:
         # so keep a copy
         self.objName = obj.name
 
-        # Can be derived from clickLoc, but stored to avoid repeated computation
-        self._t = None
-
-    def getClickLoc(self):
-        return self._clickLoc
-
     def getLastSegIdx(self):
         spline = self.obj.data.splines[self.splineIdx]
         ptCnt = len(spline.bezier_points)
