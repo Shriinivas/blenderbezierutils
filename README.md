@@ -3,8 +3,18 @@
 <b>Add-on Version: 0.8.27 </b>
 
 This add-on contains several tools for working with Bezier curves. <br>
-Supported Blender Version: 2.8 <br>
+Supported Blender Version: <b>2.8</b> <br>
 
+# Installation
+- Download blenderbezierutils.py
+- Open Blender and select File->User Preferences
+- Click install Add-ons tab and then Install Add-on from File
+- Select the downloaded file
+- Check the 'Bezier Utilities' option in the add-ons dialog
+
+After installation, a new 'Bezier Utilities' tab is displayed in object mode on 'Active Tool and Workspace settings' tab on the properties panel. There will also appear two new buttons - Flexi Draw Bezier and Flexi Edit Bezier - on the toolshelf.
+
+# Overview
 The tools are arranged in a collapsible Panel, grouped according to the functionality type. 
 Here is a brief overview of a few of the tools in this add-on:
 - Separate Bezier Splines: Create individual objects out of the splines of the selected Curve objects. Only affects curves with multiple splines. This also works with Curves with shape keys. New objects are put in a separate collection.
@@ -51,15 +61,6 @@ Press <b>h</b> to hide and <b>alt+h</b> to unhide the handles of the selected se
   
 <b>Demo Video:</b> https://youtu.be/80ZLjjgwPAw<br>
 <b>Overview of Flexi Edit Bezier Tool:</b> https://youtu.be/enQHGmluQIw
-
-# Installation
-- Download blenderbezierutils.py
-- Open Blender and select File->User Preferences
-- Click install Add-ons tab and then Install Add-on from File
-- Select the downloaded file
-- Check the 'Bezier Utilities' option in the add-ons dialog
-
-After installation, a new 'Bezier Utilities' tab is displayed in object mode on 'Active Tool and Workspace settings' tab on the properties panel. There will also appear two new buttons - Flexi Draw Bezier and Flexi Edit Bezier - on the toolshelf.
 
 # Credits
 The functionality of editing curve by grabbing a point on it is adapted from Inkscape edit curve tool: https://gitlab.com/inkscape/inkscape/blob/master/src/ui/tool/curve-drag-point.cpp <br>
