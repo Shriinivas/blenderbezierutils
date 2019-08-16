@@ -3255,6 +3255,7 @@ def register():
     # ~ bpy.utils.register_tool(FlexiEditBezierTool) (T60766)
     registerFlexiBezierTools()
     registerFlexiBezierKeymaps()
+    updatePanel(None, bpy.context)
 
     bpy.app.handlers.load_post.append(ModalDrawBezierOp.loadPostHandler)
     bpy.app.handlers.load_pre.append(ModalDrawBezierOp.loadPreHandler)
