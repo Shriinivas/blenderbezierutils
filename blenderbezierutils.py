@@ -1364,9 +1364,9 @@ class BezierUtilsPanel(Panel):
                         pts = getInterpSegPts(o.matrix_world, spline, j, \
                             res = 200, startT = 0 , endT = 1)
                         lineCos += getLinesFromPts(pts)
-                lineColors = [colorVal for j in range(0, len(lineCos))]
-                BezierUtilsPanel.lineBatch = batch_for_shader(BezierUtilsPanel.shader, \
-                    "LINES", {"pos": lineCos, "color": lineColors})
+            lineColors = [colorVal for j in range(0, len(lineCos))]
+            BezierUtilsPanel.lineBatch = batch_for_shader(BezierUtilsPanel.shader, \
+                "LINES", {"pos": lineCos, "color": lineColors})
         else:
             BezierUtilsPanel.lineBatch = batch_for_shader(BezierUtilsPanel.shader, \
                 "LINES", {"pos": [], "color": []})
