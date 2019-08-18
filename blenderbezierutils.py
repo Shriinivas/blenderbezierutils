@@ -23,7 +23,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 8, 28),
+    "version": (0, 8, 29),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -1187,6 +1187,19 @@ class BezierUtilsPanel(Panel):
     bpy.types.Scene.otherExpanded = BoolProperty(name="Other Expanded State",
             default = False)
 
+    bpy.types.Scene.curveColorPick = bpy.props.FloatVectorProperty(
+        name="Color",
+        subtype="COLOR",
+        size=4,
+        min=0.0,
+        max=1.0,
+        default=(1.0, 1.0, 1.0, 1.0)
+    )
+
+    bpy.types.Scene.applyCurveColor = BoolProperty(name="Apply Curve Color", \
+        description='Apply color to all non selected curves ', \
+            default = False)
+
     @classmethod
     def poll(cls, context):
         return context.mode in {'OBJECT', 'EDIT_CURVE'}
@@ -1293,6 +1306,10 @@ class BezierUtilsPanel(Panel):
 
             if context.scene.otherExpanded:
                 col = layout.column()
+                row = col.row()
+                row.prop(context.scene, "curveColorPick", text = 'Curve Color')
+                row.prop(context.scene, 'applyCurveColor', toggle = True)
+                col = layout.column()
                 col.operator('object.close_splines')
                 col = layout.column()
                 col.operator('object.close_straight')
@@ -1300,12 +1317,64 @@ class BezierUtilsPanel(Panel):
                 col.operator('object.open_splines')
                 col = layout.column()
                 col.operator('object.remove_dupli_vert_curve')
-
         else:
             col = layout.column()
             col.prop(context.scene, 'markVertex', toggle = True)
 
+    ################ Stand-alone handler for changing curve colors #################
+    
+    drawHandlerRef = None
+    shader = None
+    lineBatch = None
+    
+    @persistent
+    def colorCurves(scene = None, add = False, remove = False):
+        def ccDrawHandler():
+            bgl.glLineWidth(1.5)
+            if(BezierUtilsPanel.lineBatch != None):
+                BezierUtilsPanel.lineBatch.draw(BezierUtilsPanel.shader)
+                
+        if(add and BezierUtilsPanel.drawHandlerRef == None):
+            BezierUtilsPanel.drawHandlerRef = \
+                bpy.types.SpaceView3D.draw_handler_add(ccDrawHandler, \
+                    (), "WINDOW", "POST_VIEW")
+            BezierUtilsPanel.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
+            BezierUtilsPanel.shader.bind()                
+            return
+            
+        elif(remove):
+            if(BezierUtilsPanel.drawHandlerRef != None):
+                bpy.types.SpaceView3D.draw_handler_remove(BezierUtilsPanel.drawHandlerRef, \
+                    "WINDOW")                
+                BezierUtilsPanel.drawHandlerRef = None
+                return 
 
+        if(bpy.context.scene.applyCurveColor): 
+            objs = [o for o in bpy.context.scene.objects if(isBezier(o) and o.visible_get() \
+                and len(o.modifiers) == 0 and not o.select_get())]
+                
+            lineCos = []
+            colorVal = bpy.context.scene.curveColorPick
+            for o in objs:
+                for i, spline in enumerate(o.data.splines):
+                    for j in range(0, len(spline.bezier_points)):
+                        segPts = getCtrlPtsForSeg(o, i, j)
+                        if(segPts == None):
+                            continue
+                        pts = getInterpSegPts(o.matrix_world, spline, j, \
+                            res = 200, startT = 0 , endT = 1)
+                        lineCos += getLinesFromPts(pts)
+                lineColors = [colorVal for j in range(0, len(lineCos))]
+                BezierUtilsPanel.lineBatch = batch_for_shader(BezierUtilsPanel.shader, \
+                    "LINES", {"pos": lineCos, "color": lineColors})
+        else:
+            BezierUtilsPanel.lineBatch = batch_for_shader(BezierUtilsPanel.shader, \
+                "LINES", {"pos": [], "color": []})
+            
+        areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
+        for a in areas:
+            a.tag_redraw()
+            
 ################### Common Bezier Functions & Classes ###################
 
 def getPtFromT(p0, p1, p2, p3, t):
@@ -2211,6 +2280,10 @@ def getCtrlPtsForSeg(obj, splineIdx, segIdx):
     wsData = getWSData(obj)
     pt0 = wsData[splineIdx][segIdx]
     segEndIdx = getAdjIdx(obj, splineIdx, segIdx)
+    
+    if(segEndIdx == None):
+        return None
+        
     pt1 = wsData[splineIdx][segEndIdx]
     return [pt0[1], pt0[2], pt1[0], pt1[1]]
 
@@ -3251,6 +3324,9 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
+    BezierUtilsPanel.colorCurves(add = True)
+    bpy.app.handlers.depsgraph_update_post.append(BezierUtilsPanel.colorCurves)
+
     # ~ bpy.utils.register_tool(FlexiDrawBezierTool) (T60766)
     # ~ bpy.utils.register_tool(FlexiEditBezierTool) (T60766)
     registerFlexiBezierTools()
@@ -3263,6 +3339,10 @@ def register():
     bpy.app.handlers.load_pre.append(ModalFlexiEditBezierOp.loadPreHandler)
 
 def unregister():
+    BezierUtilsPanel.colorCurves(remove = True)
+    # ~ if(BezierUtilsPanel.colorCurves in bpy.app.handlers.depsgraph_update_post):
+    bpy.app.handlers.depsgraph_update_post.remove(BezierUtilsPanel.colorCurves)
+
     bpy.app.handlers.load_post.remove(ModalDrawBezierOp.loadPostHandler)
     bpy.app.handlers.load_pre.remove(ModalDrawBezierOp.loadPreHandler)
     bpy.app.handlers.load_post.remove(ModalFlexiEditBezierOp.loadPostHandler)
