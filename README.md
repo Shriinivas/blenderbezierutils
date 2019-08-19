@@ -69,9 +69,10 @@ I am grateful to the authors of the module for making this great piece of code a
 # Known Issues
 A few known issues, which need to be fixed:
 - <strike>Starting a new blend while the Flexi Bezier is active causes the tool to stop working. The workaround is to select any other tool from the toolbar before starting a new file.</strike> This is fixed in version 0.51.
-- <strike>Clicking on the Flexi Bezier button while it is already active starts the curve from under the button on the viewport. In this case just press escape to undo the unwanted curve. The same thing may happen while clicking on the Blender menu.</strike> This is fixed in version 0.55.<br>
-- <strike>The Flexi Draw Bezier and Flexi Edit Bezier probably won't work after Blender restart. This is likely an issue with Blender and there is a bug report open related to it ( https://developer.blender.org/T60766 ). Till it gets fixed, to activate the tools again in the new session, just disable and enable the add-on from preferences menu (thanks Nic for this work-around).</strike> This is fixed in version 0.8.2 (Thanks to the tip from Sakana3 about workaround in add-on from Germano Cavalcante)<br>
+- <strike>Clicking on the Flexi Bezier button while it is already active starts the curve from under the button on the viewport. </strike> This is fixed in version 0.55.<br>
+- <strike>The Flexi Draw Bezier and Flexi Edit Bezier probably won't work after Blender restart. </strike> This is fixed in version 0.8.2 (Thanks to the tip from Sakana3 about workaround in add-on from Germano Cavalcante)<br>
 - In Flexi Draw Bezier, to enable snapping, sometimes it may be required to reactivate the Flexi Bezier tool (by clicking on some other tool and clicking back on Flexi Bezier button).<br>
+- After switching the another workspace (Modeling, 3D Animation etc.), the Flexi Draw and Flexi Edit tools will need to be reactivated. Just click some other tool on the toolbar and click on the respective Flexi tool again in the new workspaces.<br>
 - Uninstalling the tool when Flexi Edit Tool is active may give errors. Suggestion: if you are uninstalling the add-on, select a tool other than Flexi Draw or Flexi Bezier first and then unstall it.<br>
 
 # Limitations
