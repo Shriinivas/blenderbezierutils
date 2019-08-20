@@ -1,6 +1,6 @@
 
 # Blender Add-on with Bezier Utility Operations
-<b>Add-on Version: 0.8.29 </b>
+<b>Add-on Version: 0.9 </b>
 
 This add-on contains several tools for working with Bezier curves. <br>
 Supported Blender Version: <b>2.8</b> <br>
@@ -12,7 +12,7 @@ Supported Blender Version: <b>2.8</b> <br>
 - Select the downloaded file
 - Check the 'Bezier Utilities' option in the add-ons dialog
 
-After installation, a new 'Bezier Utilities' tab is displayed in object mode on 'Active Tool and Workspace settings' tab on the properties panel. There will also appear two new buttons - Flexi Draw Bezier and Flexi Edit Bezier - on the toolshelf.
+After installation, a new 'Bezier Utilities' tab is displayed in object mode on 'Active Tool and Workspace settings' tab on the properties panel. There will also appear two new buttons - <b>Flexi Draw Bezier</b> and <b>Flexi Edit Bezier</b> - in Object Mode and a <b>Flexi Grease Bezier</b> button in Draw Mode on the toolshelf. 
 
 # Overview
 The tools are arranged in a collapsible Panel, grouped according to the functionality type. 
@@ -46,9 +46,6 @@ The snapping gets adapted to the viewport zoom level. <br>
 
 Snapping and locking can be combined together. So user can hold down both control and shift to snap to grid as well as restrict the angle. Likewise, user can press shift-Z to lock to XY plane and then hold shift while moving the mouse to restrict the angle between the segment end points.
 
-<b>Demo Video:</b> https://youtu.be/Wo-RzVI05po<br>
-<b>Overview of Flexi Draw Bezier Tool:</b> https://youtu.be/C9PXp0XHgYQ
-
 # Flexi Edit Bezier Tool
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/editdemo.gif)<br>
 This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). With it You can 1) edit a Bezier curve by dragging a point on the curve 2) Move Segment endpoints and manipulate handles 3) Add or delete a vertex at any arbitrary location on the curve <br><br>
@@ -57,9 +54,21 @@ This tool is available in object mode via a new button on the toolshelf (short c
 <b>Deleting a vertex or handle point: </b> 
 Select any end point (the selected point is marked in dark green) and press del to delete it. Pressing del when a handle point is selected will align it with the other point of the segment. <br><br>
 You can toggle between Flexi Draw and Flexi Edit by pressing <b>e</b>.<br>
-Press <b>h</b> to hide and <b>alt+h</b> to unhide the handles of the selected segment.<br>
-  
-<b>Demo Video:</b> https://youtu.be/80ZLjjgwPAw<br>
+Press <b>h</b> to toggle the visibility of the selected segment handles.<br>
+<b>Subdivide Segments Uniformly: </b> 
+You can also subdivide the selected segments uniformly. To initiate the subdivision op, first select the segments (hold down shift to select multiple segments). Then press W. Now there will appear a subdivision marker at the middle of each selected segment. You can increase or decrease the number of subdivisions by scrolling the mouse wheel. Press Spacebar or Enter to confirm the subdiv operation.<br><br>
+<b>Align Handle:</b>
+To align the handle with the opposite handle of the same end point, select the handle point and press K. This way you can quickly smooth out the sharp corners.
+
+# Flexi Grease Bezier Tool
+This tool will appear on the toolshelf in Grease Pencil Draw mode. You can draw Bezier curves just as you would draw with the Flexi Draw tool. After confirming the drawing is converted to grease pencil strokes. All the snapping and locking options of the Flexi Draw are available here also.<br>
+Additionaly, you can increase of decrease the resolution of the stroke using the mouse wheel.<br>
+
+<b>Video Tutorials & Demos:</b><br>
+<b>General Demo of Toolkit Capabilities:</b> https://youtu.be/Wo-RzVI05po<br>
+<b>Demo of Flexi Draw Bezier:</b> https://youtu.be/Is8b3QwETEM<br>
+<b>Overview of Flexi Draw Bezier Tool:</b> https://youtu.be/C9PXp0XHgYQ
+<b>Demo of Flexi Edit Bezier:</b> https://youtu.be/80ZLjjgwPAw<br>
 <b>Overview of Flexi Edit Bezier Tool:</b> https://youtu.be/enQHGmluQIw
 
 # Credits
