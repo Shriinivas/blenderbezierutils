@@ -67,9 +67,11 @@ Additionaly, you can increase of decrease the resolution of the stroke using the
 <b>Video Tutorials & Demos:</b><br>
 <b>General Demo of Toolkit Capabilities:</b> https://youtu.be/Wo-RzVI05po<br>
 <b>Demo of Flexi Draw Bezier:</b> https://youtu.be/Is8b3QwETEM<br>
-<b>Overview of Flexi Draw Bezier Tool:</b> https://youtu.be/C9PXp0XHgYQ
+<b>Overview of Flexi Draw Bezier Tool:</b> https://youtu.be/C9PXp0XHgYQ<br>
 <b>Demo of Flexi Edit Bezier:</b> https://youtu.be/80ZLjjgwPAw<br>
-<b>Overview of Flexi Edit Bezier Tool:</b> https://youtu.be/enQHGmluQIw
+<b>Overview of Flexi Edit Bezier Tool:</b> https://youtu.be/enQHGmluQIw<br>
+<b>Overview of Flexi Grease Bezier & Uniform Subdiv Op:</b> https://youtu.be/4XrjpWwLU4M<br>
+
 
 # Credits
 The functionality of editing curve by grabbing a point on it is adapted from Inkscape edit curve tool: https://gitlab.com/inkscape/inkscape/blob/master/src/ui/tool/curve-drag-point.cpp <br>
