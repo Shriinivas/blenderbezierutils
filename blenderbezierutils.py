@@ -1572,8 +1572,7 @@ def getBezierBatches(shader, displayInfos, context = None, defHdlType = 'ALIGNED
         lineCos += segLineCos
         lineColors += [displayInfo.segColor for j in range(0, len(segLineCos))]
 
-    tipCos = []
-    tipColors = []
+    tipColInfo = []    
     for i, displayInfo in enumerate(displayInfos):
         segPts = displayInfo.segPts
         for handleNo in displayInfo.handleNos:
@@ -1592,17 +1591,20 @@ def getBezierBatches(shader, displayInfos, context = None, defHdlType = 'ALIGNED
             lineColors += [HANDLE_COLOR_MAP[htype], \
                 HANDLE_COLOR_MAP[htype]]
 
-        tipColInfo = []
         for j, tipColor in enumerate(displayInfo.tipColors):
             if(tipColor != None):
                 # [6] array to [2][3] array (includes end points of curve)
                 ptIdx = int(j / 3)
                 hdlIdx = j % 3
                 tipColInfo.append([tipColor, segPts[ptIdx][hdlIdx]])
-        tipColInfo = sorted(tipColInfo, key = lambda x: TIP_COL_PRIORITY[x[0]])
-        for ti in tipColInfo:
-            tipColors.append(ti[0])
-            tipCos.append(ti[1])
+    
+    tipCos = []
+    tipColors = []
+    
+    tipColInfo = sorted(tipColInfo, key = lambda x: TIP_COL_PRIORITY[x[0]])
+    for ti in tipColInfo:
+        tipColors.append(ti[0])
+        tipCos.append(ti[1])
 
     lineBatch = batch_for_shader(shader, "LINES", {"pos": lineCos, "color": lineColors})
     tipBatch = batch_for_shader(shader, "POINTS", {"pos": tipCos, "color": tipColors})
