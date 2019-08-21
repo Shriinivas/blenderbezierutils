@@ -54,9 +54,9 @@ This tool is available in object mode via a new button on the toolshelf (short c
 <b>Deleting a vertex or handle point: </b> 
 Select any end point (the selected point is marked in dark green) and press del to delete it. Pressing del when a handle point is selected will align it with the other point of the segment. <br><br>
 You can toggle between Flexi Draw and Flexi Edit by pressing <b>e</b>.<br>
-Press <b>h</b> to toggle the visibility of the selected segment handles.<br>
+Press <b>h</b> to toggle the visibility of the selected segment handles.<br><br>
 <b>Subdivide Segments Uniformly: </b> 
-You can also subdivide the selected segments uniformly. To initiate the subdivision op, first select the segments (hold down shift to select multiple segments). Then press W. Now there will appear a subdivision marker at the middle of each selected segment. You can increase or decrease the number of subdivisions by scrolling the mouse wheel or pressing + or - keys. Press Spacebar or Enter to confirm the subdiv operation.<br><br>
+You can also subdivide the selected segments uniformly. To initiate the subdivision op, first select the segments (hold down shift to select multiple segments). Then press w. Now there will appear a subdivision marker at the middle of each selected segment. You can increase or decrease the number of subdivisions by scrolling the mouse wheel or pressing + or - keys. Press Spacebar or Enter to confirm the subdiv operation.<br><br>
 <b>Align Handle:</b>
 To align the handle with the opposite handle of the same end point, select the handle point and press K. This way you can quickly smooth out the sharp corners.
 
