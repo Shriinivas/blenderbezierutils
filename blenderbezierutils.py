@@ -2411,11 +2411,16 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
             self.cancelOp(context)
             return {"CANCELLED"}
 
-        if(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE'} and len(self.curvePts) > 1):
-            if(event.type =='WHEELUPMOUSE'):
+        if(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', 'NUMPAD_PLUS', \
+            'NUMPAD_MINUS','PLUS', 'MINUS'} and len(self.curvePts) > 1):
+            if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
+                and event.value == 'PRESS'):
+                return {'RUNNING_MODAL'}
+            elif(event.type =='WHEELUPMOUSE' or event.type.endswith('PLUS')):
                 self.subdivAdd(5)
-            if(event.type =='WHEELDOWNMOUSE'):
+            elif(event.type =='WHEELDOWNMOUSE' or event.type.endswith('MINUS')):
                 self.subdivAdd(-5)
+                
             self.redrawBezier(context, event)
             return {'RUNNING_MODAL'}
 
@@ -2819,12 +2824,12 @@ class SelectCurveInfo:
             curveRes = 1000, minRes = 1000)
 
     def subdivDecr(self):
-        if(self.subdivCnt < 100):
-            self.subdivCnt += 1
-
-    def subdivIncr(self):
         if(self.subdivCnt > 2):
             self.subdivCnt -= 1
+
+    def subdivIncr(self):
+        if(self.subdivCnt < 100):
+            self.subdivCnt += 1
 
     def getLastSegIdx(self):
         spline = self.obj.data.splines[self.splineIdx]
@@ -3408,11 +3413,15 @@ class ModalFlexiEditBezierOp(Operator):
                     self.subdivMode = False
                 return {"RUNNING_MODAL"}
 
-        elif(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE'}):
+        elif(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', 'NUMPAD_PLUS', \
+            'NUMPAD_MINUS','PLUS', 'MINUS'}):
             if(len(self.selectCurveInfos) > 0 and self.subdivMode):
-                if(event.type =='WHEELUPMOUSE'):
+                if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
+                    and event.value == 'PRESS'):
+                    return {'RUNNING_MODAL'}
+                elif(event.type =='WHEELDOWNMOUSE' or event.type.endswith('MINUS')):
                     for c in self.selectCurveInfos: c.subdivDecr()
-                if(event.type =='WHEELDOWNMOUSE'):
+                elif(event.type =='WHEELUPMOUSE' or event.type.endswith('PLUS')):
                     for c in self.selectCurveInfos: c.subdivIncr()
                 self.refreshDisplaySelCurves(context)
                 return {'RUNNING_MODAL'}
