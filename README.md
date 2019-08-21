@@ -56,13 +56,13 @@ Select any end point (the selected point is marked in dark green) and press del 
 You can toggle between Flexi Draw and Flexi Edit by pressing <b>e</b>.<br>
 Press <b>h</b> to toggle the visibility of the selected segment handles.<br>
 <b>Subdivide Segments Uniformly: </b> 
-You can also subdivide the selected segments uniformly. To initiate the subdivision op, first select the segments (hold down shift to select multiple segments). Then press W. Now there will appear a subdivision marker at the middle of each selected segment. You can increase or decrease the number of subdivisions by scrolling the mouse wheel. Press Spacebar or Enter to confirm the subdiv operation.<br><br>
+You can also subdivide the selected segments uniformly. To initiate the subdivision op, first select the segments (hold down shift to select multiple segments). Then press W. Now there will appear a subdivision marker at the middle of each selected segment. You can increase or decrease the number of subdivisions by scrolling the mouse wheel or pressing + or - keys. Press Spacebar or Enter to confirm the subdiv operation.<br><br>
 <b>Align Handle:</b>
 To align the handle with the opposite handle of the same end point, select the handle point and press K. This way you can quickly smooth out the sharp corners.
 
 # Flexi Grease Bezier Tool
 This tool will appear on the toolshelf in Grease Pencil Draw mode. You can draw Bezier curves just as you would draw with the Flexi Draw tool. After confirming the drawing is converted to grease pencil strokes. All the snapping and locking options of the Flexi Draw are available here also.<br>
-Additionaly, you can increase of decrease the resolution of the stroke using the mouse wheel.<br>
+Additionaly, you can increase of decrease the resolution of the stroke using the mouse wheel or pressing + or - keys.<br>
 
 <b>Video Tutorials & Demos:</b><br>
 <b>General Demo of Toolkit Capabilities:</b> https://youtu.be/Wo-RzVI05po<br>
