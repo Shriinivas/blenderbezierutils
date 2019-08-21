@@ -2380,10 +2380,6 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         self.subdivCos = []
         self.interpPts = []
 
-        # Object name -> [spline index, (startpt, endPt)]
-        # Not used right now (maybe in case of large no of curves)
-        self.snapInfos = {}
-
         bpy.app.handlers.undo_post.append(self.postUndoRedo)
         bpy.app.handlers.redo_post.append(self.postUndoRedo)
 
@@ -2402,8 +2398,6 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         super(ModalFlexiDrawGreaseOp, self).initialize(context)
         self.subdivCos = []
         self.interpPts = []
-        self.snapLocs = []
-        # ~ self.h = False
         self.updateSnapLocs()
 
     def modal(self, context, event):
@@ -2484,12 +2478,14 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
     def updateSnapLocs(self):
         self.snapLocs = []
-        mw = self.gpencil.matrix_world
-        for layer in self.gpencil.data.layers:
-            for f in layer.frames:
-                for s in f.strokes:
-                    self.snapLocs += [mw @ s.points[0].co, mw @ s.points[-1].co]
-
+        gpencils = [o for o in bpy.data.objects if o.type == 'GPENCIL']
+        for gpencil in gpencils:
+            mw = gpencil.matrix_world
+            for layer in gpencil.data.layers:
+                for f in layer.frames:
+                    for s in f.strokes:
+                        self.snapLocs += [mw @ s.points[0].co, mw @ s.points[-1].co]
+        
     def save(self, context, event):
         layer = self.gpencil.data.layers.active
         if(layer == None):
@@ -2508,7 +2504,6 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
                 pt = self.subdivCos[i]
                 stroke.points[i].co = self.gpencil.matrix_world.inverted() @ pt
             self.snapLocs += [self.curvePts[0][1], self.curvePts[-1][1]]
-        # ~ self.updateSnapLocs()
         bpy.ops.ed.undo_push()
 
 ################### Flexi Edit Bezier Curve ###################
