@@ -3078,9 +3078,10 @@ class SelectCurveInfo:
             # Alway select the main point after this (should be done by caller actually)
             self._ctrlIdx = ptIdx * 3 + 1
 
-    #TODO: Redundant data structures
+    # TODO: Redundant data structures 
+    # TODO: Better: Single Obj with multiples splineIdxs
     def getDisplayInfos(self, segPts = None, hltInfo = None, hideHdls = False,
-        selSegCol = DRAW_SEL_SEG_COLOR):
+        selSegCol = DRAW_SEL_SEG_COLOR, includeAdj = True):
 
         def getTipList(hltIdx, idx):
             # Display of non-selected segments...
@@ -3128,6 +3129,9 @@ class SelectCurveInfo:
 
             selSegDisplayInfo = EditSegDisplayInfo(segPts, \
                 selSegCol, hdlIdxs, tipColors, vertCos)
+            
+            if(not includeAdj):
+                return [selSegDisplayInfo]
 
             # Adj segs change in case of aligned and auto handles
             prevPts = self.getPrevSegPts()
@@ -3345,11 +3349,16 @@ class ModalFlexiEditBezierOp(Operator):
     # Refresh display with existing curves (nonstatic)
     def refreshDisplaySelCurves(self, context, displayInfosMap = {}, locOnCurve = None):
         displayInfos = list(v for vs in displayInfosMap.values() for v in vs)
-        dispInfoObjs = displayInfosMap.keys()
+        dispCurveInfoObjs = displayInfosMap.keys()
+        dispInfoObjs = [c.obj for c in dispCurveInfoObjs] # bpy Curve objects
         for c in self.selectCurveInfos:
-            if(c in dispInfoObjs):
+            if(c in dispCurveInfoObjs):
                 continue
-            displayInfos += c.getDisplayInfos(hideHdls = ModalFlexiEditBezierOp.h)
+            includeAdj = True
+            if(c.obj in dispInfoObjs):
+                includeAdj = False
+            displayInfos += c.getDisplayInfos(hideHdls = ModalFlexiEditBezierOp.h, \
+                includeAdj = includeAdj)
 
         displayInfos = sorted(displayInfos, key = lambda x:SEG_COL_PRIORITY[x.segColor])
         ModalFlexiEditBezierOp.refreshDisplay(context, displayInfos, locOnCurve)
