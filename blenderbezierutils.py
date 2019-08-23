@@ -321,6 +321,14 @@ def roundedVect(vect, rounding):
 
 ###################### Screen functions ######################
 
+def get3dLoc(context, event, vec = None):
+    region = context.region
+    rv3d = context.space_data.region_3d
+    xy = event.mouse_region_x, event.mouse_region_y
+    if(vec == None):
+        vec = region_2d_to_vector_3d(region, rv3d, xy)
+    return region_2d_to_location_3d(region, rv3d, xy, vec)
+
 def  getViewDistRounding(context):
     viewDist = context.space_data.region_3d.view_distance
     return int(log(viewDist, 10)) - 1
@@ -1752,6 +1760,157 @@ def resetToolbarTool():
             override['region'] = r
             bpy.ops.wm.tool_set_by_index(override)    
 
+# TODO: Maybe something more readable
+def updateMetaBtns(caller, event, keymap = None):
+    if(keymap == None):
+        keymap = {'LEFT_SHIFT': 'shift', 'RIGHT_SHIFT': 'shift', 
+            'LEFT_CTRL':'ctrl', 'RIGHT_CTRL':'ctrl', 
+            'LEFT_ALT': 'alt', 'RIGHT_ALT': 'alt'}
+
+    if(keymap.get(event.type) != None):
+        expr = 'caller.' + keymap[event.type] + ' = '
+        if(event.value == 'PRESS'): exec(expr +'True')
+        if(event.value == 'RELEASE'): exec(expr +'False')
+        return True
+        
+    return False
+        
+class Snapper():
+    def __init__(self, getSnapLocs, getPrevRefCo):
+        self.initialize()
+        self.getSnapLocs = getSnapLocs
+        self.getPrevRefCo = getPrevRefCo
+        self.unlockEvt = 'U'
+        self.defaultSnapSteps = 3
+        self.snapSteps = self.defaultSnapSteps        
+        
+    def initialize(self):        
+        self.shift = False # For locking to plane 
+        
+        self.angleSnap = False
+        self.gridSnap = False
+        self.objSnap = False
+        
+        self.resetSnap()
+        
+    def resetSnap(self):
+        self.lockAxes = []
+        self.lastSnapCos = []
+        self.lastSnapTypes = set()
+        
+    def procModal(self, context, event):
+        if(event.type in {'LEFT_SHIFT', 'RIGHT_SHIFT'}):
+            if(event.value == 'PRESS'): self.shift = True
+            if(event.value == 'RELEASE'): self.shift = False
+            
+        if(event.type in {'X', 'Y', 'Z', self.unlockEvt}):
+            if(event.type == self.unlockEvt):
+                self.lockAxes = []
+            else:
+                self.lockAxes = [ord(event.type) - ord('X')]
+                if(self.shift):
+                    self.lockAxes = list({0, 1, 2} - set(self.lockAxes))
+                
+        keymap = {'LEFT_SHIFT': 'angleSnap', 'RIGHT_SHIFT': 'angleSnap', 
+            'LEFT_CTRL':'gridSnap', 'RIGHT_CTRL':'gridSnap', 
+            'LEFT_ALT': 'objSnap', 'RIGHT_ALT': 'objSnap'}
+
+        updateMetaBtns(self, event, keymap)
+
+        if(event.type == 'WHEELDOWNMOUSE' and self.angleSnap):
+            if(self.snapSteps < 10):
+                self.snapSteps += 1
+
+        if(event.type == 'WHEELUPMOUSE' and self.angleSnap):
+            if(self.snapSteps > 1):
+                self.snapSteps -= 1
+
+        if(event.type == 'MIDDLEMOUSE' and self.angleSnap):
+            self.snapSteps = self.defaultSnapSteps
+
+        return False
+        
+    def get3dLocSnap(self, context, event, vec = None, fromActiveObj = True):
+        self.lastSnapCos = []
+        self.lastSnapTypes = set()
+
+        rounding = getViewDistRounding(context)
+        region = context.region
+        rv3d = context.space_data.region_3d
+        xy = event.mouse_region_x, event.mouse_region_y
+
+        if(self.objSnap):
+            #TODO: Called very frequently (store the tree without duplicating data)
+            snapLocs = self.getSnapLocs()
+            kd = kdtree.KDTree(len(snapLocs))
+            for i, l in enumerate(snapLocs):
+                kd.insert(getCoordFromLoc(context, l).to_3d(), i)
+            kd.balance()
+
+            coFind = Vector(xy).to_3d()
+            searchResult = kd.find_range(coFind, SNAP_DIST_PIXEL)
+            if(len(searchResult) != 0):
+                co, idx, dist = min(searchResult, key = lambda x: x[2])
+                return snapLocs[idx]
+
+        if(vec == None):
+            if(fromActiveObj and context.active_object != None):
+                vec = context.active_object.location
+            else:
+                # ~ vec = region_2d_to_vector_3d(region, rv3d, xy)
+                vec = context.scene.cursor.location
+
+        loc = region_2d_to_location_3d(region, rv3d, xy, vec)
+
+        lastCo = self.getPrevRefCo()
+        if(len(self.lockAxes) > 0 and lastCo != None):
+            actualLoc = loc[:]
+            loc = lastCo.copy()
+            for axis in self.lockAxes: loc[axis] = actualLoc[axis]
+
+        if(self.gridSnap):
+            loc = roundedVect(loc, rounding)
+
+        if(self.angleSnap and lastCo != None):
+            actualLoc = loc.copy()
+
+            #First decide the main movement axis
+            diff = [abs(v) for v in (actualLoc - lastCo)]
+            maxDiff = max(diff)
+            axis = 0 if abs(diff[0]) == maxDiff \
+                else (1 if abs(diff[1]) == maxDiff else 2)
+
+            loc = lastCo.copy()
+            loc[axis] = actualLoc[axis]
+
+            snapIncr = 45 / self.snapSteps
+            snapAngles = [radians(snapIncr * a) for a in range(0, self.snapSteps + 1)]
+            l1 =  actualLoc[axis] - lastCo[axis] #Main axis value
+
+            for i in range(0, 3):
+                if(i != axis):
+                    l2 =  (actualLoc[i] - lastCo[i]) #Minor axis value
+                    angle = abs(atan(l2 / l1)) if l1 != 0 else 0
+                    dirn = (l1 * l2) / abs(l1 * l2) if (l1 * l2) != 0 else 1
+                    prevDiff = 9e+99
+                    for j in range(0, len(snapAngles) + 1):
+                        if(j == len(snapAngles)):
+                            loc[i] = lastCo[i] + dirn * l1 * tan(snapAngles[-1])
+                            break
+                        cmpAngle = snapAngles[j]
+                        if(abs(angle - cmpAngle) > prevDiff):
+                            loc[i] = lastCo[i] + dirn * l1 * tan(snapAngles[j-1])
+                            break
+                        prevDiff = abs(angle - cmpAngle)
+            self.lastSnapCos += [lastCo, loc]
+            self.lastSnapTypes.add('angleSnap')
+        return loc
+        
+    # TODO: Some elegant solution
+    def getLastSnapCos(self):
+        return self.lastSnapCos
+    
+
 ################### Flexi Draw Bezier Curve ###################
 
 
@@ -1783,13 +1942,6 @@ class ModalDrawBezierOp(Operator):
             bpy.types.SpaceView3D.draw_handler_remove(ModalDrawBezierOp.drawHandlerRef, \
                 "WINDOW")
             ModalDrawBezierOp.drawHandlerRef = None
-
-    def cancelOp(self, context):
-        if(self != None): # If None called from unregister
-            ModalDrawBezierOp.refreshDisplay(context, [])
-            
-        ModalDrawBezierOp.removeDrawHandler()
-        ModalDrawBezierOp.running = False
 
     #static method
     def drawHandler():
@@ -1834,10 +1986,10 @@ class ModalDrawBezierOp(Operator):
         for a in areas:
             a.tag_redraw()
 
-    def __init__(self, curveDispRes = 20):
-        #No of subdivisions in the displayed curve with view dist 1
+    def __init__(self, snapper, curveDispRes):
+        #No. of subdivisions in the displayed curve with view dist 1
         self.curveDispRes = curveDispRes
-        self.defaultSnapSteps = 3
+        self.snapper = snapper
 
     def invoke(self, context, event):
         ModalDrawBezierOp.opObj = self
@@ -1853,17 +2005,26 @@ class ModalDrawBezierOp(Operator):
         
         return {"RUNNING_MODAL"}
 
+    def resetMetaBtns(self):
+        self.ctrl = False
+        self.shift = False
+        self.alt = False
+
     #This will be called multiple times not just at the beginning
     def initialize(self, context):
         self.curvePts = []
         self.clickT = None #For double click
         self.pressT = None #For single click
         self.capture = False
-        self.ctrl = False
-        self.shift = False
-        self.alt = False
-        self.lockAxes = []
-        self.snapSteps = self.defaultSnapSteps
+        self.resetMetaBtns()
+        self.snapper.initialize()
+
+    def cancelOp(self, context):
+        if(self != None): # If None called from unregister
+            ModalDrawBezierOp.refreshDisplay(context, [])
+            
+        ModalDrawBezierOp.removeDrawHandler()
+        ModalDrawBezierOp.running = False
 
     def confirm(self, context, event):
         self.save(context, event)
@@ -1883,9 +2044,8 @@ class ModalDrawBezierOp(Operator):
             return {'PASS_THROUGH'}
 
         if(event.type == 'WINDOW_DEACTIVATE' and event.value == 'PRESS'):
-            self.ctrl = False
-            self.shift = False
-            self.alt = False
+            self.resetMetaBtns()
+            self.snapper.initialize()
             return {'PASS_THROUGH'}
 
         if(isOutside(context, event)):
@@ -1893,6 +2053,8 @@ class ModalDrawBezierOp(Operator):
                 return {'RUNNING_MODAL'}
             return {'PASS_THROUGH'}
 
+        self.snapper.procModal(context, event)
+        
         if((event.type == 'E' or event.type == 'e') and event.value == 'RELEASE'):
             # ~ bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname) (T60766)
             bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
@@ -1909,53 +2071,33 @@ class ModalDrawBezierOp(Operator):
             return {'RUNNING_MODAL'}
 
         if(event.type == 'BACK_SPACE' and event.value == 'RELEASE'):
-            self.lockAxes = []
+            self.snapper.resetSnap()
             if(len(self.curvePts) > 0):
                 self.curvePts.pop()
             if(len(self.curvePts) <= 1): #Because there is an extra point (the current one)
                 self.curvePts = []
                 self.capture = False
+            else:
+                loc = get3dLoc(context, event)
+                self.curvePts[-1] = [loc, loc, loc]                
             self.redrawBezier(context, event)
             return {'RUNNING_MODAL'}
 
-        if(event.type in {'LEFT_CTRL', 'RIGHT_CTRL'}):
-            self.ctrl = (event.value == 'PRESS')
+        if(updateMetaBtns(self, event)):
             return {'RUNNING_MODAL'}
-
-        if(event.type in {'LEFT_SHIFT', 'RIGHT_SHIFT'}):
-            self.shift = (event.value == 'PRESS')
-            return {'RUNNING_MODAL'}
-
-        if(event.type in {'LEFT_ALT', 'RIGHT_ALT'}):
-            self.alt = (event.value == 'PRESS')
-            return {'RUNNING_MODAL'}
-
-        if(event.type == 'WHEELDOWNMOUSE' and self.shift):
-            if(self.snapSteps < 10):
-                self.snapSteps += 1
-            return {'PASS_THROUGH'}
-
-        if(event.type == 'WHEELUPMOUSE' and self.shift):
-            if(self.snapSteps > 1):
-                self.snapSteps -= 1
-            return {'PASS_THROUGH'}
-
-        if(event.type == 'MIDDLEMOUSE' and self.shift):
-            self.snapSteps = self.defaultSnapSteps
-            return {'PASS_THROUGH'}
-
+        
         if (event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
             if(len(self.curvePts) == 0):
-                loc = self.get3dLocWithSnap(context, event)
+                loc = self.snapper.get3dLocSnap(context, event)
                 self.curvePts.append([loc, loc, loc])
             self.capture = True
-            self.lockAxes = []
+            self.snapper.resetSnap()
             self.pressT = time.time()
             return {'RUNNING_MODAL'}
 
         if (event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
             self.capture = False
-            self.lockAxes = []
+            self.snapper.resetSnap()
 
             # Rare condition: This happens e. g. when user clicks on header menu
             # like Object->Transform->Move. These ops consume press event but not release
@@ -1980,7 +2122,7 @@ class ModalDrawBezierOp(Operator):
                 self.curvePts[-1][0] = loc
                 self.curvePts[-1][2] = loc
             else:
-                loc = self.get3dLocWithSnap(context, event)
+                loc = self.snapper.get3dLocSnap(context, event)
 
             if(len(self.curvePts) == 1):
                 self.curvePts[0][2] = loc # changes only rt handle
@@ -1992,7 +2134,7 @@ class ModalDrawBezierOp(Operator):
         if (event.type == 'MOUSEMOVE'):
             bpy.context.window.cursor_set("DEFAULT")
             if(len(self.curvePts) > 1):
-                loc = self.get3dLocWithSnap(context, event)
+                loc = self.snapper.get3dLocSnap(context, event)
                 if(self.capture):
                     end = self.curvePts[-1][1]
                     ltHandle = end - (loc - end)
@@ -2039,7 +2181,7 @@ class ModalDrawBezierOp(Operator):
         curvePts = self.curvePts
 
         if(not self.capture or len(self.curvePts) <= 1):
-            loc = self.get3dLocWithSnap(context, event)
+            loc = self.snapper.get3dLocSnap(context, event)
             if(self.capture): #curvePts len must be 1
                 # First handle (straight line), if user drags first pt
                 # (first point from CurvePts, second the current location)
@@ -2071,10 +2213,6 @@ class ModalDrawBezierOp(Operator):
 
         ModalDrawBezierOp.refreshDisplay(context, displayInfos, subdivCos, showSubdivPts)
 
-    def get3dLocWithSnap(self, context, event):
-        loc = self.get3dLoc(context, event, snapToObj = self.alt,
-            snapToGrid = self.ctrl, restrict = self.shift, vec = None, fromActiveObj = False)
-        return loc
 
     #Reference point for restrict angle or lock axis
     def getPrevRefCo(self):
@@ -2086,80 +2224,6 @@ class ModalDrawBezierOp(Operator):
                 return self.curvePts[-2][1]
         return None
 
-    # TODO Maybe too tightly coupled with the data structure
-    def get3dLoc(self, context, event, snapToObj,
-        snapToGrid, restrict, vec = None, fromActiveObj = True):
-
-        rounding = getViewDistRounding(context)
-        region = context.region
-        rv3d = context.space_data.region_3d
-        xy = event.mouse_region_x, event.mouse_region_y
-
-        if(snapToObj):
-            snapLocs = self.getSnapLocs()
-            kd = kdtree.KDTree(len(snapLocs))
-            for i, l in enumerate(snapLocs):
-                kd.insert(getCoordFromLoc(context, l).to_3d(), i)
-            kd.balance()
-
-            coFind = Vector(xy).to_3d()
-            searchResult = kd.find_range(coFind, SNAP_DIST_PIXEL)
-            if(len(searchResult) != 0):
-                co, idx, dist = min(searchResult, key = lambda x: x[2])
-                return snapLocs[idx]
-
-        if(vec == None):
-            if(fromActiveObj and context.active_object != None):
-                vec = context.active_object.location
-            else:
-                # ~ vec = region_2d_to_vector_3d(region, rv3d, xy)
-                vec = context.scene.cursor.location
-
-        loc = region_2d_to_location_3d(region, rv3d, xy, vec)
-
-        lastCo = self.getPrevRefCo()
-        if(len(self.lockAxes) > 0 and lastCo != None):
-            actualLoc = loc[:]
-            loc = lastCo.copy()
-            for axis in self.lockAxes: loc[axis] = actualLoc[axis]
-
-        if(snapToGrid):
-            loc = roundedVect(loc, rounding)
-
-        if(restrict and lastCo != None):
-            actualLoc = loc.copy()
-
-            #First decide the main movement axis
-            diff = [abs(v) for v in (actualLoc - lastCo)]
-            maxDiff = max(diff)
-            axis = 0 if abs(diff[0]) == maxDiff \
-                else (1 if abs(diff[1]) == maxDiff else 2)
-
-            loc = lastCo.copy()
-            loc[axis] = actualLoc[axis]
-
-            snapIncr = 45 / self.snapSteps
-            snapAngles = [radians(snapIncr * a) for a in range(0, self.snapSteps + 1)]
-            l1 =  actualLoc[axis] - lastCo[axis] #Main axis value
-
-            for i in range(0, 3):
-                if(i != axis):
-                    l2 =  (actualLoc[i] - lastCo[i]) #Minor axis value
-                    angle = abs(atan(l2 / l1)) if l1 != 0 else 0
-                    dirn = (l1 * l2) / abs(l1 * l2) if (l1 * l2) != 0 else 1
-                    prevDiff = 9e+99
-                    for j in range(0, len(snapAngles) + 1):
-                        if(j == len(snapAngles)):
-                            loc[i] = lastCo[i] + dirn * l1 * tan(snapAngles[-1])
-                            break
-                        cmpAngle = snapAngles[j]
-                        if(abs(angle - cmpAngle) > prevDiff):
-                            loc[i] = lastCo[i] + dirn * l1 * tan(snapAngles[j-1])
-                            break
-                        prevDiff = abs(angle - cmpAngle)
-
-        return loc
-
 
 class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
     bl_description = "Flexible drawing of Bezier curves in object mode"
@@ -2169,7 +2233,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
     def __init__(self):
         curveDispRes = 200
-        super(ModalFlexiDrawBezierOp, self).__init__(curveDispRes)
+        snapper = Snapper(self.getSnapLocs, self.getPrevRefCo)
+        super(ModalFlexiDrawBezierOp, self).__init__(snapper, curveDispRes)
 
     def isDrawToolSelected(self, context):
         if(context.mode != 'OBJECT'):
@@ -2463,7 +2528,8 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
     def __init__(self):
         curveDispRes = 200
-        super(ModalFlexiDrawGreaseOp, self).__init__(curveDispRes)
+        snapper = Snapper(self.getSnapLocs, self.getPrevRefCo)        
+        super(ModalFlexiDrawGreaseOp, self).__init__(snapper, curveDispRes)
 
     def isGDrawToolSelected(self, context):
         if(context.mode != 'PAINT_GPENCIL'):
@@ -2907,6 +2973,9 @@ class SelectCurveInfo:
             self._clickLoc = None
 
     def getCtrlPtCoIdx(self):
+        if(self._ctrlIdx == None):
+            return None
+            
         idx0 = int(self._ctrlIdx / 3)
         idx1 = self._ctrlIdx % 3
         pts = self.getSegPts()
@@ -3491,28 +3560,18 @@ class ModalFlexiEditBezierOp(Operator):
             self.cancelOp(context)
             return {"CANCELLED"}
 
-        elif(not self.isEditing and event.type == 'ESC' \
+        elif(self.editCurveInfo == None and event.type == 'ESC' \
             and event.value == 'RELEASE'):
             self.reset(context)
             return {"RUNNING_MODAL"}
 
         elif(isOutside(context, event, exclInRgns = False)):
-            if(self.isEditing): return {'RUNNING_MODAL'}
+            if(self.editCurveInfo != None): return {'RUNNING_MODAL'}
             return {'PASS_THROUGH'}
 
-        elif(event.type in {'LEFT_CTRL', 'RIGHT_CTRL'}):
-            if(event.value == 'PRESS'): self.ctrl = True
-            elif(event.value == 'RELEASE'): self.ctrl = False
+        updateMetaBtns(self, event)
 
-        elif(event.type in {'LEFT_SHIFT', 'RIGHT_SHIFT'}):
-            if(event.value == 'PRESS'): self.shift = True
-            elif(event.value == 'RELEASE'): self.shift = False
-
-        elif(event.type in {'LEFT_ALT', 'RIGHT_ALT'}):
-            if(event.value == 'PRESS'): self.alt = True
-            elif(event.value == 'RELEASE'): self.alt = False
-
-        if(self.ctrl and (not self.isEditing or (self.pressT != None and \
+        if(self.ctrl and (self.editCurveInfo == None or (self.pressT != None and \
             time.time() - self.pressT) < SNGL_CLK_DURN)):
             bpy.context.window.cursor_set("CROSSHAIR")
         else:
@@ -3587,7 +3646,7 @@ class ModalFlexiEditBezierOp(Operator):
 
         elif(event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
             coFind = Vector((event.mouse_region_x, event.mouse_region_y)).to_3d()
-            newPos = self.get3dLoc(context, event)
+            newPos = get3dLoc(context, event)
             objs = self.getEditableCurveObjs()
 
             selObjInfos = self.getSearchQueryInfo()
@@ -3647,7 +3706,7 @@ class ModalFlexiEditBezierOp(Operator):
                 # User is editing curve or control points (left mouse pressed)
                 ci = ei.selCurveInfo
                 selCo = ci.getSelCo()
-                newPos = self.get3dLoc(context, event, selCo)
+                newPos = get3dLoc(context, event, selCo)
                 segPts = ei.getOffsetSegPts(newPos)
                 displayInfosMap = {ci: ci.getDisplayInfos(segPts, \
                     hideHdls = ModalFlexiEditBezierOp.h)}
@@ -3720,23 +3779,13 @@ class ModalFlexiEditBezierOp(Operator):
 
             self.pressT = None
 
-            newPos = self.get3dLoc(context, event, ei.selCurveInfo.getSelCo())
+            newPos = get3dLoc(context, event, ei.selCurveInfo.getSelCo())
             ei.moveSeg(newPos)
             # will be taken care by depsgraph
             # ~ self.updateAfterGeomChange(context = context)
             bpy.ops.ed.undo_push()
 
         return {'PASS_THROUGH'}
-
-    # TODO: Combine with snapping get3DLoc
-    def get3dLoc(self, context, event, vec = None):
-        region = context.region
-        rv3d = context.space_data.region_3d
-        xy = event.mouse_region_x, event.mouse_region_y
-        if(vec == None):
-            vec = region_2d_to_vector_3d(region, rv3d, xy)
-        return region_2d_to_location_3d(region, rv3d, xy, vec)
-
 
 
 # ~ class FlexiEditBezierTool(WorkSpaceTool):
