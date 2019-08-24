@@ -3853,8 +3853,8 @@ def getToolList(spaceType, contextMode):
 
 def registerFlexiBezierTools():
     tools = getToolList('VIEW_3D', 'OBJECT')
-    tools += None, toolFlexiDraw
-    tools += None, toolFlexiEdit
+    tools += None, toolFlexiDraw, toolFlexiEdit
+    # ~ tools += None, toolFlexiEdit
     del tools
 
     tools = getToolList('VIEW_3D', 'PAINT_GPENCIL')
