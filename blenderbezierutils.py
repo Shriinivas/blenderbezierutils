@@ -2300,7 +2300,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
     def updateSnapLocs(self, objNames = None):
         if(objNames == None):
-            objNames = [o.name for o in bpy.data.objects]
+            objNames = [o.name for o in bpy.context.scene.objects]
             invalOs = self.snapInfos.keys() - set(objNames) # In case of redo
             for o in invalOs:
                 del self.snapInfos[o]
@@ -2453,6 +2453,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
             if(isBezier(obj)):
                 mw = obj.matrix_world
                 for i, s in enumerate(obj.data.splines):
+                    if(s.use_cyclic_u): continue                        
                     for j, loc in enumerate(locs):
                         p = s.bezier_points[0]
                         if(vectCmpWithMargin(loc, mw @ p.co)):
