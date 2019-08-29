@@ -2681,7 +2681,8 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
             for layer in gpencil.data.layers:
                 for f in layer.frames:
                     for s in f.strokes:
-                        self.snapLocs += [mw @ s.points[0].co, mw @ s.points[-1].co]
+                        if(len(s.points) > 0): # Shouldn't be needed, but anyway...
+                            self.snapLocs += [mw @ s.points[0].co, mw @ s.points[-1].co]
         
     def save(self, context, event):
         layer = self.gpencil.data.layers.active
@@ -2692,7 +2693,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         frame = layer.frames[-1]
 
         invMw = self.gpencil.matrix_world.inverted()
-        if(len(self.curvePts) > 0):
+        if(len(self.subdivCos) > 0):
             self.curvePts.pop()
             stroke = frame.strokes.new()
             stroke.display_mode = '3DSPACE'
@@ -2700,7 +2701,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
             for i in range(0, len(self.subdivCos)):
                 pt = self.subdivCos[i]
                 stroke.points[i].co = self.gpencil.matrix_world.inverted() @ pt
-            self.snapLocs += [self.curvePts[0][1], self.curvePts[-1][1]]
+            self.snapLocs += [self.subdivCos[0][1], self.subdivCos[-1][1]]
         bpy.ops.ed.undo_push()
 
 ################### Flexi Edit Bezier Curve ###################
