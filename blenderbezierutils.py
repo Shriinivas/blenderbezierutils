@@ -24,7 +24,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 1),
+    "version": (0, 9, 11),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -368,6 +368,10 @@ def isOutside(context, event, exclInRgns = True):
             return True
 
     return False
+
+def is3DVireport(context):
+    return (context != None and hasattr(context, 'space_data') and \
+        context.space_data != None and hasattr(context.space_data, 'region_3d'))
 
 ###################### Op Specific functions ######################
 
@@ -1513,13 +1517,11 @@ def getSegLen(pts, error = DEF_ERR_MARGIN, start = None, end = None, t1 = 0, t2 
 # Get pt coords along curve defined by the four control pts (segPts)
 # subdivPerUnit: No of subdivisions per unit length
 # (which is the same as no of pts excluding the end pts)
-# TODO: Combine with getInterpBezierPts (same functionality)
-def getInterpBezierPts(segPts, subdivPerUnit = None, segLens = None):
+def getInterpBezierPts(segPts, subdivPerUnit, segLens = None):
     if(len(segPts) < 2):
         return []
 
     curvePts = []
-    if subdivPerUnit == None: subdivPerUnit = 1000
     for i in range(1, len(segPts)):
         seg = [segPts[i-1][1], segPts[i-1][2], segPts[i][0], segPts[i][1]]
         if(segLens != None and len(segLens) > (i-1)):
@@ -1531,11 +1533,9 @@ def getInterpBezierPts(segPts, subdivPerUnit = None, segLens = None):
 
     return curvePts
 
-def is3DVireport(context):
-    return (context != None and hasattr(context, 'space_data') and \
-        context.space_data != None and hasattr(context.space_data, 'region_3d'))
-
-def getPtsAlongBezier(segPts, context, curveRes, minRes = 200):
+# Used in functions where actual locs of pts on curve matter (like subdiv Bezier)
+# (Expensive)
+def getPtsAlongBezier3D(segPts, context, curveRes, minRes = 200):
 
     if(is3DVireport(context)):
         viewDist = context.space_data.region_3d.view_distance
@@ -1547,6 +1547,17 @@ def getPtsAlongBezier(segPts, context, curveRes, minRes = 200):
     if(curveRes < minRes): curveRes = minRes
 
     return getInterpBezierPts(segPts, subdivPerUnit = curveRes)
+
+# Used in functions where only visual resolution of curve matters (like draw Bezier)
+# (Not so expensive)
+def getPtsAlongBezier2D(segPts, context, curveRes):
+    segLens = []
+    for i in range(1, len(segPts)):
+        seg = [segPts[i-1][1], segPts[i-1][2], segPts[i][0], segPts[i][1]]
+        seg2D = [getCoordFromLoc(context, loc) for loc in seg]
+        segLens.append(getSegLen(seg2D))
+        
+    return getInterpBezierPts(segPts, subdivPerUnit = curveRes, segLens = segLens)
 
 def getLinesFromPts(pts):
     positions = []
@@ -1663,7 +1674,7 @@ SEG_COL_PRIORITY = {DRAW_ADJ_SEG_COLOR: 0, DRAW_NONADJ_SEG_COLOR: 1, DRAW_SEL_SE
 HANDLE_COLOR_MAP ={'FREE': (.6, .05, .05, 1), 'VECTOR': (.4, .5, .2, 1), \
     'ALIGNED': (1, .3, .3, 1), 'AUTO': (.8, .5, .2, 1)}
 
-DEF_CURVE_RES = 100 # Per unit seg len for viewdist = 10
+DEF_CURVE_RES_2D = .5 # Per pixel seg divisions (.5 is one div per 2 pixel units)
 SNAP_DIST_PIXEL = 20
 STRT_SEG_HDL_LEN_COEFF = 0.25
 DBL_CLK_DURN = 0.25
@@ -1704,7 +1715,7 @@ def getBezierBatches(shader, displayInfos, context = None, defHdlType = 'ALIGNED
     lineColors = []
     for i, displayInfo in enumerate(displayInfos):
         segPts = displayInfo.segPts
-        pts = getPtsAlongBezier(segPts, context, DEF_CURVE_RES)
+        pts = getPtsAlongBezier2D(segPts, context, DEF_CURVE_RES_2D)
         segLineCos = getLinesFromPts(pts)
         lineCos += segLineCos
         lineColors += [displayInfo.segColor for j in range(0, len(segLineCos))]
@@ -3017,7 +3028,7 @@ class SelectCurveInfo:
 
     def subdivMode(self, context):
         self.subdivCnt = 2
-        self.interpPts = getPtsAlongBezier(self.getSegPts(), context,
+        self.interpPts = getPtsAlongBezier3D(self.getSegPts(), context,
             curveRes = 1000, minRes = 1000)
 
     def subdivDecr(self):
