@@ -10,7 +10,8 @@
 #
 
 import bpy, bmesh, bgl, gpu
-from bpy.props import BoolProperty, IntProperty, EnumProperty, StringProperty
+from bpy.props import BoolProperty, IntProperty, \
+FloatProperty, EnumProperty, StringProperty
 from bpy.types import Panel, Operator, WorkSpaceTool, AddonPreferences
 from mathutils import Vector, Matrix, geometry, kdtree
 from math import log, atan, tan, pi, radians
@@ -24,7 +25,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 11),
+    "version": (0, 9, 12),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -338,7 +339,7 @@ def getCoordFromLoc(context, loc):
     rv3d = context.space_data.region_3d
     coord = location_3d_to_region_2d(region, rv3d, loc)
     # return a unlocatable pt if None to avoid errors
-    return coord if(coord != None) else Vector((9e+99, 9e+99))
+    return coord if(coord != None) else Vector((9000, 9000))
 
 # To be called only from 3d view
 def getCurrAreaRegion(context):
@@ -1037,6 +1038,13 @@ class MarkerController:
         self.smMap = self.createSMMap(context)
         self.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
         self.shader.bind()
+        
+        try: 
+            MarkerController.defPointSize = \
+                context.preferences.addons[__name__].preferences.markerSize
+        except Exception as e:
+            print("BezierUtils: Fetching marker size", e)
+            MarkerController.defPointSize = 6
 
         MarkerController.drawHandlerRef = \
             bpy.types.SpaceView3D.draw_handler_add(self.drawHandler, \
@@ -1395,20 +1403,28 @@ class BezierUtilsPanel(Panel):
     drawHandlerRef = None
     shader = None
     lineBatch = None
+    lineWidth = 1.5
     
     @persistent
     def colorCurves(scene = None, add = False, remove = False):
         def ccDrawHandler():
-            bgl.glLineWidth(1.5)
+            bgl.glLineWidth(BezierUtilsPanel.lineWidth)
             if(BezierUtilsPanel.lineBatch != None):
                 BezierUtilsPanel.lineBatch.draw(BezierUtilsPanel.shader)
                 
         if(add and BezierUtilsPanel.drawHandlerRef == None):
+            try:
+                BezierUtilsPanel.lineWidth = \
+                    bpy.context.preferences.addons[__name__].preferences.drawLineWidth
+            except Exception as e:
+                print("BezierUtils: Error fetching line width in ColorCurves: ", e)
+                BezierUtilsPanel.lineWidth = 1.5
+                
             BezierUtilsPanel.drawHandlerRef = \
                 bpy.types.SpaceView3D.draw_handler_add(ccDrawHandler, \
                     (), "WINDOW", "POST_VIEW")
             BezierUtilsPanel.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
-            BezierUtilsPanel.shader.bind()                
+            BezierUtilsPanel.shader.bind()
             return
             
         elif(remove):
@@ -1935,8 +1951,12 @@ class ModalDrawBezierOp(Operator):
     subdivLineBatch = None
     shader = None
     running = False
-    ptDrawS = 4
-    lnDrawW = 1.5
+
+    markerSize = 8
+    drawPointSize = 4
+    pointSize = None # Will be set dynamically
+    
+    lineWidth = 1.5
     opObj = None
     
     @classmethod
@@ -1957,8 +1977,8 @@ class ModalDrawBezierOp(Operator):
     #static method
     def drawHandler():
         if(ModalDrawBezierOp.shader != None):
-            bgl.glLineWidth(ModalDrawBezierOp.lnDrawW)
-            bgl.glPointSize(ModalDrawBezierOp.ptDrawS)
+            bgl.glLineWidth(ModalDrawBezierOp.lineWidth)
+            bgl.glPointSize(ModalDrawBezierOp.pointSize)
 
             if(ModalDrawBezierOp.segBatch != None):
                 ModalDrawBezierOp.segBatch.draw(ModalDrawBezierOp.shader)
@@ -2014,6 +2034,19 @@ class ModalDrawBezierOp(Operator):
         context.window_manager.modal_handler_add(self)
         ModalDrawBezierOp.addDrawHandler()
         
+        try:
+            ModalDrawBezierOp.markerSize = \
+                context.preferences.addons[__name__].preferences.markerSize
+            ModalDrawBezierOp.drawPointSize = \
+                context.preferences.addons[__name__].preferences.drawPointSize
+            ModalDrawBezierOp.lineWidth = \
+                context.preferences.addons[__name__].preferences.drawLineWidth
+        except Exception as e:
+            print("BezierUtils: Error fetching default sizes in Draw Bezier", e)
+            ModalDrawBezierOp.markerSize = 8
+            ModalDrawBezierOp.drawPointSize = 4
+            ModalDrawBezierOp.lineWidth = 1.5
+
         return {"RUNNING_MODAL"}
 
     def resetMetaBtns(self):
@@ -2180,7 +2213,7 @@ class ModalDrawBezierOp(Operator):
 
         segColor = colSelSeg
         tipColors = [colTip, colEndTip, colTip, colTip, colEndTip, colTip]
-        ModalDrawBezierOp.ptDrawS = 4
+        ModalDrawBezierOp.pointSize = ModalDrawBezierOp.drawPointSize
 
         if(self.capture):
             handleNos  = [2, 3]
@@ -2205,7 +2238,7 @@ class ModalDrawBezierOp(Operator):
                     # (drawn as seg with all six pts at the same location)
                     curvePts = [[loc, loc, loc], [loc, loc, loc]]
                     tipColors[-1] = colMarker
-                    ModalDrawBezierOp.ptDrawS = 8
+                    ModalDrawBezierOp.pointSize = ModalDrawBezierOp.markerSize
                 elif(len(self.curvePts) == 1):
                     handleNos  = [1]
                 #else taken care by mousemove
@@ -3368,6 +3401,10 @@ class ModalFlexiEditBezierOp(Operator):
     opObj = None # For cleanup in unregister
     h = False
     
+    lineWidth = 1.5
+    drawPointSize = 4
+    subdivPointSize = 6
+    
     @classmethod
     def poll(cls, context):
         return not ModalFlexiEditBezierOp.running
@@ -3384,15 +3421,15 @@ class ModalFlexiEditBezierOp(Operator):
             ModalFlexiEditBezierOp.drawHandlerRef = None
 
     def drawHandler():
-        bgl.glLineWidth(1.5)
+        bgl.glLineWidth(ModalFlexiEditBezierOp.lineWidth)
         if(ModalFlexiEditBezierOp.lineBatch != None):
             ModalFlexiEditBezierOp.lineBatch.draw(ModalFlexiEditBezierOp.shader)
 
-        bgl.glPointSize(6)
+        bgl.glPointSize(ModalFlexiEditBezierOp.subdivPointSize)
         if(ModalFlexiEditBezierOp.ptBatch != None):
             ModalFlexiEditBezierOp.ptBatch.draw(ModalFlexiEditBezierOp.shader)
 
-        bgl.glPointSize(4)
+        bgl.glPointSize(ModalFlexiEditBezierOp.drawPointSize)
         if(ModalFlexiEditBezierOp.tipBatch != None):
             ModalFlexiEditBezierOp.tipBatch.draw(ModalFlexiEditBezierOp.shader)
 
@@ -3471,7 +3508,7 @@ class ModalFlexiEditBezierOp(Operator):
 
     # Will be called after the curve is changed (by the tool or externally)
     # So handle all possible conditions
-    def updateAfterGeomChange(self, scene = None, context = bpy.context):
+    def updateAfterGeomChange(self, scene = None, context = None):
         toRemove = []
 
         #can never be called during editing, so don't consider editInfo
@@ -3498,7 +3535,8 @@ class ModalFlexiEditBezierOp(Operator):
         for c in toRemove:
             self.selectCurveInfos.remove(c)
 
-        self.refreshDisplaySelCurves(context)
+        if(context != None): # TODO: Why error in getCoord?
+            self.refreshDisplaySelCurves(context)
 
     def invoke(self, context, event):
         ModalFlexiEditBezierOp.opObj = self
@@ -3523,6 +3561,17 @@ class ModalFlexiEditBezierOp(Operator):
         self.shift = False
         self.alt = False
         self.subdivMode = False
+        
+        try:
+            ModalFlexiEditBezierOp.lineWidth = \
+                context.preferences.addons[__name__].preferences.drawLineWidth
+            ModalFlexiEditBezierOp.drawPointSize = \
+                context.preferences.addons[__name__].preferences.drawPointSize
+        except Exception as e:
+            print("BezierUtils: Error fetching default sizes in Flexi Edit", e)
+            ModalFlexiEditBezierOp.drawPointSize = 4
+            ModalFlexiEditBezierOp.lineWidth = 1.5
+        
         return  {"RUNNING_MODAL"}
 
     def getEditableCurveObjs(self):
@@ -3976,12 +4025,50 @@ class BezierUtilsPreferences(AddonPreferences):
             update = updatePanel
     )
 
+    drawLineWidth: FloatProperty(
+            name = "Line Thickness",
+            description = "Thickness of segment & handle Lines of Flexi Draw and Edit " +\
+                " (requires tool reselection)",
+            default = 1.5,
+            min = 0.1,
+            max = 20,
+    )
+
+    drawPointSize: FloatProperty(
+            name = "Point Size",
+            description = "Size of Flexi Draw and Edit Bezier handle points" +\
+                " (requires tool reselection)",
+            default = 1.5,
+            min = 0.1,
+            max = 20,
+    )
+
+    markerSize: FloatProperty(
+            name = "Marker Size",
+            description = "Size of Flexi Draw and Mark Starting Vertices" + \
+                " marker (requires tool reselection)",
+            default = 6,
+            min = 0.1,
+            max = 20,
+    )
+    
+    # TODO Subdiv point size, seg / handle colors etc.
+
     def draw(self, context):
         layout = self.layout
         row = layout.row()
         col = row.column()
         col.label(text="Tab Category:")
         col.prop(self, "category", text="")
+        row = layout.row()
+        col = row.column()
+
+        row = layout.row()
+        col = row.column()
+        col.label(text="UI Preferences:")
+        col.prop(self, "drawLineWidth")
+        col.prop(self, "drawPointSize")
+        col.prop(self, "markerSize")
 
 classes = (
     ModalMarkSegStartOp,
