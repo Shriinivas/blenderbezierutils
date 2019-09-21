@@ -25,7 +25,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 12),
+    "version": (0, 9, 13),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -2060,6 +2060,7 @@ class ModalDrawBezierOp(Operator):
         self.clickT = None #For double click
         self.pressT = None #For single click
         self.capture = False
+        self.grabRepos = False
         self.resetMetaBtns()
         self.snapper.initialize()
 
@@ -2099,9 +2100,15 @@ class ModalDrawBezierOp(Operator):
 
         self.snapper.procModal(context, event)
         
-        if((event.type == 'E' or event.type == 'e') and event.value == 'RELEASE'):
-            # ~ bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname) (T60766)
-            bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
+        if(event.type == 'E'):
+            if(event.value == 'RELEASE'):
+                # ~ bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname) (T60766)
+                bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
+            return {"RUNNING_MODAL"}
+
+        if(event.type == 'G'):
+            if(event.value == 'RELEASE'):
+                self.grabRepos = not self.grabRepos
             return {"RUNNING_MODAL"}
 
         if(event.type == 'RET' or event.type == 'SPACE'):
@@ -2116,6 +2123,7 @@ class ModalDrawBezierOp(Operator):
 
         if(event.type == 'BACK_SPACE' and event.value == 'RELEASE'):
             self.snapper.resetSnap()
+            self.grabRepos = False
             if(len(self.curvePts) > 0):
                 self.curvePts.pop()
             if(len(self.curvePts) <= 1): #Because there is an extra point (the current one)
@@ -2141,6 +2149,7 @@ class ModalDrawBezierOp(Operator):
 
         if (event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
             self.capture = False
+            self.grabRepos = False
             self.snapper.resetSnap()
 
             # Rare condition: This happens e. g. when user clicks on header menu
@@ -2180,9 +2189,18 @@ class ModalDrawBezierOp(Operator):
             if(len(self.curvePts) > 1):
                 loc = self.snapper.get3dLocSnap(context, event)
                 if(self.capture):
-                    end = self.curvePts[-1][1]
-                    ltHandle = end - (loc - end)
-                    rtHandle = end + (loc - end)
+                    pt = self.curvePts[-1][1]
+                    ltHandle = self.curvePts[-1][0]
+                    rtHandle = self.curvePts[-1][2]
+                    if(self.grabRepos):
+                        delta = loc - self.curvePts[-1][2]
+                        self.curvePts[-1][1] += delta
+                        ltHandle += delta
+                        rtHandle += delta
+                    else:                    
+                        delta = (loc - pt)
+                        ltHandle = pt - delta
+                        rtHandle = pt + delta
                     self.curvePts[-1][0] = ltHandle
                     self.curvePts[-1][2] = rtHandle
                 else:
