@@ -2193,8 +2193,8 @@ class ModalDrawBezierOp(Operator):
                     ltHandle = self.curvePts[-1][0]
                     rtHandle = self.curvePts[-1][2]
                     if(self.grabRepos):
-                        delta = loc - self.curvePts[-1][2]
-                        self.curvePts[-1][1] += delta
+                        delta = loc - rtHandle
+                        pt += delta
                         ltHandle += delta
                         rtHandle += delta
                     else:                    
