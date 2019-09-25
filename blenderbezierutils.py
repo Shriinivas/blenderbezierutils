@@ -1857,14 +1857,14 @@ class Snapper():
 
         return False
         
-    def get3dLocSnap(self, context, event, vec = None, fromActiveObj = True):
+    def get3dLocSnap(self, context, event, vec = None, fromActiveObj = True, xy = None):
         self.lastSnapCos = []
         self.lastSnapTypes = set()
 
         rounding = getViewDistRounding(context)
         region = context.region
         rv3d = context.space_data.region_3d
-        xy = event.mouse_region_x, event.mouse_region_y
+        if(xy == None): xy = event.mouse_region_x, event.mouse_region_y
 
         if(self.objSnap):
             #TODO: Called very frequently (store the tree without duplicating data)
@@ -2193,8 +2193,11 @@ class ModalDrawBezierOp(Operator):
                     ltHandle = self.curvePts[-1][0]
                     rtHandle = self.curvePts[-1][2]
                     if(self.grabRepos):
-                        delta = loc - rtHandle
-                        pt += delta
+                        delta = loc - rtHandle                        
+                        loc = self.snapper.get3dLocSnap(context, event, \
+                            xy = getCoordFromLoc(context, pt + delta))
+                        delta = loc - pt
+                        self.curvePts[-1][1] = loc
                         ltHandle += delta
                         rtHandle += delta
                     else:                    
