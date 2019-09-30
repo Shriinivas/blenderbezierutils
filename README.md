@@ -50,6 +50,7 @@ You can also subdivide the selected segments uniformly. To initiate the subdivis
 To align the handle with the opposite handle of the same end point, select the handle point and press K. This way you can quickly smooth out the sharp corners.
 
 # Flexi Grease Bezier Tool
+![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/greasedemo.gif)<br>
 This tool will appear on the toolshelf in Grease Pencil Draw mode. You can draw Bezier curves just as you would draw with the Flexi Draw tool. After confirming the drawing is converted to grease pencil strokes. All the snapping and locking options of the Flexi Draw are available here also.<br>
 Additionaly, you can increase of decrease the resolution of the stroke using the mouse wheel or pressing + or - keys.<br>
 The subdivision point visibility can be toggled by pressing h key.<br>
