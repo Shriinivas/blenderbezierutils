@@ -10,12 +10,13 @@
 #
 
 import bpy, bmesh, bgl, gpu
-from bpy.props import BoolProperty, IntProperty, \
-FloatProperty, EnumProperty, StringProperty
+from bpy.props import BoolProperty, IntProperty, EnumProperty, \
+FloatProperty, StringProperty, CollectionProperty, FloatVectorProperty
 from bpy.types import Panel, Operator, WorkSpaceTool, AddonPreferences
 from mathutils import Vector, Matrix, geometry, kdtree
-from math import log, atan, tan, pi, radians
-from bpy_extras.view3d_utils import region_2d_to_vector_3d, region_2d_to_location_3d
+from math import log, atan, tan, sin, cos, pi, radians, degrees, sqrt
+from bpy_extras.view3d_utils import region_2d_to_vector_3d, region_2d_to_location_3d, \
+region_2d_to_origin_3d
 from bpy_extras.view3d_utils import location_3d_to_region_2d
 from gpu_extras.batch import batch_for_shader
 import time
@@ -25,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 13),
+    "version": (0, 9, 52),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -34,6 +35,7 @@ bl_info = {
 }
 
 DEF_ERR_MARGIN = 0.0001
+INVALID_NO = 5e+9
 
 ###################### Common functions ######################
 
@@ -98,7 +100,8 @@ def createSpline(curveData, srcSpline, forceNoncyclic, freeHandles, excludePtIdx
     ptIdx = 0
     for i in range(0, len(srcSpline.bezier_points)):
         if(i not in excludePtIdxs):
-            copyBezierPt(srcSpline.bezier_points[i], spline.bezier_points[ptIdx], freeHandles)
+            copyBezierPt(srcSpline.bezier_points[i], \
+                spline.bezier_points[ptIdx], freeHandles)
             ptIdx += 1
 
     if(forceNoncyclic == True and srcSpline.use_cyclic_u == True):
@@ -313,12 +316,42 @@ def changeMW(obj, newMW):
             pt.handle_right = invMW @ (obj.mw @ pt.handle_right)
     obj.matrix_world = newMW
 
+# Return map in the form of objName->[splineIdx, [startPt, endPt]]
+# Remove the invalid keys (if any) from it.
+def updateCurveEndPtMap(endPtMap, addObjNames = None, removeObjNames = None):
+    invalOs = set()
+    if(addObjNames == None):
+        addObjNames = [o.name for o in bpy.context.scene.objects]
+        invalOs = endPtMap.keys() - set(addObjNames) # In case of redo
+
+    if(removeObjNames != None):
+        invalOs.union(set(removeObjNames))
+
+    for o in invalOs:
+        del endPtMap[o]
+
+    for objName in addObjNames:
+        obj = bpy.context.scene.objects.get(objName)
+        if(obj != None and isBezier(obj) and obj.visible_get()):
+            endPtMap[objName] = []
+            mw = obj.matrix_world
+            for i, s in enumerate(obj.data.splines):
+                pts = [mw @ pt.co for pt in s.bezier_points]
+                endPtMap[objName].append([i, pts])
+        elif(endPtMap.get(objName) != None):
+            del endPtMap[objName]
+
+    return endPtMap
+
 #Round to logarithmic scale .1, 0, 10, 100 etc.
 #(47.538, -1) -> 47.5; (47.538, 0) -> 48.0; (47.538, 1) -> 50.0; (47.538, 2) -> 0,
-def roundedVect(vect, rounding):
+def roundedVect(vect, rounding, axes):
     rounding += 1
     fact = (10 ** rounding) / 10
-    return Vector([round(l / fact) * fact for l in vect])
+    retVect = vect.copy()
+    # ~ Vector([round(vect[i] / fact) * fact for i in axes])
+    for i in axes: retVect[i] = round(vect[i] / fact) * fact
+    return retVect
 
 ###################### Screen functions ######################
 
@@ -330,21 +363,19 @@ def get3dLoc(context, event, vec = None):
         vec = region_2d_to_vector_3d(region, rv3d, xy)
     return region_2d_to_location_3d(region, rv3d, xy, vec)
 
-def  getViewDistRounding(context):
-    viewDist = context.space_data.region_3d.view_distance
+def  getViewDistRounding(rv3d):
+    viewDist = rv3d.view_distance
     return int(log(viewDist, 10)) - 1
 
-def getCoordFromLoc(context, loc):
-    region = context.region
-    rv3d = context.space_data.region_3d
+def getCoordFromLoc(region, rv3d, loc):
     coord = location_3d_to_region_2d(region, rv3d, loc)
     # return a unlocatable pt if None to avoid errors
     return coord if(coord != None) else Vector((9000, 9000))
 
 # To be called only from 3d view
 def getCurrAreaRegion(context):
-    a, r = [(a, r) for a in bpy.context.screen.areas if a.type == 'VIEW_3D' for r in a.regions \
-        if(r == context.region)][0]
+    a, r = [(a, r) for a in bpy.context.screen.areas if a.type == 'VIEW_3D' \
+        for r in a.regions if(r == context.region)][0]
     return a, r
 
 def isOutside(context, event, exclInRgns = True):
@@ -373,6 +404,85 @@ def isOutside(context, event, exclInRgns = True):
 def is3DVireport(context):
     return (context != None and hasattr(context, 'space_data') and \
         context.space_data != None and hasattr(context.space_data, 'region_3d'))
+
+def getPtProjOnPlane(region, rv3d, xy, p1, p2, p3, p4 = None):
+    vec = region_2d_to_vector_3d(region, rv3d, xy)
+    orig = region_2d_to_origin_3d(region, rv3d, xy)
+
+    pt = geometry.intersect_ray_tri(p1, p2, p3, vec, orig, False)#p4 != None)
+    # ~ if(not pt and p4):
+        # ~ pt = geometry.intersect_ray_tri(p2, p4, p3, vec, orig, True)
+    return pt
+
+def getLineTransMatrices(pt0, pt1):
+    diffV = (pt1 - pt0)
+    invTm = diffV.to_track_quat('X', 'Z').to_matrix().to_4x4()
+    tm = invTm.inverted()
+    return tm, invTm
+
+def getWindowRegionIdx(area, regionIdx): # For finding quad view index
+    idx = 0
+    for j, r in enumerate(area.regions):
+        if(j == regionIdx): return idx
+        if(r.type == 'WINDOW'): idx += 1
+    return None
+
+def getAreaRegionIdxs(xy, exclInRgns = True):
+    x, y = xy
+    areas = [a for a in bpy.context.screen.areas]
+    idxs = None
+    for i, a in enumerate(areas):
+        if(a.type != 'VIEW_3D'): continue
+        regions = [r for r in a.regions]
+        for j, r in enumerate(regions):
+            if(x > r.x and x < r.x + r.width and y > r.y and y < r.y + r.height):
+                if(r.type == 'WINDOW'):
+                    if(not exclInRgns):
+                        return [i, j]
+                    idxs = [i, j]
+                elif(exclInRgns):
+                    return None
+    return idxs
+
+# ~ def getMinViewDistRegion():
+    # ~ viewDist = 9e+99
+    # ~ rv3d = None
+    # ~ area = None
+    # ~ region = None
+    # ~ areas = [a for a in bpy.context.screen.areas if(a.type == 'VIEW_3D')]
+    # ~ for a in areas:
+        # ~ regions = [r for r in a.regions if r.type == 'WINDOW']
+        # ~ if(len(a.spaces[0].region_quadviews) > 0):
+            # ~ for i, r in enumerate(a.spaces[0].region_quadviews):
+                # ~ if(r.view_distance < viewDist):
+                    # ~ viewDist = r.view_distance
+                    # ~ rv3d = r
+                    # ~ area = a
+                    # ~ region = regions[i]
+        # ~ else:
+            # ~ r = a.spaces[0].region_3d
+            # ~ if(r.view_distance < viewDist):
+                # ~ viewDist = r.view_distance
+                # ~ rv3d = r
+                # ~ area = a
+                # ~ region = regions[0]
+    # ~ return a, region, rv3d#, viewDist
+
+def getAllAreaRegions():
+    info = []
+    areas = [a for a in bpy.context.screen.areas if(a.type == 'VIEW_3D')]
+    for a in areas:
+        regions = [r for r in a.regions if r.type == 'WINDOW']
+        if(len(a.spaces[0].region_quadviews) > 0):
+            for i, r in enumerate(a.spaces[0].region_quadviews):
+                info.append([a, regions[i], r])
+        else:
+            r = a.spaces[0].region_3d
+            info.append([a, regions[0], r])
+    return info
+
+def getResetBatch(shader, btype): # "LINES" or "POINTS"
+    return batch_for_shader(shader, btype, {"pos": [], "color": []})
 
 ###################### Op Specific functions ######################
 
@@ -513,7 +623,8 @@ def getCurvesArrangedByDist(curves):
         #Check the start also for the first curve
         if(len(orderedCurves) == 1):
             ncStart = nextCurve.data.splines[0].bezier_points[0]
-            closestCurve2, dist2 = getClosestCurve(srcMW, ncStart.co, remainingCurves, dist)
+            closestCurve2, dist2 = getClosestCurve(srcMW, ncStart.co, \
+                remainingCurves, dist)
             if(closestCurve2 != None):
                 reverseCurve(nextCurve)
                 closestCurve = closestCurve2
@@ -578,14 +689,20 @@ def joinSegs(curves, optimized, straight, srcCurve = None):
 
         for i in range(ptIdx, len(nextSpline.bezier_points)):
             if((i == len(nextSpline.bezier_points) - 1) and
-                vectCmpWithMargin(mw @ nextSpline.bezier_points[i].co, srcMW @ currSpline.bezier_points[0].co)):
+                vectCmpWithMargin(mw @ nextSpline.bezier_points[i].co, \
+                    srcMW @ currSpline.bezier_points[0].co)):
+
                     currSpline.bezier_points[0].handle_left_type = 'FREE'
-                    currSpline.bezier_points[0].handle_left = invSrcMW @ (mw @ nextSpline.bezier_points[i].handle_left)
+                    currSpline.bezier_points[0].handle_left = \
+                        invSrcMW @ (mw @ nextSpline.bezier_points[i].handle_left)
+
                     currSpline.use_cyclic_u = True
                     break
+
             currSpline.bezier_points.add(1)
             currBezierPt = currSpline.bezier_points[-1]
             copyObjAttr(nextSpline.bezier_points[i], currBezierPt, invSrcMW, mw)
+
             if(straight and i ==  0):
                 currBezierPt.handle_right_type = 'FREE'
                 currBezierPt.handle_left_type = 'VECTOR'
@@ -710,7 +827,8 @@ class SeparateSplinesObjsOp(Operator):
 
         if(changeCnt > 0):
             self.report({'INFO'}, "Separated "+ str(changeCnt) + " curve object" + \
-                ("s" if(changeCnt > 1) else "") + " into " +str(len(newObjs)) + " new ones")
+                ("s" if(changeCnt > 1) else "") + \
+                    " into " +str(len(newObjs)) + " new ones")
 
         return {'FINISHED'}
 
@@ -730,7 +848,8 @@ class SplitBezierObjsOp(Operator):
         if(changeCnt > 0):
             bpy.context.view_layer.objects.active = newObjs[-1]
             self.report({'INFO'}, "Split "+ str(changeCnt) + " curve object" + \
-                ("s" if(changeCnt > 1) else "") + " into " + str(len(newObjs)) + " new objects")
+                ("s" if(changeCnt > 1) else "") + \
+                    " into " + str(len(newObjs)) + " new objects")
 
         return {'FINISHED'}
 
@@ -749,7 +868,8 @@ class splitBezierObjsPtsOp(Operator):
         if(changeCnt > 0):
             bpy.context.view_layer.objects.active = newObjs[-1]
             self.report({'INFO'}, "Split "+ str(changeCnt) + " curve object" + \
-                ("s" if(changeCnt > 1) else "") + " into " + str(len(newObjs)) + " new objects")
+                ("s" if(changeCnt > 1) else "") + \
+                    " into " + str(len(newObjs)) + " new objects")
 
         return {'FINISHED'}
 
@@ -954,7 +1074,7 @@ class SetCurveColorOp(bpy.types.Operator):
 
         for curve in curves:
             curve.data['curveColor'] = bpy.context.scene.curveColorPick
-            
+
         return {'FINISHED'}
 
 
@@ -970,7 +1090,7 @@ class RemoveCurveColorOp(bpy.types.Operator):
         for curve in curves:
             if(curve.data.get('curveColor')):
                 del curve.data['curveColor']
-            
+
         return {'FINISHED'}
 
 
@@ -1038,12 +1158,12 @@ class MarkerController:
         self.smMap = self.createSMMap(context)
         self.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
         self.shader.bind()
-        
-        try: 
+
+        try:
             MarkerController.defPointSize = \
                 context.preferences.addons[__name__].preferences.markerSize
         except Exception as e:
-            print("BezierUtils: Fetching marker size", e)
+            # ~ print("BezierUtils: Fetching marker size", e)
             MarkerController.defPointSize = 6
 
         MarkerController.drawHandlerRef = \
@@ -1190,6 +1310,7 @@ class BezierUtilsPanel(Panel):
     bl_region_type = 'UI'
     bl_category = 'Tool'
 
+    #TODO: Move to params class
     bpy.types.Scene.markVertex = BoolProperty(name="Mark Starting Vertices", \
         description='Mark first vertices in all closed splines of selected curves', \
             default = False, update = markVertHandler)
@@ -1351,7 +1472,7 @@ class BezierUtilsPanel(Panel):
                 col.operator('object.set_handle_types')
 
             ######## Curve Color #########
-            
+
             col = layout.column()
             col.separator()
 
@@ -1371,9 +1492,9 @@ class BezierUtilsPanel(Panel):
                 row = col.row()
                 row.prop(context.scene, 'applyCurveColor', toggle = True)
                 col = layout.column()
-                
+
             ######## Other Tools #########
-            
+
             col = layout.column()
             col.separator()
 
@@ -1399,45 +1520,45 @@ class BezierUtilsPanel(Panel):
             col.prop(context.scene, 'markVertex', toggle = True)
 
     ################ Stand-alone handler for changing curve colors #################
-    
+
     drawHandlerRef = None
     shader = None
     lineBatch = None
     lineWidth = 1.5
-    
+
     @persistent
     def colorCurves(scene = None, add = False, remove = False):
         def ccDrawHandler():
             bgl.glLineWidth(BezierUtilsPanel.lineWidth)
             if(BezierUtilsPanel.lineBatch != None):
                 BezierUtilsPanel.lineBatch.draw(BezierUtilsPanel.shader)
-                
+
         if(add and BezierUtilsPanel.drawHandlerRef == None):
             try:
                 BezierUtilsPanel.lineWidth = \
                     bpy.context.preferences.addons[__name__].preferences.drawLineWidth
             except Exception as e:
-                print("BezierUtils: Error fetching line width in ColorCurves: ", e)
+                # ~ print("BezierUtils: Error fetching line width in ColorCurves: ", e)
                 BezierUtilsPanel.lineWidth = 1.5
-                
+
             BezierUtilsPanel.drawHandlerRef = \
                 bpy.types.SpaceView3D.draw_handler_add(ccDrawHandler, \
                     (), "WINDOW", "POST_VIEW")
             BezierUtilsPanel.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
             BezierUtilsPanel.shader.bind()
             return
-            
+
         elif(remove):
             if(BezierUtilsPanel.drawHandlerRef != None):
                 bpy.types.SpaceView3D.draw_handler_remove(BezierUtilsPanel.drawHandlerRef, \
-                    "WINDOW")                
+                    "WINDOW")
                 BezierUtilsPanel.drawHandlerRef = None
-                return 
+                return
 
-        if(bpy.context.scene.applyCurveColor): 
-            objs = [o for o in bpy.context.scene.objects if(isBezier(o) and o.visible_get() \
-                and len(o.modifiers) == 0 and not o.select_get())]
-                
+        if(bpy.context.scene.applyCurveColor):
+            objs = [o for o in bpy.context.scene.objects if(isBezier(o) and \
+                o.visible_get() and len(o.modifiers) == 0 and not o.select_get())]
+
             lineCos = []
             lineColors = []
             for o in objs:
@@ -1445,11 +1566,11 @@ class BezierUtilsPanel(Panel):
                 if(colorVal != None):
                     for i, spline in enumerate(o.data.splines):
                         for j in range(0, len(spline.bezier_points)):
-                            segPts = getCtrlPtsForSeg(o, i, j)
+                            segPts = getBezierDataForSeg(o, i, j)
                             if(segPts == None):
                                 continue
-                            pts = getInterpSegPts(o.matrix_world, spline, j, \
-                                res = 200, startT = 0 , endT = 1, maxRes = 100)
+                            pts = getPtsAlongBezier2D(segPts, getAllAreaRegions(), \
+                                DEF_CURVE_RES_2D)
                             linePts = getLinesFromPts(pts)
                             lineCos += linePts
                             lineColors += [colorVal for i in range(0, len(linePts))]
@@ -1458,11 +1579,11 @@ class BezierUtilsPanel(Panel):
         else:
             BezierUtilsPanel.lineBatch = batch_for_shader(BezierUtilsPanel.shader, \
                 "LINES", {"pos": [], "color": []})
-            
+
         areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
         for a in areas:
             a.tag_redraw()
-            
+
 
 ################### Common Bezier Functions & Classes ###################
 
@@ -1512,9 +1633,6 @@ def getTForPt(curve, testPt):
             if(pLen < minLen):
                 minLen = pLen
                 retT = t
-            # ~ if(all(abs(testPt[i] - pt[i]) < .1 or abs(testPt[i] - pt[i]) < pt[i] * .1 \
-                # ~ for i in range(0, len(pt)))):
-                # ~ return t
     return retT
 
 def getSegLen(pts, error = DEF_ERR_MARGIN, start = None, end = None, t1 = 0, t2 = 1):
@@ -1550,29 +1668,35 @@ def getInterpBezierPts(segPts, subdivPerUnit, segLens = None):
     return curvePts
 
 # Used in functions where actual locs of pts on curve matter (like subdiv Bezier)
-# (Expensive)
-def getPtsAlongBezier3D(segPts, context, curveRes, minRes = 200):
+# (... kind of expensive)
+def getPtsAlongBezier3D(segPts, rv3d, curveRes, minRes = 200):
 
-    if(is3DVireport(context)):
-        viewDist = context.space_data.region_3d.view_distance
+    viewDist = rv3d.view_distance
 
-        # (the smaller the view dist (higher zoom level),
-        # the higher the num of subdivisions
-        curveRes = curveRes / viewDist
+    # (the smaller the view dist (higher zoom level),
+    # the higher the num of subdivisions
+    curveRes = curveRes / viewDist
 
     if(curveRes < minRes): curveRes = minRes
 
     return getInterpBezierPts(segPts, subdivPerUnit = curveRes)
 
 # Used in functions where only visual resolution of curve matters (like draw Bezier)
-# (Not so expensive)
-def getPtsAlongBezier2D(segPts, context, curveRes):
+# (... not so expensive)
+def getPtsAlongBezier2D(segPts, areaRegionInfo, curveRes):
     segLens = []
     for i in range(1, len(segPts)):
         seg = [segPts[i-1][1], segPts[i-1][2], segPts[i][0], segPts[i][1]]
-        seg2D = [getCoordFromLoc(context, loc) for loc in seg]
-        segLens.append(getSegLen(seg2D))
-        
+
+        #TODO: A more optimized solution... (Called very frequently)
+        segLen = 0
+        for info in areaRegionInfo:
+            seg2D = [getCoordFromLoc(info[1], info[2], loc) for loc in seg]
+            sl = getSegLen(seg2D)
+            if(sl > segLen):
+                segLen = sl
+        segLens.append(segLen)
+
     return getInterpBezierPts(segPts, subdivPerUnit = curveRes, segLens = segLens)
 
 def getLinesFromPts(pts):
@@ -1669,6 +1793,7 @@ ENDPT_TIP_COLOR = (1, 1, 0, 1)
 ADJ_ENDPT_TIP_COLOR = (.1, .1, .1, 1)
 TIP_COLOR = (.7, .7, 0, 1)
 DRAW_MARKER_COLOR = DRAW_SEL_SEG_COLOR
+REF_CO_MARKER_COLOR = (.3, .3, .3, 1)
 
 EDIT_SUBDIV_PT_COLOR = (.3, 0, 0, 1)
 
@@ -1685,7 +1810,8 @@ TIP_COL_PRIORITY = {ADJ_ENDPT_TIP_COLOR: 0, TIP_COLOR: 1, ENDPT_TIP_COLOR: 2,
     GREASE_ENDPT_TIP_COLOR: 3, SEL_TIP_COLOR : 4, HLT_TIP_COLOR : 5,
     DRAW_MARKER_COLOR: 6, GREASE_MARKER_COLOR: 7}
 
-SEG_COL_PRIORITY = {DRAW_ADJ_SEG_COLOR: 0, DRAW_NONADJ_SEG_COLOR: 1, DRAW_SEL_SEG_COLOR: 2}
+SEG_COL_PRIORITY = {DRAW_ADJ_SEG_COLOR: 0, DRAW_NONADJ_SEG_COLOR: 1, \
+    DRAW_SEL_SEG_COLOR: 2}
 
 HANDLE_COLOR_MAP ={'FREE': (.6, .05, .05, 1), 'VECTOR': (.4, .5, .2, 1), \
     'ALIGNED': (1, .3, .3, 1), 'AUTO': (.8, .5, .2, 1)}
@@ -1711,6 +1837,37 @@ class SegDisplayInfo:
         self.handleNos = handleNos
         self.tipColors = tipColors
 
+class RegionMouseXYInfo:
+
+    def getRegionMouseXYInfo(event, exclInRgns):
+        xyScreen = [event.mouse_x, event.mouse_y]
+        idxs = getAreaRegionIdxs(xyScreen, exclInRgns)
+        if(idxs == None):
+            return None
+        else:
+            i, j = idxs
+            area = bpy.context.screen.areas[i]
+            region = area.regions[j]
+            if(len(area.spaces[0].region_quadviews) > 0):
+                qIdx = getWindowRegionIdx(area, j)
+                rv3d = area.spaces[0].region_quadviews[qIdx]
+            else:
+                rv3d = area.spaces[0].region_3d
+            xy = [xyScreen[0] - region.x, xyScreen[1] - region.y]
+            return RegionMouseXYInfo(area, region, rv3d, xy, xyScreen)
+
+    def __init__(self, area, region, rv3d, xy, xyScreen):
+        self.area = area
+        self.region = region
+        self.rv3d = rv3d
+        self.xy = xy
+        self.xyScreen = xyScreen
+
+    def __eq__(self, other):
+        if(other == None): return False
+        return self.area == other.area and self.region == other.region and \
+            self.rv3d == other.rv3d
+
 def getSubdivBatches(shader, subdivCos, showSubdivPts):
         ptSubDivCos = [] if(not showSubdivPts) else subdivCos
         ptBatch = batch_for_shader(ModalDrawBezierOp.shader, \
@@ -1725,18 +1882,18 @@ def getSubdivBatches(shader, subdivCos, showSubdivPts):
         return ptBatch, lineBatch
 
 # Return line batch for bezier line segments and handles and point batch for handle tips
-def getBezierBatches(shader, displayInfos, context = None, defHdlType = 'ALIGNED'):
+def getBezierBatches(shader, displayInfos, areaRegionInfo, defHdlType = 'ALIGNED'):
 
     lineCos = [] #segment is also made up of lines
     lineColors = []
     for i, displayInfo in enumerate(displayInfos):
         segPts = displayInfo.segPts
-        pts = getPtsAlongBezier2D(segPts, context, DEF_CURVE_RES_2D)
+        pts = getPtsAlongBezier2D(segPts, areaRegionInfo, DEF_CURVE_RES_2D)
         segLineCos = getLinesFromPts(pts)
         lineCos += segLineCos
         lineColors += [displayInfo.segColor for j in range(0, len(segLineCos))]
 
-    tipColInfo = []    
+    tipColInfo = []
     for i, displayInfo in enumerate(displayInfos):
         segPts = displayInfo.segPts
         for handleNo in displayInfo.handleNos:
@@ -1761,10 +1918,10 @@ def getBezierBatches(shader, displayInfos, context = None, defHdlType = 'ALIGNED
                 ptIdx = int(j / 3)
                 hdlIdx = j % 3
                 tipColInfo.append([tipColor, segPts[ptIdx][hdlIdx]])
-    
+
     tipCos = []
     tipColors = []
-    
+
     tipColInfo = sorted(tipColInfo, key = lambda x: TIP_COL_PRIORITY[x[0]])
     for ti in tipColInfo:
         tipColors.append(ti[0])
@@ -1785,13 +1942,12 @@ def resetToolbarTool():
         regions   = [region for region in a.regions if region.type == 'WINDOW']
         for r in regions:
             override['region'] = r
-            bpy.ops.wm.tool_set_by_index(override)    
+            bpy.ops.wm.tool_set_by_index(override)
 
-# TODO: Maybe something more readable
 def updateMetaBtns(caller, event, keymap = None):
     if(keymap == None):
-        keymap = {'LEFT_SHIFT': 'shift', 'RIGHT_SHIFT': 'shift', 
-            'LEFT_CTRL':'ctrl', 'RIGHT_CTRL':'ctrl', 
+        keymap = {'LEFT_SHIFT': 'shift', 'RIGHT_SHIFT': 'shift',
+            'LEFT_CTRL':'ctrl', 'RIGHT_CTRL':'ctrl',
             'LEFT_ALT': 'alt', 'RIGHT_ALT': 'alt'}
 
     if(keymap.get(event.type) != None):
@@ -1799,263 +1955,1036 @@ def updateMetaBtns(caller, event, keymap = None):
         if(event.value == 'PRESS'): exec(expr +'True')
         if(event.value == 'RELEASE'): exec(expr +'False')
         return True
-        
+
     return False
-        
-class Snapper():
-    def __init__(self, getSnapLocs, getPrevRefCo):
+
+unitMap = {'FEET': "'", 'METERS':'m'}
+
+class SnapDigits():
+    digitMap = {'ONE':'1', 'TWO':'2', 'THREE':'3', 'FOUR':'4', 'FIVE':'5', \
+                'SIX':'6', 'SEVEN':'7', 'EIGHT':'8', 'NINE':'9', 'ZERO':'0', 'PERIOD':'.'}
+
+    def getValidFloat(sign, digits):
+        delta = 0
+        valid = True
+        for i in range(len(digits), 0, -1):
+            td = digits[0:i]
+            try:
+                delta = float(sign + ''.join(td))
+                return delta, valid
+            except:
+                valid = False
+        return delta, valid
+
+    def __init__(self, getFreeAxes, getEditCoPair):
+        self.getFreeAxes = getFreeAxes
+        self.getEditCoPair = getEditCoPair
         self.initialize()
+
+    def initialize(self):
+        self.axes = None # [0, 1, 2] etc.
+        self.deltaVec = None # Always cartesian
+        self.axisIdx = 0
+        self.digitChars = []
+        self.signChar = ''
+        self.polar = False
+        self.pDataIdx = 0 # Corresponding to axisIdx
+
+    def hasVal(self):
+        return self.axes != None
+
+    # Theta in degrees
+    def getPolarCos(self):
+        axis0, axis1 = self.getFreeAxes()[0], self.getFreeAxes()[1]
+        val0, val1 = self.deltaVec[axis0], self.deltaVec[axis1]
+        if(val0 == 0):
+            if(val1 == 0): return 0, 0
+            theta = (val1 / abs(val1)) * 90
+        else:
+            theta = degrees(atan(abs(val1) / abs(val0)))
+            if(val0 < 0): theta = 180 - theta
+            if(val1 < 0): theta = -theta
+        r = sqrt(val1 * val1 + val0 * val0)
+        return [r, theta]
+
+    # Theta in degrees
+    def getDeltaFromPolar(self, polCos):
+        r, theta = polCos
+        return r * cos(radians(theta)), r * sin(radians(theta))
+
+    def addToPolar(self, delta):
+        polCos = list(self.getPolarCos())
+        polCos[self.pDataIdx] += delta
+        val0, val1 = self.getDeltaFromPolar(polCos)
+        return val0, val1
+
+    def digitsToVec(self):
+        delta, valid = SnapDigits.getValidFloat(self.signChar, self.digitChars)
+        if(self.polar):
+            axis0, axis1 = self.getFreeAxes()[0], self.getFreeAxes()[1]
+            self.deltaVec[axis0], self.deltaVec[axis1] = self.addToPolar(delta)
+        else:
+            self.deltaVec[self.axisIdx] += delta
+
+    def vecToDigits(self):
+        if(self.polar):
+            vals = self.getPolarCos()
+            v = round(vals[self.pDataIdx], 4)
+        else:
+            v = round(self.deltaVec[self.axisIdx], 4)
+        self.digitChars = list(str(abs(v))) if v != 0 else ''
+        while(len(self.digitChars) > 0 and self.digitChars[-1] == '0'):
+            self.digitChars.pop()
+        if(len(self.digitChars) > 0 and self.digitChars[-1] == '.'):
+            self.digitChars.pop()
+        self.signChar = '-' if v < 0 else ''
+
+    def updateDeltaFromEditCos(self):
+        editCos = self.getEditCoPair()
+        self.deltaVec = editCos[1] - editCos[0]
+
+    def procEvent(self, context, event):
+        if(event.type == 'P'):
+            editCos = self.getEditCoPair()
+            if(len(editCos) == 2):
+                if(event.value == 'RELEASE'):
+                    if(self.axes == None):
+                        self.axes = self.getFreeAxes() # TODO: Always dynamic?
+                        self.polar = False
+                    # Only possible within a plane right now
+                    elif(len(self.getFreeAxes()) == 2):
+                        self.polar = not self.polar
+                        self.pDataIdx = 0
+                    self.updateDeltaFromEditCos()
+                    self.digitChars = []
+                    self.axisIdx = self.axes[0]
+            return True
+
+        dval = SnapDigits.digitMap.get(event.type)
+        if(dval != None):
+            if(event.value == 'RELEASE'):
+                self.digitChars.append(dval)
+                if(self.axes == None):
+                    self.axes = self.getFreeAxes() # TODO: Always dynamic?
+                    self.deltaVec = Vector()
+                    self.axisIdx = self.axes[0]
+            return True
+
+        if(not self.hasVal()): # No further processing if nothing to process
+            return False
+
+        retVal = True
+        if(event.type == 'MINUS'):
+            if(event.value == 'RELEASE'):
+                self.signChar = '' if(self.signChar == '-') else '-'
+
+        elif(event.type == 'ESC'):
+            if(event.value == 'RELEASE'):
+                self.initialize()
+
+        elif(event.type == 'BACK_SPACE'):
+            if(event.value == 'RELEASE'):
+                if(len(self.digitChars) > 0): self.digitChars.pop()
+                else:
+                    if(self.polar):
+                        polarCos = self.getPolarCos()
+                        if(not floatCmpWithMargin(polarCos[self.pDataIdx], 0)):
+                            self.vecToDigits()
+
+                            # TODO: Retain theta without this workaround
+                            polarCos[self.pDataIdx] = 0.00001
+                            delta = self.getDeltaFromPolar(polarCos)
+                            axis0, axis1 = self.getFreeAxes()[0], self.getFreeAxes()[1]
+                            self.deltaVec[axis0] = delta[0]
+                            self.deltaVec[axis1] = delta[1]
+                    else:
+                        if(self.deltaVec[self.axisIdx] != 0):
+                            self.vecToDigits()
+                            self.deltaVec[self.axisIdx] = 0
+
+        elif(event.type == 'TAB'):
+            if(event.value == 'RELEASE'):
+                self.digitsToVec()
+                if(self.polar):
+                    self.pDataIdx = (self.pDataIdx + 1) % 2
+                else:
+                    self.axisIdx = \
+                        self.axes[(self.axes.index(self.axisIdx) + 1) % len(self.axes)]
+
+                self.digitChars = []
+                self.signChar = ''
+        else:
+            retVal = False
+
+        return retVal
+
+    def getCurrDelta(self):
+        if(self.axes == None): return Vector()
+
+        val = self.deltaVec.copy()
+        delta, valid = SnapDigits.getValidFloat(self.signChar, self.digitChars)
+
+        if(self.polar):
+            axis0, axis1 = self.getFreeAxes()[0], self.getFreeAxes()[1]
+            val[axis0], val[axis1] = self.addToPolar(delta)
+        else:
+            val[self.axisIdx] += delta
+
+        return val
+
+    def getDeltaStrPolar(self):
+        delta, valid = SnapDigits.getValidFloat(self.signChar, self.digitChars)
+        polCos = self.getPolarCos()
+        strs = ['['] * 2
+        idx0 = self.pDataIdx
+        idx1 = 1 - self.pDataIdx
+        d = polCos[idx0]
+
+        if(d != 0):
+            strs[idx0] += str(round(d, 4)) + ('+' if (self.signChar == '') else '')
+
+        strs[idx0] += self.signChar + ''.join(self.digitChars) + '] = ' \
+            + str(round((delta + d), 4)) + ('' if valid else ' <Invalid>')
+
+        strs[idx1] = '[' + str(round(polCos[1 - self.pDataIdx], 4)) + ']'
+
+        return 'r: '+strs[0] + ' theta: '+ strs[1]
+
+    def getCurrDeltaStr(self):
+        delta, valid = SnapDigits.getValidFloat(self.signChar, self.digitChars)
+        retStr = '['
+        d = self.deltaVec[self.axisIdx]
+        if(d != 0):
+            retStr += str(round(d, 4)) + ('+' if (self.signChar == '') else '')
+        retStr += self.signChar + ''.join(self.digitChars) + '] = ' \
+            + str(round((delta + d), 4)) + ('' if valid else ' <Invalid>')
+
+        return retStr
+
+class CustomAxis:
+
+    def __init__(self):
+        #TODO: What's better?
+        params = bpy.context.window_manager.bezierToolkitParams
+        if(bpy.data.scenes[0].get('btk_co1') == None):
+            bpy.data.scenes[0]['btk_co1'] = [INVALID_NO, INVALID_NO, INVALID_NO]
+        if(bpy.data.scenes[0].get('btk_co2') == None):
+            bpy.data.scenes[0]['btk_co2'] = [INVALID_NO, INVALID_NO, INVALID_NO]
+        self.axisPts = [Vector(bpy.data.scenes[0]['btk_co1']), \
+            Vector(bpy.data.scenes[0]['btk_co2'])]
+        self.snapCnt = params.customAxisSnapCnt
+
+    def length(self):
+        pts = self.axisPts
+
+        # Strange floating points!
+        if(all(pt < (INVALID_NO - 1000) for pt in pts[0] + pts[1])):
+            return (pts[1] - pts[0]).length
+        else:
+            return 0
+
+    def set(self, idx, co):
+        self.axisPts[idx] = co
+        if(idx == 0): bpy.data.scenes[0]['btk_co1'] = [c for c in co]
+        if(idx == 1): bpy.data.scenes[0]['btk_co2'] = [c for c in co]
+
+    def getSnapPts(self): # ptCnt excluding end points
+        pts = self.axisPts
+        if(self.length() == 0): return [pts[0], pts[1]]
+
+        snapPts = [pts[0]]
+        interval = self.snapCnt + 1
+        incr = self.length() / interval
+        diffV = pts[1] - pts[0]
+
+        for i in range(1, interval):
+           snapPts.append(pts[0] + (diffV * (incr * i)  / self.length()) )
+
+        snapPts.append(pts[1])
+        return snapPts
+
+class Snapper():
+
+    DEFAULT_ANGLE_SNAP_STEPS = 3
+
+    def __init__(self, context, getSnapLocs, getRefLine, getRefLineOrig):
         self.getSnapLocs = getSnapLocs
-        self.getPrevRefCo = getPrevRefCo
-        self.unlockEvt = 'U'
-        self.defaultSnapSteps = 3
-        self.snapSteps = self.defaultSnapSteps        
-        
-    def initialize(self):        
-        self.shift = False # For locking to plane 
-        
+        self.getRefLine = getRefLine
+        self.getRefLineOrig = getRefLineOrig
+        self.angleSnapSteps = Snapper.DEFAULT_ANGLE_SNAP_STEPS
+        self.customAxis = CustomAxis()
+        self.snapDigits = SnapDigits(self.getFreeAxesNormalized, self.getEditCoPair)
+        self.initialize()
+        # ~ bpy.context.space_data.overlay.show_axis_x = False
+        # ~ bpy.context.space_data.overlay.show_axis_y = False
+
+    def initialize(self):
+        self.shift = False # For locking to plane
+        self.ctrl = False # For excluding ctrl Z etc.
+        self.alt = False # For future use
+
+        # Duplicate of self.ctrl etc. but better for readability
         self.angleSnap = False
         self.gridSnap = False
         self.objSnap = False
-        
-        self.resetSnap()
-        
-    def resetSnap(self):
-        self.lockAxes = []
-        self.lastSnapCos = []
+
         self.lastSnapTypes = set()
-        
-    def procModal(self, context, event):
-        if(event.type in {'LEFT_SHIFT', 'RIGHT_SHIFT'}):
-            if(event.value == 'PRESS'): self.shift = True
-            if(event.value == 'RELEASE'): self.shift = False
-            
-        if(event.type in {'X', 'Y', 'Z', self.unlockEvt}):
-            if(event.type == self.unlockEvt):
-                self.lockAxes = []
-            else:
-                self.lockAxes = [ord(event.type) - ord('X')]
-                if(self.shift):
-                    self.lockAxes = list({0, 1, 2} - set(self.lockAxes))
-                
-        keymap = {'LEFT_SHIFT': 'angleSnap', 'RIGHT_SHIFT': 'angleSnap', 
-            'LEFT_CTRL':'gridSnap', 'RIGHT_CTRL':'gridSnap', 
+
+        self.resetSnap()
+
+    def resetSnap(self):
+
+        self.freeAxes = [] # All axes free
+        self.snapDigits.initialize()
+
+        # This variable lets caller know that return was pressed after digits were entered
+        # Caller can reset snapper as per convenience
+        self.digitsConfirmed = False
+
+        self.snapCo = None
+        self.inDrawAxis = False # User drawing the custom axis
+        # ~ self.snapStack = [] # TODO
+
+    def getGlobalOrient(self):
+        return bpy.context.window_manager.bezierToolkitParams.snapOrient
+
+    # Return user selection in header menu, [] for None
+    # (Tightly coupled with strings in BezierToolkitParams)
+    def getFreeAxesGlobal(self):
+        constrAxes = bpy.context.window_manager.bezierToolkitParams.constrAxes
+        if(constrAxes != 'NONE'):
+            idx = constrAxes.find('-')
+            axis = constrAxes[idx + 1]
+            freeAxes = [ord(axis) - ord('X')]
+            if(idx > 0): freeAxes = sorted(list({0, 1, 2} - set(freeAxes)))
+            return freeAxes
+        else: return []
+
+    # Return actual free axes (menu + hotkey combined), [] for None
+    def getFreeAxesCombined(self):
+        constrAxes = self.getFreeAxesGlobal()
+        if(len(constrAxes) == 0): return self.freeAxes
+        if(len(self.freeAxes) == 0): return constrAxes
+        freeAxes = sorted(list(set(constrAxes).intersection(set(self.freeAxes))))
+        if(len(freeAxes) == 0): return constrAxes
+        else: return freeAxes
+
+    # Return actual free axes (menu + hotkey combined), [0, 1, 2] for None
+    def getFreeAxesNormalized(self):
+        if(len(self.getFreeAxesCombined()) == 0): return [0, 1, 2]
+        else: return self.getFreeAxesCombined()
+
+    def getCurrOrig(self, obj = None):
+        snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
+        if(snapOrigin == 'AXIS'):
+            if(self.customAxis.length() != 0): return self.customAxis.axisPts[0]
+        elif(snapOrigin == 'REFERENCE'):
+            refLineOrig = self.getRefLineOrig()
+            if(refLineOrig != None): return refLineOrig
+        elif(snapOrigin == 'OBJECT' and obj != None): return obj.location
+        elif(snapOrigin == 'CURSOR'): return bpy.context.scene.cursor.location
+        return Vector((0, 0, 0))
+
+    def getTransMatsForOrient(self, rv3d, obj = None):
+        tm = Matrix()
+        params = bpy.context.window_manager.bezierToolkitParams
+        transType = params.snapOrient
+        if(transType == 'AXIS'):
+            ca = self.customAxis
+            if(abs(ca.length()) > DEF_ERR_MARGIN):
+                pts = ca.axisPts
+                tm, invTm = getLineTransMatrices(pts[0], pts[1])
+                if(params.axisScale):
+                    unitD = ca.length() / 10
+                    tm = Matrix.Scale(1 / unitD, 4) @ tm
+                    invTm = tm.inverted()
+
+        elif(transType == 'REFERENCE'):
+            refLine = self.getRefLine()
+            if(refLine != None and len(refLine) == 2):
+                tm, invTm = getLineTransMatrices(refLine[0], refLine[1])
+                if(params.axisScale):
+                    unitD = (refLine[1] - refLine[0]).length / 10
+                    tm = Matrix.Scale(1 / unitD, 4) @ tm
+                    invTm = tm.inverted()
+
+        elif(transType == 'OBJECT' and obj != None):
+            tm = obj.matrix_world.inverted()
+
+        elif(transType == 'VIEW'):
+            tm = rv3d.view_matrix
+
+        return tm, tm.inverted()
+
+    # To be called in modal method of parent
+    def procEvent(self, context, event, rmInfo):
+
+        # update ctrl etc.
+        updateMetaBtns(self, event)
+
+        keymap = {'LEFT_SHIFT': 'angleSnap', 'RIGHT_SHIFT': 'angleSnap',
+            'LEFT_CTRL':'gridSnap', 'RIGHT_CTRL':'gridSnap',
             'LEFT_ALT': 'objSnap', 'RIGHT_ALT': 'objSnap'}
 
+        # will do the same as above call, but update different vars for readability
         updateMetaBtns(self, event, keymap)
 
-        if(event.type == 'WHEELDOWNMOUSE' and self.angleSnap):
-            if(self.snapSteps < 10):
-                self.snapSteps += 1
+        if(event.type == 'RIGHTMOUSE'):
+            snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
+            if(event.value == 'RELEASE' and snapOrigin == 'AXIS'):
+                loc = self.get3dLocSnap(rmInfo, snapToAxisLine = False)
+                if(not self.inDrawAxis): self.customAxis.set(0, loc)
+                else: self.customAxis.set(1, loc)
+                self.inDrawAxis = not self.inDrawAxis
+            return True
 
-        if(event.type == 'WHEELUPMOUSE' and self.angleSnap):
-            if(self.snapSteps > 1):
-                self.snapSteps -= 1
+        if(self.inDrawAxis):
+            if(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', 'NUMPAD_PLUS', \
+                'NUMPAD_MINUS','PLUS', 'MINUS'}):
+                if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
+                    and event.value == 'PRESS'):
+                    return True
+                elif(event.type =='WHEELUPMOUSE' or event.type.endswith('PLUS')):
+                    if(self.customAxis.snapCnt < 20): self.customAxis.snapCnt += 1
+                elif(event.type =='WHEELDOWNMOUSE' or event.type.endswith('MINUS')):
+                    if(self.customAxis.snapCnt > 0): self.customAxis.snapCnt -= 1
 
-        if(event.type == 'MIDDLEMOUSE' and self.angleSnap):
-            self.snapSteps = self.defaultSnapSteps
+            if(event.type == 'MOUSEMOVE'):
+                loc = self.get3dLocSnap(rmInfo, snapToAxisLine = False)
+                self.customAxis.set(1, loc)
 
-        return False
-        
-    def get3dLocSnap(self, context, event, vec = None, fromActiveObj = True, xy = None):
-        self.lastSnapCos = []
+            if(event.type == 'ESC'):
+                self.customAxis.set(0, Vector((INVALID_NO, INVALID_NO, INVALID_NO)))
+                self.customAxis.set(1, Vector((INVALID_NO, INVALID_NO, INVALID_NO)))
+                self.inDrawAxis = False
+
+            return True
+
+        retVal = False # Whether the event was 'consumed'
+
+        snapDProc = False
+        if(len(self.getRefLine()) > 0):
+            snapDProc = self.snapDigits.procEvent(context, event)
+            if(snapDProc):
+                self.digitsConfirmed = False # Always reset if there was any digit entered
+                return True
+
+        if(not self.ctrl and event.type in {'X', 'Y', 'Z'}):
+            self.digitsConfirmed = False # Always reset if there is any lock axis
+            if(event.value == 'RELEASE'):
+                self.freeAxes = [ord(event.type) - ord('X')]
+                if(self.shift):
+                    self.freeAxes = sorted(list({0, 1, 2} - set(self.freeAxes)))
+
+                # if already part of global axes, don't store (no escape needed)
+                if(self.getFreeAxesCombined() == self.getFreeAxesGlobal()):
+                    self.freeAxes = []
+
+            return True
+
+        # ~ if(event.type == 'Q' and self.getGlobalOrient() == 'AXIS'):
+            # ~ if(event.value == 'RELEASE'):
+                # ~ self.customAxis.initialize()
+            # ~ return True
+
+        # ~ if(event.type == 'WHEELDOWNMOUSE' and self.angleSnap):# Event not consumed
+            # ~ if(self.snapSteps < 10):
+                # ~ self.snapSteps += 1
+
+        # ~ if(event.type == 'WHEELUPMOUSE' and self.angleSnap):# Event not consumed
+            # ~ if(self.snapSteps > 1):
+                # ~ self.snapSteps -= 1
+
+        # ~ if(event.type == 'MIDDLEMOUSE' and self.angleSnap):# Event not consumed
+            # ~ self.snapSteps = self.defaultSnapSteps
+
+        # Consume escape or return / space only if there's something to process
+        if(len(self.freeAxes) > 0 or \
+            (self.snapDigits.hasVal() and not self.digitsConfirmed)):
+            retVal = True
+            if(event.type == 'RET' or event.type == 'SPACE'):
+                if(event.value == 'RELEASE'):
+                    # ~ self.resetSnap() # This is the responsibility of the caller
+                    self.digitsConfirmed = True # Confirm first time
+            elif(event.type == 'ESC'):
+                if(event.value == 'RELEASE'): self.resetSnap()
+            else:
+                retVal = snapDProc
+
+        return retVal
+
+    def getStatusStr(self, unit, invTm, refPt, newPt, transformed):
+        manualEntry = self.snapDigits.hasVal()
+
+        if(manualEntry and self.snapDigits.polar):
+            return self.snapDigits.getDeltaStrPolar()
+
+        axes = self.getFreeAxesNormalized()
+        diffV = self.snapDigits.getCurrDelta() if manualEntry else (newPt - refPt)
+        diffVActual = invTm @ diffV
+
+        retStr = ''
+        for i, d in enumerate(diffV):
+            if(i not in axes): continue
+
+            retStr += 'D' + chr(ord('x') + i) + ': '
+            if(manualEntry and i == self.snapDigits.axisIdx):
+                retStr += self.snapDigits.getCurrDeltaStr()
+            else:
+                retStr += str(round(d, 4))
+
+            if(transformed): retStr += '{'+ str(round(diffVActual[i], 4)) +'}'
+
+            retStr += '  '
+
+        unitT = ''
+        unitA = ''
+        if(transformed): unitA = unit
+        else: unitT = unit
+
+        retStr += '(' + str(round(diffV.length, 4)) + unitT +')'
+        if(transformed): retStr += '{'+ str(round(diffVActual.length, 4))+ unitA +'}'
+
+        return retStr
+
+    def get3dLocSnap(self, rmInfo, vec = None, refreshStatus = True, \
+        snapToAxisLine = True, xyDelta = [0, 0]):
+
+        obj = bpy.context.object
+        xy = [rmInfo.xy[0] - xyDelta[0], rmInfo.xy[1] - xyDelta[1]]
+
+        region = rmInfo.region
+        rv3d = rmInfo.rv3d
+
+        refLine = self.getRefLine()
+        refLineOrig = self.getRefLineOrig()
+        orig = self.getCurrOrig(obj)
+
+        inEdit = refLineOrig != None
+
+        params = bpy.context.window_manager.bezierToolkitParams
+        transType = params.snapOrient
+        origType = params.snapOrigin
+
+        loc = None
+
+        tm = Matrix()
+        invTm = Matrix()
+
         self.lastSnapTypes = set()
 
-        rounding = getViewDistRounding(context)
-        region = context.region
-        rv3d = context.space_data.region_3d
-        if(xy == None): xy = event.mouse_region_x, event.mouse_region_y
+        unit = unitMap.get(bpy.context.scene.unit_settings.length_unit)
+        if(unit == None): unit = ''
+
+        digitsValid = True
+        freeAxesC = self.getFreeAxesCombined()
+        freeAxesN = self.getFreeAxesNormalized()
+        freeAxesG = self.getFreeAxesGlobal()
 
         if(self.objSnap):
-            #TODO: Called very frequently (store the tree without duplicating data)
-            snapLocs = self.getSnapLocs()
+            #TODO: Called very frequently (store the tree [without duplicating data])
+            snapLocs = self.getSnapLocs() + \
+                [bpy.context.scene.cursor.location, Vector((0, 0, 0))] + \
+                    (self.customAxis.getSnapPts() if(snapToAxisLine and \
+                        'AXIS' in {transType, origType}) else [])
+
             kd = kdtree.KDTree(len(snapLocs))
             for i, l in enumerate(snapLocs):
-                kd.insert(getCoordFromLoc(context, l).to_3d(), i)
+                kd.insert(getCoordFromLoc(region, rv3d, l).to_3d(), i)
             kd.balance()
 
             coFind = Vector(xy).to_3d()
             searchResult = kd.find_range(coFind, SNAP_DIST_PIXEL)
+
             if(len(searchResult) != 0):
                 co, idx, dist = min(searchResult, key = lambda x: x[2])
-                return snapLocs[idx]
+                loc = snapLocs[idx]
+                self.lastSnapTypes.add('loc')
 
-        if(vec == None):
-            if(fromActiveObj and context.active_object != None):
-                vec = context.active_object.location
-            else:
-                # ~ vec = region_2d_to_vector_3d(region, rv3d, xy)
-                vec = context.scene.cursor.location
+        if(loc == None):
+            if(vec == None):
+                vec = orig
 
-        loc = region_2d_to_location_3d(region, rv3d, xy, vec)
+            loc = region_2d_to_location_3d(region, rv3d, xy, vec)
 
-        lastCo = self.getPrevRefCo()
-        if(len(self.lockAxes) > 0 and lastCo != None):
-            actualLoc = loc[:]
-            loc = lastCo.copy()
-            for axis in self.lockAxes: loc[axis] = actualLoc[axis]
+            params = bpy.context.window_manager.bezierToolkitParams
+            if(showSnapToPlane(params)):
+                snapToPlane = params.snapToPlane
+            else: snapToPlane = False
 
-        if(self.gridSnap):
-            loc = roundedVect(loc, rounding)
+            # TODO: Get gridSnap and angleSnap out of this if
+            if((transType != 'GLOBAL' and inEdit) or \
+                snapToPlane or self.gridSnap or \
+                    self.snapDigits.hasVal() or \
+                        (inEdit and (len(freeAxesN) < 3 or self.angleSnap))):
 
-        if(self.angleSnap and lastCo != None):
-            actualLoc = loc.copy()
+                tm, invTm = self.getTransMatsForOrient(rv3d, obj)
 
-            #First decide the main movement axis
-            diff = [abs(v) for v in (actualLoc - lastCo)]
-            maxDiff = max(diff)
-            axis = 0 if abs(diff[0]) == maxDiff \
-                else (1 if abs(diff[1]) == maxDiff else 2)
+                if(snapToPlane or refLineOrig == None): refCo = orig
+                else: refCo = refLineOrig
 
-            loc = lastCo.copy()
-            loc[axis] = actualLoc[axis]
+                refCo = tm @ refCo
+                loc = tm @ loc
 
-            snapIncr = 45 / self.snapSteps
-            snapAngles = [radians(snapIncr * a) for a in range(0, self.snapSteps + 1)]
-            l1 =  actualLoc[axis] - lastCo[axis] #Main axis value
+                if(self.snapDigits.hasVal()):
+                    delta = self.snapDigits.getCurrDelta()
+                    loc = tm @ orig + delta
+                    self.lastSnapTypes.add('keyboard')
+                else:
+                    # Special condition for lock to single axis
+                    if(len(refLine) > 0 and self.snapCo != None \
+                        and len(freeAxesC) == 1):
+                        refCo = tm @ self.snapCo
+                    prevCo = refCo
+                    if(len(freeAxesC) == 2 or (len(freeAxesG) == 2 and snapToPlane)):
+                        constrAxes = freeAxesG if (len(freeAxesG) == 2) else freeAxesC
+                        loc = refCo.copy()
+                        # Any other two points on the plane
+                        ppt1 = loc.copy()
+                        ppt1[constrAxes[0]] = loc[constrAxes[0]] + 10
+                        ppt2 = loc.copy()
+                        ppt2[constrAxes[1]] = loc[constrAxes[1]] + 10
+                        ppt3 = ppt2.copy()
+                        ppt2[constrAxes[0]] = loc[constrAxes[0]] + 10
 
-            for i in range(0, 3):
-                if(i != axis):
-                    l2 =  (actualLoc[i] - lastCo[i]) #Minor axis value
-                    angle = abs(atan(l2 / l1)) if l1 != 0 else 0
-                    dirn = (l1 * l2) / abs(l1 * l2) if (l1 * l2) != 0 else 1
-                    prevDiff = 9e+99
-                    for j in range(0, len(snapAngles) + 1):
-                        if(j == len(snapAngles)):
-                            loc[i] = lastCo[i] + dirn * l1 * tan(snapAngles[-1])
-                            break
-                        cmpAngle = snapAngles[j]
-                        if(abs(angle - cmpAngle) > prevDiff):
-                            loc[i] = lastCo[i] + dirn * l1 * tan(snapAngles[j-1])
-                            break
-                        prevDiff = abs(angle - cmpAngle)
-            self.lastSnapCos += [lastCo, loc]
-            self.lastSnapTypes.add('angleSnap')
+                        # Raycast from 2d point onto the plane
+                        pt = getPtProjOnPlane(region, rv3d, xy, invTm @ loc, \
+                            invTm @ ppt1, invTm @ ppt2, invTm @ ppt3)
+
+                        for axis in constrAxes:
+                            # TODO: Better handling of boundary condition
+                            if(pt == None or pt[axis] > 1000):
+                                loc[axis] = refCo[axis]
+                            else: loc[axis] = (tm @ pt)[axis]
+                        prevCo = loc
+                        self.lastSnapTypes.add('axis2')
+
+                    if(len(freeAxesC) == 1 and len(refLine) > 0):
+
+                        axis = freeAxesC[0]
+                        # Any one point on axis
+                        ptOnAxis = prevCo.copy()
+                        ptOnAxis[axis] += 10
+
+                        # Convert everything to 2d
+                        ptOnAxis2d = getCoordFromLoc(region, rv3d, invTm @ ptOnAxis)
+                        lastCo2d = getCoordFromLoc(region, rv3d, invTm @ prevCo)
+
+                        # Find 2d projection (needed)
+                        pt2d = geometry.intersect_point_line(xy, \
+                            lastCo2d, ptOnAxis2d)[0]
+
+                        # Any other 2 points on the plane, on which the axis lies
+                        ppt1 = prevCo.copy()
+                        ppt1[axis] += 10
+                        newAxis = [i for i in range(0, 3) if i != axis][0]
+                        ppt2 = prevCo.copy()
+                        ppt2[newAxis] += 10
+
+                        # Raycast from 2d point onto the plane
+                        pt = getPtProjOnPlane(region, rv3d, pt2d, \
+                            invTm @ prevCo, invTm @ ppt1, invTm @ ppt2)
+                        loc = refCo.copy()
+                        if(pt == None or pt[axis] > 1000):
+                            loc[axis] = refCo[axis]
+                        else: loc[axis] = (tm @ pt)[axis]
+                        self.lastSnapTypes.add('axis1')
+
+                if(not self.snapDigits.hasVal() and self.gridSnap):
+                    if(params.axisScale and (len(refLine) > 0 and transType == 'AXIS') \
+                        or (refLineOrig and transType == 'REFERENCE')):
+                        # Independent of view distance
+                        diffV = (loc - tm @ refLineOrig)
+                        loc = tm @ refLineOrig + \
+                            round(diffV.length) * (diffV / diffV.length)
+                    else:
+                        rounding = getViewDistRounding(rv3d)
+                        loc = tm @ roundedVect(invTm @ loc, rounding, freeAxesN)
+                    self.lastSnapTypes.add('grid')
+
+                if(not self.snapDigits.hasVal() and self.angleSnap and len(refLine) > 0):
+                    freeAxesC = [0, 1, 2] if len(freeAxesC) == 0 else freeAxesC
+                    snapStart = tm @ orig
+                    actualLoc = loc.copy()
+
+                    #First decide the main movement axis
+                    diff = [abs(v) for v in (actualLoc - snapStart)]
+                    maxDiff = max(diff)
+                    axis = diff.index(maxDiff)
+
+                    loc = snapStart.copy()
+                    loc[axis] = actualLoc[axis]
+
+                    snapIncr = 45 / self.angleSnapSteps
+                    snapAngles = [radians(snapIncr * a) \
+                        for a in range(0, self.angleSnapSteps + 1)]
+
+                    l1 =  actualLoc[axis] - snapStart[axis] #Main axis diff value
+
+                    for i in range(0, 3):
+                        if(i != axis and (i in freeAxesC)):
+                            l2 =  (actualLoc[i] - snapStart[i]) #Minor axis value
+                            angle = abs(atan(l2 / l1)) if l1 != 0 else 0
+                            dirn = (l1 * l2) / abs(l1 * l2) if (l1 * l2) != 0 else 1
+                            prevDiff = 9e+99
+                            for j in range(0, len(snapAngles) + 1):
+                                if(j == len(snapAngles)):
+                                    loc[i] = snapStart[i] + \
+                                        dirn * l1 * tan(snapAngles[-1])
+                                    break
+                                cmpAngle = snapAngles[j]
+                                if(abs(angle - cmpAngle) > prevDiff):
+                                    loc[i] = snapStart[i] + \
+                                        dirn * l1 * tan(snapAngles[j-1])
+                                    break
+                                prevDiff = abs(angle - cmpAngle)
+
+                    self.lastSnapTypes.add('angle')
+
+        if(refreshStatus and inEdit):
+            refPt = tm @ orig
+            newPt = loc.copy()
+            text = self.getStatusStr(unit, invTm, refPt, newPt, tm != Matrix())
+        else:
+            text = None
+
+        self.setStatus(rmInfo.area, text)
+        loc = invTm @ loc
+        self.snapCo = loc
+        self.tm = tm
+
         return loc
-        
-    # TODO: Some elegant solution
-    def getLastSnapCos(self):
-        return self.lastSnapCos
-    
 
-################### Flexi Draw Bezier Curve ###################
+    def getEditCoPair(self):
+        refLineOrig = self.getRefLineOrig()
+        if(self.snapCo == None or refLineOrig == None):
+            return []
+        orig = self.getCurrOrig(bpy.context.object)
+        return (self.tm @ orig, self.tm @ self.snapCo)
+
+    def setStatus(self, area, text): #TODO Global
+        area.header_text_set(text)
+
+    def getGuideBatches(self, rmInfo, shader):
+        # ~ if(not is3DVireport(context)):
+            # ~ return []
+
+        obj = bpy.context.object
+        refLine = self.getRefLine()
+        refLineOrig = self.getRefLineOrig()
+        batches = []
+        freeAxesC = self.getFreeAxesCombined()
+        freeAxesN = self.getFreeAxesNormalized()
+
+        # ~ tm, invTm = self.tm, self.tm.inverted()
+        tm, invTm = self.getTransMatsForOrient(rmInfo.rv3d, obj)
+
+        orig = self.getCurrOrig(obj)
+        params = bpy.context.window_manager.bezierToolkitParams
+        transType = params.snapOrient
+        snapOrigin = params.snapOrigin
+
+        lineCo = []
+        if((refLineOrig != None or transType == 'VIEW' or len(freeAxesC) == 1)
+            or (len(freeAxesN) > 0 and transType != 'REFERENCE')):
+            colors = [(.6, 0.2, 0.2, 1), (0.2, .6, 0.2, 1), (0.2, 0.4, .6, 1)]
+            l = 10 * rmInfo.rv3d.view_distance
+
+            if (self.snapCo != None and len(freeAxesC) == 1): orig = self.snapCo
+
+            refCo = tm @ orig
+
+            for axis in freeAxesN[:2]:
+                col = colors[axis]
+                pt1 = refCo.copy()
+                pt2 = refCo.copy()
+                pt1[axis] = l + refCo[axis]
+                pt2[axis] = -l + refCo[axis]
+                slineCo, slineCol = getLineShades([invTm @ pt1, invTm @ pt2], col, .2, .9)
+                batches.append(batch_for_shader(shader, \
+                    "LINES", {"pos": slineCo, "color": slineCol}))
+
+        if(refLineOrig != None and self.snapCo != None and \
+            (self.angleSnap or ('keyboard' in self.lastSnapTypes \
+                and self.snapDigits.polar))):
+
+            slineCo = [orig, self.snapCo]
+            slineCol = [(.4, .4, .4, 1)] * 2
+            batches.append(batch_for_shader(shader, \
+                "LINES", {"pos": slineCo, "color": slineCol}))
+            batches.append(batch_for_shader(shader, \
+                "POINTS", {"pos": lineCo, \
+                    "color": [(1, 1, 1, 1) for i in range(0, len(lineCo))]}))
+
+        if(self.customAxis.length() != 0 and \
+            (self.inDrawAxis == True or transType == 'AXIS' or snapOrigin == 'AXIS')):
+            apts = self.customAxis.axisPts
+            lineCo = [apts[0], apts[1]]
+            ptCo = self.customAxis.getSnapPts()
+        else: ptCo = []
+
+        # ~ if(self.snapCo != None and 'loc' in self.lastSnapTypes):
+            # ~ ptCo.append(self.snapCo)
+
+        # Axis Line
+        slineCo, slineCol = getLineShades(lineCo, (1, 1, 1, 1), .9, .3, mid = False)
+        batches.append(batch_for_shader(shader, \
+            "LINES", {"pos": slineCo, "color": slineCol}))
+
+        batches.append(batch_for_shader(shader, \
+            "POINTS", {"pos": ptCo, \
+                "color": [(1, 1, 1, 1) for i in range(0, len(ptCo))]}))
+
+        return batches
+
+def getLineShades(lineCos, baseColor, start, end, mid = True):
+    if(len(lineCos) == 0 ): return [], []
+    if(len(lineCos) == 1 ): return lineCos[0], [baseColor]
+    if(mid): midPt = lineCos[0] + (lineCos[1] - lineCos[0]) / 2
+    col1 = [start * c for c in baseColor]
+    col2 = [end * c for c in baseColor]
+    if(mid): return [lineCos[0], midPt, midPt, lineCos[1]], [col1, col2, col2, col1]
+    else: return [lineCos[0], lineCos[1]], [col1, col2]
 
 
-class ModalDrawBezierOp(Operator):
+################################## Flexi Tool Classes ##################################
+#
+#                                         Operator
+#                                            |
+#                                     ModalBaseFlexiOp
+#                                            |
+#                          -------------------------------------
+#                          |                                   |
+#                 ModalDrawBezierOp                   ModalFlexiEditBezierOp
+#                          |
+#          ---------------------------------
+#          |                               |
+#    ModalFlexiDrawBezierOp       ModalFlexiDrawGreaseOp
 
-    # Static members shared by flexi draw and flexi grease
+class ModalBaseFlexiOp(Operator):
+    running = False
     drawHandlerRef = None
+    drawFunc = None
     segBatch = None
     tipBatch = None
-    subdivPtBatch = None
-    subdivLineBatch = None
     shader = None
-    running = False
-
-    markerSize = 8
-    drawPointSize = 4
-    pointSize = None # Will be set dynamically
-    
-    lineWidth = 1.5
+    snapperBatches = []
     opObj = None
-    
-    @classmethod
-    def poll(cls, context):
-        return not ModalDrawBezierOp.running
 
-    def addDrawHandler():
-        ModalDrawBezierOp.drawHandlerRef = \
-            bpy.types.SpaceView3D.draw_handler_add(ModalDrawBezierOp.drawHandler, \
-                (), "WINDOW", "POST_VIEW")
+    drawPointSize = 4
+    lineWidth = 1.5
+    axisLineWidth = 0.25
+    snapPointSize = 2
+
+    pointSize = 4 # For Draw (Marker is of diff size)
+
+    def addDrawHandler(drawHandler):
+        ModalBaseFlexiOp.drawHandlerRef = \
+            bpy.types.SpaceView3D.draw_handler_add(drawHandler, (), "WINDOW", "POST_VIEW")
 
     def removeDrawHandler():
-        if(ModalDrawBezierOp.drawHandlerRef != None):
-            bpy.types.SpaceView3D.draw_handler_remove(ModalDrawBezierOp.drawHandlerRef, \
+        if(ModalBaseFlexiOp.drawHandlerRef != None):
+            bpy.types.SpaceView3D.draw_handler_remove(ModalBaseFlexiOp.drawHandlerRef, \
                 "WINDOW")
-            ModalDrawBezierOp.drawHandlerRef = None
+            ModalBaseFlexiOp.drawHandlerRef = None
 
-    #static method
-    def drawHandler():
-        if(ModalDrawBezierOp.shader != None):
-            bgl.glLineWidth(ModalDrawBezierOp.lineWidth)
-            bgl.glPointSize(ModalDrawBezierOp.pointSize)
+    def drawHandlerBase():
+        if(ModalBaseFlexiOp.shader != None):
 
-            if(ModalDrawBezierOp.segBatch != None):
-                ModalDrawBezierOp.segBatch.draw(ModalDrawBezierOp.shader)
+            # TODO: Make configurable
+            bgl.glLineWidth(ModalBaseFlexiOp.axisLineWidth)
+            bgl.glPointSize(ModalBaseFlexiOp.snapPointSize)
+            for batch in ModalBaseFlexiOp.snapperBatches:
+                batch.draw(ModalBaseFlexiOp.shader)
 
+            bgl.glLineWidth(ModalBaseFlexiOp.lineWidth)
+            if(ModalBaseFlexiOp.segBatch != None):
+                ModalBaseFlexiOp.segBatch.draw(ModalBaseFlexiOp.shader)
+
+            bgl.glPointSize(ModalBaseFlexiOp.drawPointSize)
             if(ModalDrawBezierOp.tipBatch != None):
-                ModalDrawBezierOp.tipBatch.draw(ModalDrawBezierOp.shader)
+                ModalDrawBezierOp.tipBatch.draw(ModalBaseFlexiOp.shader)
 
-            if(ModalDrawBezierOp.subdivPtBatch != None):
-                ModalDrawBezierOp.subdivPtBatch.draw(ModalDrawBezierOp.shader)
 
-            if(ModalDrawBezierOp.subdivLineBatch != None):
-                ModalDrawBezierOp.subdivLineBatch.draw(ModalDrawBezierOp.shader)
+    def resetDisplayBase():
+        ModalBaseFlexiOp.segBatch = getResetBatch(ModalBaseFlexiOp.shader, "LINES")
+        ModalBaseFlexiOp.tipBatch = getResetBatch(ModalBaseFlexiOp.shader, "POINTS")
+        ModalBaseFlexiOp.snapperBatches = \
+            [getResetBatch(ModalBaseFlexiOp.shader, "LINES"), \
+                getResetBatch(ModalBaseFlexiOp.shader, "POINTS")]
 
-    @persistent
-    def loadPostHandler(dummy):
-        ModalDrawBezierOp.addDrawHandler()
-        if(ModalDrawBezierOp.shader != None):
-            ModalDrawBezierOp.refreshDisplay(bpy.context, [])
-        ModalDrawBezierOp.running = False
-
-    @persistent
-    def loadPreHandler(dummy):
-        ModalDrawBezierOp.removeDrawHandler()
-
-    def refreshDisplay(context, displayInfos, subdivCos = [], showSubdivPts = True):
-        #Only 3d space
-        ModalDrawBezierOp.segBatch, ModalDrawBezierOp.tipBatch = \
-            getBezierBatches(ModalDrawBezierOp.shader, displayInfos, context)
-
-        ModalDrawBezierOp.subdivPtBatch, ModalDrawBezierOp.subdivLineBatch = \
-            getSubdivBatches(ModalDrawBezierOp.shader, subdivCos, showSubdivPts)
-
-        # ~ if(hasattr(context, 'area') and context.area != None):
-            # ~ context.area.tag_redraw()
         areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
         for a in areas:
             a.tag_redraw()
 
-    def __init__(self, snapper, curveDispRes):
-        #No. of subdivisions in the displayed curve with view dist 1
-        self.curveDispRes = curveDispRes
-        self.snapper = snapper
+    def refreshDisplayBase(rmInfo, displayInfos, snapper = None):
+        # ~ area, region, rv3d = getMinViewDistRegion()
+        areaRegionInfo = getAllAreaRegions()
+
+        ModalBaseFlexiOp.segBatch, ModalBaseFlexiOp.tipBatch = \
+            getBezierBatches(ModalDrawBezierOp.shader, displayInfos, areaRegionInfo)
+
+        if(snapper != None):
+            ModalBaseFlexiOp.snapperBatches = \
+                snapper.getGuideBatches(rmInfo, ModalBaseFlexiOp.shader)
+        else:
+            ModalBaseFlexiOp.snapperBatches = []
+
+        areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
+        for a in areas:
+            a.tag_redraw()
+
+    @persistent
+    def loadPostHandler(dummy):
+        if(ModalBaseFlexiOp.shader != None):
+            ModalBaseFlexiOp.resetDisplayBase()
+        ModalBaseFlexiOp.running = False
+
+    @persistent
+    def loadPreHandler(dummy):
+        ModalBaseFlexiOp.removeDrawHandler()
+        if(ModalBaseFlexiOp.drawFunc != None):
+            bpy.types.VIEW3D_HT_tool_header.draw = ModalBaseFlexiOp.drawFunc
+
+    @classmethod
+    def poll(cls, context):
+        return not ModalBaseFlexiOp.running
+
+    def preInvoke(self, context, event):
+        pass # place holder
+
+    def subInvoke(self, context, event):
+        return {'RUNNING_MODAL'} # place holder
 
     def invoke(self, context, event):
-        ModalDrawBezierOp.opObj = self
-        ModalDrawBezierOp.running = True
+        ModalBaseFlexiOp.opObj = self
+        ModalBaseFlexiOp.running = True
+        self.preInvoke(context, event)
+        ModalBaseFlexiOp.addDrawHandler(self.__class__.drawHandler)
+        ModalBaseFlexiOp.drawFunc = bpy.types.VIEW3D_HT_tool_header.draw
+        bpy.types.VIEW3D_HT_tool_header.draw = drawSettingsFT
+        context.space_data.show_region_tool_header = True
 
-        self.initialize(context)
+        self.snapper = Snapper(context, self.getSnapLocs, \
+            self.getRefLine, self.getRefLineOrig)
 
-        ModalDrawBezierOp.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
-        ModalDrawBezierOp.shader.bind()
+        self.rmInfo = None
 
+        ModalBaseFlexiOp.shader = gpu.shader.from_builtin('3D_SMOOTH_COLOR')
+        ModalBaseFlexiOp.shader.bind()
         context.window_manager.modal_handler_add(self)
-        ModalDrawBezierOp.addDrawHandler()
-        
+
         try:
-            ModalDrawBezierOp.markerSize = \
-                context.preferences.addons[__name__].preferences.markerSize
-            ModalDrawBezierOp.drawPointSize = \
+            ModalBaseFlexiOp.drawPointSize = \
                 context.preferences.addons[__name__].preferences.drawPointSize
-            ModalDrawBezierOp.lineWidth = \
+            ModalBaseFlexiOp.lineWidth = \
                 context.preferences.addons[__name__].preferences.drawLineWidth
+            ModalBaseFlexiOp.axisLineWidth = \
+                context.preferences.addons[__name__].preferences.axisLineWidth
+            ModalBaseFlexiOp.snapPointSize = \
+                context.preferences.addons[__name__].preferences.snapPointSize
         except Exception as e:
             print("BezierUtils: Error fetching default sizes in Draw Bezier", e)
-            ModalDrawBezierOp.markerSize = 8
-            ModalDrawBezierOp.drawPointSize = 4
-            ModalDrawBezierOp.lineWidth = 1.5
+            ModalBaseFlexiOp.drawPointSize = 4
+            ModalBaseFlexiOp.lineWidth = 1.5
+            ModalBaseFlexiOp.axisLineWidth = .25
+            ModalBaseFlexiOp.snapPointSize = 2
 
-        return {"RUNNING_MODAL"}
+        return self.subInvoke(context, event)
 
-    def resetMetaBtns(self):
-        self.ctrl = False
-        self.shift = False
-        self.alt = False
+    def modal(self, context, event):
+        if(context.space_data == None):
+            return {'PASS_THROUGH'}
+
+        if(not is3DVireport(context)):
+            self.cancelOp(context)
+            resetToolbarTool()
+            return {'CANCELLED'}
+
+        if(event.type == 'WINDOW_DEACTIVATE' and event.value == 'PRESS'):
+            self.resetMetaBtns() # Subclass
+            self.snapper.initialize() # TODO: Check if needed
+            return {'PASS_THROUGH'}
+
+        if(not self.isToolSelected(context)): # Subclass
+            self.cancelOp(context)
+            return {"CANCELLED"}
+
+        rmInfo = RegionMouseXYInfo.getRegionMouseXYInfo(event, self.exclToolRegion())
+        if(self.isEditing() and self.rmInfo != rmInfo):
+            return {'RUNNING_MODAL'}
+        elif(rmInfo == None and not self.isEditing()):
+            return {'PASS_THROUGH'}
+
+        self.rmInfo = rmInfo
+        snapProc = self.snapper.procEvent(context, event, rmInfo)
+
+        return self.subModal(context, event, snapProc)
+
+    def cancelOpBase(self):
+        ModalBaseFlexiOp.removeDrawHandler()
+        ModalBaseFlexiOp.running = False
+        bpy.types.VIEW3D_HT_tool_header.draw = ModalBaseFlexiOp.drawFunc
+        self.snapper = None
+
+    def getSnapLocs(self):
+        return self.getSnapLocsImpl()
+
+################### Flexi Draw Bezier Curve ###################
+
+class ModalDrawBezierOp(ModalBaseFlexiOp):
+
+    # Static members shared by flexi draw and flexi grease
+    subdivPtBatch = None
+    subdivLineBatch = None
+
+    markerBatch = None
+    markerSize = 8
+
+    #static method
+    def drawHandler():
+        if(ModalBaseFlexiOp.shader != None):
+            bgl.glPointSize(ModalDrawBezierOp.markerSize)
+            if(ModalDrawBezierOp.markerBatch != None):
+                ModalDrawBezierOp.markerBatch.draw(ModalBaseFlexiOp.shader)
+
+            # TODO: Move this to grease draw
+            bgl.glPointSize(ModalBaseFlexiOp.drawPointSize)
+            if(ModalDrawBezierOp.subdivPtBatch != None):
+                ModalDrawBezierOp.subdivPtBatch.draw(ModalBaseFlexiOp.shader)
+
+            if(ModalDrawBezierOp.subdivLineBatch != None):
+                ModalDrawBezierOp.subdivLineBatch.draw(ModalBaseFlexiOp.shader)
+
+            ModalBaseFlexiOp.drawHandlerBase()
+
+    def resetDisplay():
+        ModalDrawBezierOp.subdivPtBatch = \
+            getResetBatch(ModalBaseFlexiOp.shader, "POINTS")
+        ModalDrawBezierOp.subdivLineBatch = \
+            getResetBatch(ModalBaseFlexiOp.shader, "LINES")
+        ModalDrawBezierOp.markerBatch = \
+            getResetBatch(ModalBaseFlexiOp.shader, "POINTS")
+
+        ModalBaseFlexiOp.resetDisplayBase()
+
+    def refreshDisplay(rmInfo, displayInfos, subdivCos = [], \
+        showSubdivPts = True, markerLoc = [], colMarker = None, snapper = None):
+
+        ModalDrawBezierOp.subdivPtBatch, ModalDrawBezierOp.subdivLineBatch = \
+            getSubdivBatches(ModalBaseFlexiOp.shader, subdivCos, showSubdivPts)
+
+        ModalDrawBezierOp.markerBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
+            "POINTS", {"pos": markerLoc, \
+                "color": [colMarker for i in range(len(markerLoc))]})
+
+        ModalBaseFlexiOp.refreshDisplayBase(rmInfo, displayInfos, snapper)
+
+    def __init__(self, curveDispRes):
+        pass
 
     #This will be called multiple times not just at the beginning
-    def initialize(self, context):
+    def initialize(self):
         self.curvePts = []
         self.clickT = None #For double click
         self.pressT = None #For single click
@@ -2064,93 +2993,179 @@ class ModalDrawBezierOp(Operator):
         self.resetMetaBtns()
         self.snapper.initialize()
 
+    def subInvoke(self, context, event):
+        self.initialize()
+
+        bpy.app.handlers.undo_post.append(self.postUndoRedo)
+        bpy.app.handlers.redo_post.append(self.postUndoRedo)
+
+        try:
+            ModalDrawBezierOp.markerSize = \
+                context.preferences.addons[__name__].preferences.markerSize
+        except Exception as e:
+            # ~ print("BezierUtils: Error fetching default sizes in Draw Bezier", e)
+            ModalDrawBezierOp.markerSize = 8
+
+        return {"RUNNING_MODAL"}
+
+    def resetMetaBtns(self):
+        self.ctrl = False
+        self.shift = False
+        self.alt = False
+
     def cancelOp(self, context):
-        if(self != None): # If None called from unregister
-            ModalDrawBezierOp.refreshDisplay(context, [])
-            
-        ModalDrawBezierOp.removeDrawHandler()
-        ModalDrawBezierOp.running = False
+        ModalDrawBezierOp.resetDisplay()
+        bpy.app.handlers.undo_post.remove(self.postUndoRedo)
+        bpy.app.handlers.redo_post.remove(self.postUndoRedo)
+        return self.cancelOpBase()
+
+    def postUndoRedo(self, scene, dummy = None): # signature different in 2.8 and 2.81?
+        self.updateSnapLocs() # subclass method
 
     def confirm(self, context, event):
         self.save(context, event)
         self.curvePts = []
         self.capture = False
-        ModalDrawBezierOp.refreshDisplay(context, [])
-        self.initialize(context)
+        ModalDrawBezierOp.resetDisplay()
+        self.initialize()
 
-    def modal(self, context, event):
+    def newPoint(self, loc):
+        self.curvePts.append([loc, loc, loc])
 
-        if(not is3DVireport(context)):
-            self.cancelOp(context)
-            resetToolbarTool()
-            return {'CANCELLED'}
+    def moveBezierPt(self, loc):
+        if(len(self.curvePts) > 0): self.curvePts[-1] = [loc, loc, loc]
 
-        if(context.space_data == None):
-            return {'PASS_THROUGH'}
+    def movePointByDelta(self, delta):
+        if(len(self.curvePts) > 0):
+            self.curvePts[-1][1] = self.curvePts[-1][1]  + delta
 
-        if(event.type == 'WINDOW_DEACTIVATE' and event.value == 'PRESS'):
-            self.resetMetaBtns()
-            self.snapper.initialize()
-            return {'PASS_THROUGH'}
+    def moveBptElem(self, handle, loc):
+        idx = {'left':0, 'pt':1, 'right':2}[handle]
+        if(len(self.curvePts) > 0):
+            self.curvePts[-1][idx] = loc
 
-        if(isOutside(context, event)):
-            if(len(self.curvePts) > 0):
-                return {'RUNNING_MODAL'}
-            return {'PASS_THROUGH'}
+    def moveBptElemByDelta(self, handle, delta):
+        idx = {'left':0, 'pt':1, 'right':2}[handle]
+        if(len(self.curvePts) > 0):
+            self.curvePts[-1][idx] = self.curvePts[-1][idx] + delta
 
-        self.snapper.procModal(context, event)
-        
-        if(event.type == 'E'):
-            if(event.value == 'RELEASE'):
-                # ~ bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname) (T60766)
-                bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
-            return {"RUNNING_MODAL"}
+    def resetHandle(self, handle):
+        if(len(self.curvePts) > 0):
+            self.moveBptElem(handle, self.curvePts[-1][1])
+
+    def isHandleSet(self):
+        if(len(self.curvePts) == 0): return False
+        co = self.curvePts[-1][1]
+        lh = self.curvePts[-1][0]
+        rh = self.curvePts[-1][2]
+        if(not vectCmpWithMargin(co, lh) or not vectCmpWithMargin(co, rh)): return True
+        return False
+
+    def exclToolRegion(self):
+        return True
+
+    def isEditing(self):
+        return len(self.curvePts) > 0
+
+    # Common subModal for Flexi Draw and Flexi Grease
+    def baseSubModal(self, context, event, snapProc):
+        rmInfo = self.rmInfo
 
         if(event.type == 'G'):
             if(event.value == 'RELEASE'):
                 self.grabRepos = not self.grabRepos
             return {"RUNNING_MODAL"}
 
-        if(event.type == 'RET' or event.type == 'SPACE'):
-            self.confirm(context, event)
-            self.redrawBezier(context, event)
-            return {'RUNNING_MODAL'}
-
-        if(event.type == 'ESC'):
-            self.initialize(context)
-            self.redrawBezier(context, event)
-            return {'RUNNING_MODAL'}
-
-        if(event.type == 'BACK_SPACE' and event.value == 'RELEASE'):
+        # This can happen only when space was entered and something was there
+        # for Snapper to process
+        if (snapProc and self.snapper.digitsConfirmed):
             self.snapper.resetSnap()
-            self.grabRepos = False
-            if(len(self.curvePts) > 0):
-                self.curvePts.pop()
-            if(len(self.curvePts) <= 1): #Because there is an extra point (the current one)
-                self.curvePts = []
-                self.capture = False
+
+            # Because resetSnap sets this to False (TODO: Refactor resetSnap)
+            self.snapper.digitsConfirmed = True
+
+            # First space / enter is equivalent to mouse press without release
+            if(not self.capture):
+                self.capture = True
+                self.snapper.setStatus(rmInfo.area, None)
+                return {'RUNNING_MODAL'}
             else:
-                loc = get3dLoc(context, event)
-                self.curvePts[-1] = [loc, loc, loc]                
-            self.redrawBezier(context, event)
-            return {'RUNNING_MODAL'}
+                # Second space / enter means it should be processed here,
+                # set snapProc to False so this modal will process it
+                snapProc = False
 
         if(updateMetaBtns(self, event)):
             return {'RUNNING_MODAL'}
-        
-        if (event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
-            if(len(self.curvePts) == 0):
-                loc = self.snapper.get3dLocSnap(context, event)
-                self.curvePts.append([loc, loc, loc])
-            self.capture = True
-            self.snapper.resetSnap()
-            self.pressT = time.time()
+
+        if(not snapProc and event.type == 'ESC'):
+            if(event.value == 'RELEASE'):
+                if(self.capture and self.isHandleSet()):
+                    self.resetHandle('left')
+                    self.resetHandle('right')
+
+                    # Needed to indicate next space / entered to be processed here
+                    self.snapper.digitsConfirmed = True
+                    self.snapper.setStatus(rmInfo.area, None)
+                else:
+                    self.initialize()
+                self.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
 
-        if (event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
+        if(not snapProc and event.type == 'BACK_SPACE'):
+            if(event.value == 'RELEASE'):
+                self.snapper.resetSnap()
+                if(not self.capture):
+                    if(len(self.curvePts) > 0):
+                        self.curvePts.pop()
+
+                    #Because there is an extra point (the current one)
+                    if(len(self.curvePts) <= 1):
+                        self.curvePts = []
+                        self.capture = False
+                        self.grabRepos = False
+                    else:
+                        loc = self.snapper.get3dLocSnap(rmInfo)
+                        self.curvePts[-1] = [loc, loc, loc]
+                self.capture = False
+                self.redrawBezier(rmInfo)
+            return {'RUNNING_MODAL'}
+
+        if(not snapProc and (event.type == 'RET' or event.type == 'SPACE')):
+            if(event.value == 'RELEASE'):
+                if(self.snapper.digitsConfirmed):
+                    self.capture = False
+                    self.snapper.digitsConfirmed = False
+                    loc = self.snapper.get3dLocSnap(rmInfo)
+                    self.newPoint(loc)
+                    self.redrawBezier(rmInfo)
+                else:
+                    self.confirm(context, event)
+                    self.snapper.resetSnap()
+                    self.redrawBezier(rmInfo)
+            return {'RUNNING_MODAL'}
+
+        if(not snapProc and event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
+            if(len(self.curvePts) == 0):
+                loc = self.snapper.get3dLocSnap(rmInfo)
+                self.newPoint(loc)
+
+            # Special condition for hot-key single axis lock (useful)
+            if(len(self.snapper.freeAxes) == 1 and len(self.curvePts) > 1):
+                self.snapper.resetSnap()
+
+            if(not self.capture):
+                # ~ self.snapper.resetSnap()
+                self.pressT = time.time()
+                self.capture = True
+            return {'RUNNING_MODAL'}
+
+        if (not snapProc and event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
             self.capture = False
             self.grabRepos = False
-            self.snapper.resetSnap()
+
+            # See the special condition above in event.value == 'PRESS'
+            if(len(self.snapper.freeAxes) > 1):
+                self.snapper.resetSnap()
 
             # Rare condition: This happens e. g. when user clicks on header menu
             # like Object->Transform->Move. These ops consume press event but not release
@@ -2163,7 +3178,7 @@ class ModalDrawBezierOp(Operator):
             t = time.time()
             if(self.clickT !=  None and (t - self.clickT) < DBL_CLK_DURN):
                 self.confirm(context, event)
-                self.redrawBezier(context, event)
+                self.redrawBezier(rmInfo)
                 self.clickT = None
                 return {'RUNNING_MODAL'}
 
@@ -2172,57 +3187,68 @@ class ModalDrawBezierOp(Operator):
             co = None
             if((self.pressT != None) and (t - self.pressT) < 0.2):
                 loc = self.curvePts[-1][1]
-                self.curvePts[-1][0] = loc
-                self.curvePts[-1][2] = loc
+                self.moveBptElem('left', loc)
+                self.moveBptElem('right', loc)
             else:
-                loc = self.snapper.get3dLocSnap(context, event)
+                loc = self.snapper.get3dLocSnap(rmInfo)
 
             if(len(self.curvePts) == 1):
-                self.curvePts[0][2] = loc # changes only rt handle
+                self.moveBptElem('right', loc)# changes only rt handle
 
-            self.curvePts.append([loc, loc, loc])
-            self.redrawBezier(context, event)
+            self.newPoint(loc)
+            self.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
 
-        if (event.type == 'MOUSEMOVE'):
+        # Refresh also in case of snapper events
+        # except when digitsConfirmed (to give user opportunity to draw a straight line)
+        # ~ if ((snapProc and not self.snapper.digitsConfirmed) \
+        if (snapProc\
+            or (event.type == 'MOUSEMOVE')):
+
+            # Unlock axes in case of pure mousemove (TODO: Can be better)
+            # ~ if(snapProc and not self.snapper.digitsConfirmed): pass
+            # ~ else: self.snapper.resetSnap()
+            # ~ if(self.snapper.digitsConfirmed): self.snapper.resetSnap()
+
             bpy.context.window.cursor_set("DEFAULT")
             if(len(self.curvePts) > 1):
-                loc = self.snapper.get3dLocSnap(context, event)
+                loc = self.snapper.get3dLocSnap(rmInfo)
                 if(self.capture):
-                    pt = self.curvePts[-1][1]
-                    ltHandle = self.curvePts[-1][0]
-                    rtHandle = self.curvePts[-1][2]
                     if(self.grabRepos):
-                        delta = loc - rtHandle                        
-                        loc = self.snapper.get3dLocSnap(context, event, \
-                            xy = getCoordFromLoc(context, pt + delta))
-                        delta = loc - pt
-                        self.curvePts[-1][1] = loc
-                        ltHandle += delta
-                        rtHandle += delta
-                    else:                    
+                        pt = self.curvePts[-1][1].copy()
+                        rtHandle = self.curvePts[-1][2].copy()
+                        #delta = loc - rtHandle
+                        xy2 = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, pt)
+                        xy1 = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, rtHandle)
+                        loc = self.snapper.get3dLocSnap(rmInfo, \
+                            xyDelta = [xy1[0] - xy2[0], xy1[1] - xy2[1]])
+                        delta = loc.copy() - pt.copy()
+                        self.moveBptElemByDelta('pt', delta)
+                        self.moveBptElemByDelta('left', delta)
+                        self.moveBptElemByDelta('right', delta)
+
+                        # ~ pt = self.curvePts[-1][1]
+                        # ~ rtHandle = self.curvePts[-1][2]
+                        # ~ delta = loc - rtHandle
+                        # ~ loc = self.snapper.get3dLocSnap(rmInfo, \
+                            # ~ xyDelta = getCoordFromLoc(context, pt + delta))
+                        # ~ delta = loc - pt
+                        # ~ self.moveBptElem('pt', loc)
+                        # ~ self.moveBptElemByDelta('left', delta)
+                        # ~ self.moveBptElemByDelta('right', delta)
+                    else:
+                        pt = self.curvePts[-1][1]
                         delta = (loc - pt)
-                        ltHandle = pt - delta
-                        rtHandle = pt + delta
-                    self.curvePts[-1][0] = ltHandle
-                    self.curvePts[-1][2] = rtHandle
+                        self.moveBptElem('left', pt - delta)
+                        self.moveBptElem('right', pt + delta)
                 else:
-                    self.curvePts[-1] = [loc, loc, loc]
-            self.redrawBezier(context, event)
+                    self.moveBezierPt(loc)
+            self.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
 
-        if(len(self.curvePts) > 0 and event.type in {'X', 'Y', 'Z', 'U'}):
-            if(event.type == 'U'):
-                self.lockAxes = []
-            else:
-                self.lockAxes = [ord(event.type) - ord('X')]
-                if(self.shift):
-                    self.lockAxes = list({0, 1, 2} - set(self.lockAxes))
-            return {'RUNNING_MODAL'}
+        return {'PASS_THROUGH'} if not snapProc else {'RUNNING_MODAL'}
 
-        return {'PASS_THROUGH'}
-
-    def redrawBezier(self, context, event, subdivCos = [], \
+    def redrawBezier(self, rmInfo, subdivCos = [], \
         segIdxRange = None, showSubdivPts = True):
 
         colMap = self.getColorMap()
@@ -2234,7 +3260,8 @@ class ModalDrawBezierOp(Operator):
 
         segColor = colSelSeg
         tipColors = [colTip, colEndTip, colTip, colTip, colEndTip, colTip]
-        ModalDrawBezierOp.pointSize = ModalDrawBezierOp.drawPointSize
+
+        markerLoc = []
 
         if(self.capture):
             handleNos  = [2, 3]
@@ -2246,7 +3273,7 @@ class ModalDrawBezierOp(Operator):
         curvePts = self.curvePts
 
         if(not self.capture or len(self.curvePts) <= 1):
-            loc = self.snapper.get3dLocSnap(context, event)
+            loc = self.snapper.get3dLocSnap(rmInfo)
             if(self.capture): #curvePts len must be 1
                 # First handle (straight line), if user drags first pt
                 # (first point from CurvePts, second the current location)
@@ -2256,10 +3283,7 @@ class ModalDrawBezierOp(Operator):
             else:
                 if(len(self.curvePts) == 0):
                     # Marker (dot), if drawing not started
-                    # (drawn as seg with all six pts at the same location)
-                    curvePts = [[loc, loc, loc], [loc, loc, loc]]
-                    tipColors[-1] = colMarker
-                    ModalDrawBezierOp.pointSize = ModalDrawBezierOp.markerSize
+                    markerLoc = [loc]
                 elif(len(self.curvePts) == 1):
                     handleNos  = [1]
                 #else taken care by mousemove
@@ -2276,19 +3300,29 @@ class ModalDrawBezierOp(Operator):
 
             displayInfos.append(SegDisplayInfo(segPts, sc, hns, tcs))
 
-        ModalDrawBezierOp.refreshDisplay(context, displayInfos, subdivCos, showSubdivPts)
-
+        ModalDrawBezierOp.refreshDisplay(rmInfo, displayInfos, \
+            subdivCos, showSubdivPts, markerLoc, colMarker, self.snapper)
 
     #Reference point for restrict angle or lock axis
-    def getPrevRefCo(self):
+    def getRefLine(self):
         if(len(self.curvePts) > 0):
+            idx = 0
             if(self.capture):
-                return self.curvePts[-1][1]
+                idx = -1
+                # ~ return [self.curvePts[-1][1]]
             # There should always be min 2 pts if not capture, check anyway
             elif(len(self.curvePts) > 1):
-                return self.curvePts[-2][1]
-        return None
+                idx = -2
+                # ~ return [self.curvePts[-2][1]]
+            if((len(self.curvePts) + (idx - 1)) >= 0):
+                return[self.curvePts[idx-1][1], self.curvePts[idx][1]]
+            else:
+                return[self.curvePts[idx][1]]
+        return []
 
+    def getRefLineOrig(self):
+        refLine = self.getRefLine()
+        return refLine[-1] if len(refLine) > 0 else None
 
 class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
     bl_description = "Flexible drawing of Bezier curves in object mode"
@@ -2297,11 +3331,11 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
     bl_options = {'REGISTER', 'UNDO'}
 
     def __init__(self):
-        curveDispRes = 200
-        snapper = Snapper(self.getSnapLocs, self.getPrevRefCo)
-        super(ModalFlexiDrawBezierOp, self).__init__(snapper, curveDispRes)
+        # ~ curveDispRes = 200
+        # ~ super(ModalFlexiDrawBezierOp, self).__init__(curveDispRes)
+        pass
 
-    def isDrawToolSelected(self, context):
+    def isToolSelected(self, context):
         if(context.mode != 'OBJECT'):
             return False
 
@@ -2313,14 +3347,6 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
         return True
 
-    def cancelOp(self, context):
-        super(ModalFlexiDrawBezierOp, self).cancelOp(context)
-        bpy.app.handlers.undo_post.remove(self.postUndoRedo)
-        bpy.app.handlers.redo_post.remove(self.postUndoRedo)
-
-    def postUndoRedo(self, scene):
-        self.updateSnapLocs()
-
     def getColorMap(self):
         return {'SEL_SEG_COLOR': DRAW_SEL_SEG_COLOR,
         'NONADJ_SEG_COLOR': DRAW_NONADJ_SEG_COLOR,
@@ -2328,60 +3354,41 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         'ENDPT_TIP_COLOR': ENDPT_TIP_COLOR,
         'MARKER_COLOR': DRAW_MARKER_COLOR, }
 
-    def invoke(self, context, event):
+    def preInvoke(self, context, event):
 
         # If the operator is invoked from context menu, enable the tool on toolbar
-        if(not self.isDrawToolSelected(context) and context.mode == 'OBJECT'):
+        if(not self.isToolSelected(context) and context.mode == 'OBJECT'):
             # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
             bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
 
-        # Object name -> [spline index, (startpt, endPt)]
+        # Object name -> [spline index, [pts]]
         # Not used right now (maybe in case of large no of curves)
         self.snapInfos = {}
-
         self.updateSnapLocs()
-        bpy.app.handlers.undo_post.append(self.postUndoRedo)
-        bpy.app.handlers.redo_post.append(self.postUndoRedo)
 
-        return super(ModalFlexiDrawBezierOp, self).invoke(context, event)
+    def subModal(self, context, event, snapProc):
+        rmInfo = self.rmInfo
+        if(event.type == 'E'):
+            if(event.value == 'RELEASE'):
+                # ~ bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname) (T60766)
+                bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
+            return {"RUNNING_MODAL"}
 
-    def modal(self, context, event):
-        if(not self.isDrawToolSelected(context)):
-            self.cancelOp(context)
-            return {"CANCELLED"}
+        return self.baseSubModal(context, event, snapProc)
 
-        return super(ModalFlexiDrawBezierOp, self).modal(context, event)
-
-    def getSnapLocs(self):
+    def getSnapLocsImpl(self):
         locs = []
         infos = [info for values in self.snapInfos.values() for info in values]
         for info in infos:
             locs += info[1]
 
         if(len(self.curvePts) > 0):
-            locs.append(self.curvePts[0][1])
+            locs += [pt[1] for pt in self.curvePts[:-1]]
 
         return locs
 
     def updateSnapLocs(self, objNames = None):
-        if(objNames == None):
-            objNames = [o.name for o in bpy.context.scene.objects]
-            invalOs = self.snapInfos.keys() - set(objNames) # In case of redo
-            for o in invalOs:
-                del self.snapInfos[o]
-
-        for objName in objNames:
-            obj = bpy.data.objects.get(objName)
-            if(obj != None and isBezier(obj) and obj.visible_get()):
-                self.snapInfos[objName] = []
-                mw = obj.matrix_world
-                for i, s in enumerate(obj.data.splines):
-                    if(s.use_cyclic_u == True):
-                        continue
-                    ends = [mw @ s.bezier_points[0].co, mw @ s.bezier_points[-1].co]
-                    self.snapInfos[objName].append([i, ends])
-            elif(self.snapInfos.get(objName) != None):
-                del self.snapInfos[objName]
+        updateCurveEndPtMap(self.snapInfos, addObjNames = objNames)
 
     def addPtToSpline(invMW, spline, idx, pt, handleType):
         spline.bezier_points[i].handle_left = invMW @pt[0]
@@ -2457,7 +3464,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         # Undo stack in case the user does not want to join
         if(endObj != None or startObj != None):
             obj.select_set(True)
-            bpy.context.view_layer.objects.active = obj
+            # ~ bpy.context.view_layer.objects.active = obj
             bpy.ops.ed.undo_push()
         else:
             return obj
@@ -2482,7 +3489,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
         if(startObj != None):
             # Repeat the above process for start curve
-            startObjs, changeCnt = splitCurve([startObj], split = 'spline', newColl = False)
+            startObjs, changeCnt = splitCurve([startObj], split = 'spline', \
+                newColl = False)
 
             obj = joinSegs([startObjs[startSplineIdx], obj], \
                 optimized = True, straight = False, srcCurve = startObjs[startSplineIdx])
@@ -2491,7 +3499,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 # If startSplineIdx == endSplineIdx the join call above would take care
                 # but if they are different they need to be joined with a separate call
                 obj = joinSegs([startObjs[endSplineIdx], obj], \
-                    optimized = True, straight = False, srcCurve = startObjs[endSplineIdx])
+                    optimized = True, straight = False, \
+                        srcCurve = startObjs[endSplineIdx])
 
                 # can't replace the elem with new obj as in case of end curve
                 # (see the seq below)
@@ -2518,7 +3527,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
             if(isBezier(obj)):
                 mw = obj.matrix_world
                 for i, s in enumerate(obj.data.splines):
-                    if(s.use_cyclic_u): continue                        
+                    if(s.use_cyclic_u): continue
                     for j, loc in enumerate(locs):
                         p = s.bezier_points[0]
                         if(vectCmpWithMargin(loc, mw @ p.co)):
@@ -2542,7 +3551,9 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 [x for y in self.getSnapObjs(context, [self.curvePts[0][1],
                     self.curvePts[-1][1]]) for x in y]
 
-            # ctrl pressed and there IS a snapped end obj, so user does not want connection
+            # ctrl pressed and there IS a snapped end obj,
+            # so user does not want connection
+
             # (no option to only connect to starting curve when end object exists)
             if(self.ctrl and endObj != None):
                 obj = self.createCurveObj(context)
@@ -2561,7 +3572,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
             #TODO: Why try?
             try:
                 obj.select_set(True)
-                bpy.context.view_layer.objects.active = obj
+                # ~ bpy.context.view_layer.objects.active = obj
                 self.updateSnapLocs([obj.name, startObjName, endObjName])
             except Exception as e:
                 pass
@@ -2593,32 +3604,22 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
     h = False
 
     def __init__(self):
-        curveDispRes = 200
-        snapper = Snapper(self.getSnapLocs, self.getPrevRefCo)        
-        super(ModalFlexiDrawGreaseOp, self).__init__(snapper, curveDispRes)
+        # ~ curveDispRes = 200
+        # ~ super(ModalFlexiDrawGreaseOp, self).__init__(curveDispRes)
+        pass
 
-    def isGDrawToolSelected(self, context):
+    def isToolSelected(self, context):
         if(context.mode != 'PAINT_GPENCIL'):
             return False
 
-        tool = context.workspace.tools.from_space_view3d_mode('PAINT_GPENCIL', create = False)
+        tool = context.workspace.tools.from_space_view3d_mode('PAINT_GPENCIL', \
+            create = False)
 
         # ~ if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname): (T60766)
         if(tool == None or tool.idname != 'flexi_bezier.grease_draw_tool'):
             return False
 
         return True
-
-    def cancelOp(self, context):
-        super(ModalFlexiDrawGreaseOp, self).cancelOp(context)
-        bpy.app.handlers.undo_post.remove(self.postUndoRedo)
-        bpy.app.handlers.redo_post.remove(self.postUndoRedo)
-
-    def postUndoRedo(self, scene):
-        self.updateSnapLocs()
-
-    def getMarkerColor(self):
-        return GREASE_MARKER_COLOR
 
     def getColorMap(self):
         return {'SEL_SEG_COLOR': GREASE_SEL_SEG_COLOR,
@@ -2627,9 +3628,9 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         'ENDPT_TIP_COLOR': GREASE_ENDPT_TIP_COLOR,
         'MARKER_COLOR': GREASE_MARKER_COLOR, }
 
-    def invoke(self, context, event):
+    def preInvoke(self, context, event):
         # If the operator is invoked from context menu, enable the tool on toolbar
-        if(not self.isGDrawToolSelected(context) and context.mode == 'PAINT_GPENCIL'):
+        if(not self.isToolSelected(context) and context.mode == 'PAINT_GPENCIL'):
             # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
             bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.grease_draw_tool')
 
@@ -2643,30 +3644,23 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         self.subdivCos = []
         self.interpPts = []
 
-        bpy.app.handlers.undo_post.append(self.postUndoRedo)
-        bpy.app.handlers.redo_post.append(self.postUndoRedo)
-
-        return super(ModalFlexiDrawGreaseOp, self).invoke(context, event)
-
     # overridden
-    def redrawBezier(self, context, event, subdivCos = []):
+    def redrawBezier(self, rmInfo, subdivCos = []):
         ptCnt = len(self.curvePts)
         segIdxRange = range(ptCnt - 1, ptCnt) if(ptCnt > 1) else None
 
-        super(ModalFlexiDrawGreaseOp, self).redrawBezier(context, \
-            event, self.subdivCos if ptCnt > 1 else [], \
+        super(ModalFlexiDrawGreaseOp, self).redrawBezier(rmInfo, \
+            self.subdivCos if ptCnt > 1 else [], \
                 segIdxRange, showSubdivPts = not ModalFlexiDrawGreaseOp.h)
 
-    def initialize(self, context):
-        super(ModalFlexiDrawGreaseOp, self).initialize(context)
+    def initialize(self):
+        super(ModalFlexiDrawGreaseOp, self).initialize()
         self.subdivCos = []
         self.interpPts = []
         self.updateSnapLocs()
 
-    def modal(self, context, event):
-        if(not self.isGDrawToolSelected(context)):
-            self.cancelOp(context)
-            return {"CANCELLED"}
+    def subModal(self, context, event, snapProc):
+        rmInfo = self.rmInfo
 
         if(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', 'NUMPAD_PLUS', \
             'NUMPAD_MINUS','PLUS', 'MINUS'} and len(self.curvePts) > 1):
@@ -2677,18 +3671,20 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
                 self.subdivAdd(5)
             elif(event.type =='WHEELDOWNMOUSE' or event.type.endswith('MINUS')):
                 self.subdivAdd(-5)
-                
-            self.redrawBezier(context, event)
+
+            self.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
 
         if(event.type == 'H' or event.type == 'h'):
             if(event.value == 'RELEASE'):
                 ModalFlexiDrawGreaseOp.h = not ModalFlexiDrawGreaseOp.h
-                self.redrawBezier(context, event)
+                self.redrawBezier(rmInfo)
             return {"RUNNING_MODAL"}
 
         ptCnt = len(self.curvePts)
-        retVal = super(ModalFlexiDrawGreaseOp, self).modal(context, event)
+
+        retVal = self.baseSubModal(context, event, snapProc)
+
         newPtCnt = len(self.curvePts)
         if(newPtCnt - ptCnt != 0):
             if(newPtCnt == 1):
@@ -2700,7 +3696,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
                 slens = self.getCurveSegLens()
                 self.updateInterpPts(slens)
                 self.updateSubdivCos(sum(slens))
-                self.redrawBezier(context, event)
+                self.redrawBezier(rmInfo)
 
         return retVal
 
@@ -2736,7 +3732,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         self.updateSubdivCos(clen)
 
 
-    def getSnapLocs(self):
+    def getSnapLocsImpl(self):
         return self.snapLocs
 
     def updateSnapLocs(self):
@@ -2749,7 +3745,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
                     for s in f.strokes:
                         if(len(s.points) > 0): # Shouldn't be needed, but anyway...
                             self.snapLocs += [mw @ s.points[0].co, mw @ s.points[-1].co]
-        
+
     def save(self, context, event):
         layer = self.gpencil.data.layers.active
         if(layer == None):
@@ -2820,6 +3816,7 @@ def getBezierDataForSeg(obj, splineIdx, segIdx):
     return [pt0, pt1]
 
 # Requirement is more generic than geometry.interpolate_bezier
+# TODO: revisit (maybe merge with getPtsAlongBezier2D)
 def getInterpSegPts(mw, spline, ptIdx, res, startT, endT, maxRes):
     bpts = spline.bezier_points
     j = ptIdx
@@ -2858,21 +3855,22 @@ def findListIdx(counts, idx):
     return cntIdx - 1
 
 # Wrapper for spatial search within segment
-def getClosestPt2dWithinSeg(context, coFind, selObj, selSplineIdx, selSegIdx, \
+def getClosestPt2dWithinSeg(region, rv3d, coFind, selObj, selSplineIdx, selSegIdx, \
     selObjRes, withHandles, withBezPts):
     infos = {selObj: {selSplineIdx:[selSegIdx]}}
     # set selObj in objs for CurveBezPts
-    return getClosestPt2d(context, coFind, [selObj], 0, \
+    return getClosestPt2d(region, rv3d, coFind, [selObj], 0, \
         infos, selObjRes, withHandles, withBezPts, withObjs = False)
 
-def getClosestPt2d(context, coFind, objs, objRes, selObjInfos, selObjRes, \
+def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
     withHandles = True, withBezPts = True, withObjs = True, normalized = True, \
         objStartT = 0, objEndT = 1, selObjStartT = 0, selObjEndT = 1):
 
     objLocMap = {}
 
     if(normalized):
-        viewDist = context.space_data.region_3d.view_distance
+        #TODO: Should be pixel based (2d)
+        viewDist = rv3d.view_distance
         objRes /= viewDist # inversely proportional
         selObjRes /= viewDist
 
@@ -2888,8 +3886,8 @@ def getClosestPt2d(context, coFind, objs, objRes, selObjInfos, selObjRes, \
             for j, pt in enumerate(spline.bezier_points):
                 objLocList.append([obj, i, j])
                 if(withObjs):
-                    interpLocs = getInterpSegPts(mw, spline, j, objRes, objStartT, objEndT,
-                        maxRes = NONSEL_CURVE_SEARCH_RES)[1:-1]
+                    interpLocs = getInterpSegPts(mw, spline, j, objRes, \
+                        objStartT, objEndT, maxRes = NONSEL_CURVE_SEARCH_RES)[1:-1]
 
                     objInterpLocs += interpLocs
                     objInterpCounts.append(len(interpLocs))
@@ -2930,7 +3928,8 @@ def getClosestPt2d(context, coFind, objs, objRes, selObjInfos, selObjRes, \
     searchPtsList[2], retStr[2] = segInterpLocs, 'SegLoc'
     searchPtsList[3], retStr[3] = objInterpLocs, 'CurveLoc'
 
-    searchPtsList = [[getCoordFromLoc(context, pt).to_3d() \
+    # TODO: Remove duplicates before sending for search?
+    searchPtsList = [[getCoordFromLoc(region, rv3d, pt).to_3d() \
         for pt in pts] for pts in searchPtsList]
 
     srs = search2dFromPtsList(searchPtsList, coFind, searchRange = 20)
@@ -2939,7 +3938,7 @@ def getClosestPt2d(context, coFind, objs, objRes, selObjInfos, selObjRes, \
         return None
 
     sr = min(srs, key = lambda x: x[3])
-    
+
     if(sr[0] > 1):
         # If seg loc then first priority to the nearby handle, end pt (even if farther)
         sr = min(srs, key = lambda x: (x[0], x[3]))
@@ -3028,10 +4027,10 @@ class SelectCurveInfo:
     def getClickLoc(self):
         return self._clickLoc
 
-    def setClickLocSafe(self, clickLoc, lowerT = 0, higherT = 1):
+    def setClickLocSafe(self, clickLoc, lowerT = 0.001, higherT = .999):
         self._clickLoc = clickLoc
         self._t = getTForPt(self.getCtrlPts(), clickLoc)
-        if(self._t < lowerT or self._t > higherT):
+        if(self._t != None and (self._t < lowerT or self._t > higherT)):
             if(self._t < lowerT):
                 self._ctrlIdx = 1
             else:
@@ -3042,7 +4041,7 @@ class SelectCurveInfo:
     def getCtrlPtCoIdx(self):
         if(self._ctrlIdx == None):
             return None
-            
+
         idx0 = int(self._ctrlIdx / 3)
         idx1 = self._ctrlIdx % 3
         pts = self.getSegPts()
@@ -3076,13 +4075,14 @@ class SelectCurveInfo:
             invMw = self.obj.matrix_world.inverted()
             ts = []
             vertCos = getInterpolatedVertsCo(self.interpPts, self.subdivCnt)[1:-1]
-            insertBezierPts(self.obj, self.splineIdx, self.segIdx, [invMw @ v for v in vertCos], 'FREE')
+            insertBezierPts(self.obj, self.splineIdx, self.segIdx, \
+                [invMw @ v for v in vertCos], 'FREE')
             self.subdivCnt = 0
 
 
-    def subdivMode(self, context):
+    def subdivMode(self, rv3d):
         self.subdivCnt = 2
-        self.interpPts = getPtsAlongBezier3D(self.getSegPts(), context,
+        self.interpPts = getPtsAlongBezier3D(self.getSegPts(), rv3d,
             curveRes = 1000, minRes = 1000)
 
     def subdivDecr(self):
@@ -3101,8 +4101,10 @@ class SelectCurveInfo:
 
     def getSegBezierPts(self):
         spline = self.obj.data.splines[self.splineIdx]
-        return [spline.bezier_points[self.segIdx], \
-            spline.bezier_points[self.getSegAdjIdx()]]
+        if(self.segIdx != None):
+            return [spline.bezier_points[self.segIdx], \
+                spline.bezier_points[self.getSegAdjIdx()]]
+        else: return []
 
     def getPrevSegBezierPts(self):
         prevSegIdx = self.getSegAdjIdx(-1)
@@ -3214,7 +4216,7 @@ class SelectCurveInfo:
             # Alway select the main point after this (should be done by caller actually)
             self._ctrlIdx = ptIdx * 3 + 1
 
-    # TODO: Redundant data structures 
+    # TODO: Redundant data structures
     # TODO: Better: Single Obj with multiples splineIdxs
     def getDisplayInfos(self, segPts = None, hltInfo = None, hideHdls = False,
         selSegCol = DRAW_SEL_SEG_COLOR, includeAdj = True):
@@ -3265,7 +4267,7 @@ class SelectCurveInfo:
 
             selSegDisplayInfo = EditSegDisplayInfo(segPts, \
                 selSegCol, hdlIdxs, tipColors, vertCos)
-            
+
             if(not includeAdj):
                 return [selSegDisplayInfo]
 
@@ -3406,88 +4408,45 @@ class EditCurveInfo():
             bpt.handle_left_type = pts[i][3]
             bpt.handle_right_type = pts[i][4]
 
-
-class ModalFlexiEditBezierOp(Operator):
+class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
     bl_description = "Flexi editing of Bezier curves in object mode"
     bl_idname = "wm.modal_flexi_edit_bezier"
     bl_label = "Flexi Edit Curve"
     bl_options = {'REGISTER', 'UNDO'}
 
-    running = False
-    shader = None
-    drawHandlerRef = None
-    lineBatch = None
-    tipBatch = None
     ptBatch = None
-    opObj = None # For cleanup in unregister
     h = False
-    
-    lineWidth = 1.5
-    drawPointSize = 4
+
     subdivPointSize = 6
-    
-    @classmethod
-    def poll(cls, context):
-        return not ModalFlexiEditBezierOp.running
-
-    def addDrawHandler():
-        ModalFlexiEditBezierOp.drawHandlerRef = \
-            bpy.types.SpaceView3D.draw_handler_add(ModalFlexiEditBezierOp.drawHandler, \
-                (), "WINDOW", "POST_VIEW")
-
-    def removeDrawHandler():
-        if(ModalFlexiEditBezierOp.drawHandlerRef != None):
-            bpy.types.SpaceView3D.draw_handler_remove(ModalFlexiEditBezierOp.drawHandlerRef, \
-                "WINDOW")
-            ModalFlexiEditBezierOp.drawHandlerRef = None
 
     def drawHandler():
-        bgl.glLineWidth(ModalFlexiEditBezierOp.lineWidth)
-        if(ModalFlexiEditBezierOp.lineBatch != None):
-            ModalFlexiEditBezierOp.lineBatch.draw(ModalFlexiEditBezierOp.shader)
+        if(ModalBaseFlexiOp.shader != None):
+            ModalBaseFlexiOp.drawHandlerBase()
+            bgl.glPointSize(ModalFlexiEditBezierOp.subdivPointSize)
+            if(ModalFlexiEditBezierOp.ptBatch != None):
+                ModalFlexiEditBezierOp.ptBatch.draw(ModalBaseFlexiOp.shader)
 
-        bgl.glPointSize(ModalFlexiEditBezierOp.subdivPointSize)
-        if(ModalFlexiEditBezierOp.ptBatch != None):
-            ModalFlexiEditBezierOp.ptBatch.draw(ModalFlexiEditBezierOp.shader)
-
-        bgl.glPointSize(ModalFlexiEditBezierOp.drawPointSize)
-        if(ModalFlexiEditBezierOp.tipBatch != None):
-            ModalFlexiEditBezierOp.tipBatch.draw(ModalFlexiEditBezierOp.shader)
+    def resetDisplay():
+        ModalFlexiEditBezierOp.ptBatch = getResetBatch(ModalBaseFlexiOp.shader, "POINTS")
+        ModalBaseFlexiOp.resetDisplayBase()
 
     # static method
-    def refreshDisplay(context, displayInfos, locOnCurve = None):
-
-        ModalFlexiEditBezierOp.lineBatch, ModalFlexiEditBezierOp.tipBatch = \
-            getBezierBatches(ModalFlexiEditBezierOp.shader, displayInfos, context)
+    def refreshDisplay(rmInfo, displayInfos, locOnCurve = None, snapper = None):
 
         ptCos = [co for d in displayInfos if type(d) == EditSegDisplayInfo
             for co in d.subdivCos]
-    
+
         # ~ if(locOnCurve != None): ptCos.append(locOnCurve) # For debugging
 
-        ModalFlexiEditBezierOp.ptBatch = batch_for_shader(ModalFlexiEditBezierOp.shader, \
+        ModalFlexiEditBezierOp.ptBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
             "POINTS", {"pos": ptCos, "color": [EDIT_SUBDIV_PT_COLOR \
                 for i in range(0, len(ptCos))]})
-                
-        # ~ if(hasattr(context, 'area') and context.area != None):
-            # ~ context.area.tag_redraw()
-        areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
-        for a in areas:
-            a.tag_redraw()
 
-    @persistent
-    def loadPostHandler(dummy):
-        ModalFlexiEditBezierOp.addDrawHandler()
-        if(ModalFlexiEditBezierOp.shader != None):
-            ModalFlexiEditBezierOp.refreshDisplay(bpy.context, [])
-        ModalFlexiEditBezierOp.running = False
-
-    @persistent
-    def loadPreHandler(dummy):
-        ModalFlexiEditBezierOp.removeDrawHandler()
+        ModalBaseFlexiOp.refreshDisplayBase(rmInfo, displayInfos, snapper)
 
     # Refresh display with existing curves (nonstatic)
-    def refreshDisplaySelCurves(self, context, displayInfosMap = {}, locOnCurve = None):
+    def refreshDisplaySelCurves(self, displayInfosMap = {}, locOnCurve = None):
+        if(self.rmInfo == None): return # Possible in updateAfterGeomChange
         displayInfos = list(v for vs in displayInfosMap.values() for v in vs)
         dispCurveInfoObjs = displayInfosMap.keys()
         dispInfoObjs = [c.obj for c in dispCurveInfoObjs] # bpy Curve objects
@@ -3501,23 +4460,27 @@ class ModalFlexiEditBezierOp(Operator):
                 includeAdj = includeAdj)
 
         displayInfos = sorted(displayInfos, key = lambda x:SEG_COL_PRIORITY[x.segColor])
-        ModalFlexiEditBezierOp.refreshDisplay(context, displayInfos, locOnCurve)
 
-    def reset(self, context):
+        ModalFlexiEditBezierOp.refreshDisplay(self.rmInfo, displayInfos, \
+            locOnCurve, self.snapper)
+
+    def reset(self):
         self.editCurveInfo = None
         self.selectCurveInfos = set()
-        self.refreshDisplaySelCurves(context)
+        ModalFlexiEditBezierOp.resetDisplay()
+
+    def postUndoRedo(self, scene, dummy = None): # signature different in 2.8 and 2.81?
+        # ~ self.snapper.customAxis.reload()
+        self.updateAfterGeomChange()
 
     def cancelOp(self, context):
-        self.reset(context)
-        bpy.app.handlers.undo_post.remove(self.updateAfterGeomChange)
-        bpy.app.handlers.redo_post.remove(self.updateAfterGeomChange)
+        self.reset()
+        bpy.app.handlers.undo_post.remove(self.postUndoRedo)
+        bpy.app.handlers.redo_post.remove(self.postUndoRedo)
         bpy.app.handlers.depsgraph_update_post.remove(self.updateAfterGeomChange)
-            
-        ModalFlexiEditBezierOp.removeDrawHandler()
-        ModalFlexiEditBezierOp.running = False
+        return self.cancelOpBase()
 
-    def isEditToolSelected(self, context):
+    def isToolSelected(self, context):
         if(context.mode != 'OBJECT'):
             return False
 
@@ -3529,8 +4492,11 @@ class ModalFlexiEditBezierOp(Operator):
 
     # Will be called after the curve is changed (by the tool or externally)
     # So handle all possible conditions
-    def updateAfterGeomChange(self, scene = None, context = None):
+    def updateAfterGeomChange(self, scene = None):
         toRemove = []
+
+        removeObjNames = set() # For snaplocs
+        addObjNames = set()
 
         #can never be called during editing, so don't consider editInfo
         for ci in self.selectCurveInfos:
@@ -3550,50 +4516,77 @@ class ModalFlexiEditBezierOp(Operator):
                             ci.splineIdx = len(splines) - 1
                 elif(ci.segIdx != None and ci.segIdx >= len(bpts) - 1):
                     ci.segIdx = ci.getLastSegIdx()
+                addObjNames.add(ci.objName)
             else:
                 toRemove.append(ci)
+                removeObjNames.add(ci.objName)
 
-        for c in toRemove:
-            self.selectCurveInfos.remove(c)
+        if(len(toRemove) > 0):
+            for c in toRemove:
+                self.selectCurveInfos.remove(c)
 
-        if(context != None): # TODO: Why error in getCoord?
-            self.refreshDisplaySelCurves(context)
+        self.updateSnapLocs(addObjNames, removeObjNames)
 
-    def invoke(self, context, event):
-        ModalFlexiEditBezierOp.opObj = self
-        ModalFlexiEditBezierOp.running = True
-        ModalFlexiEditBezierOp.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
-        ModalFlexiEditBezierOp.shader.bind()
-        ModalFlexiEditBezierOp.addDrawHandler()
+        self.refreshDisplaySelCurves()
 
-        context.window_manager.modal_handler_add(self)
-        bpy.app.handlers.undo_post.append(self.updateAfterGeomChange)
-        bpy.app.handlers.redo_post.append(self.updateAfterGeomChange)
+    def subInvoke(self, context, event):
+        bpy.app.handlers.undo_post.append(self.postUndoRedo)
+        bpy.app.handlers.redo_post.append(self.postUndoRedo)
         bpy.app.handlers.depsgraph_update_post.append(self.updateAfterGeomChange)
-        ModalFlexiEditBezierOp.lineBatch = None
-        ModalFlexiEditBezierOp.tipBatch = None
 
         self.editCurveInfo = None
         self.selectCurveInfos = set()
         self.clickT = None
         self.pressT = None
-        self.isEditing = False
         self.ctrl = False
         self.shift = False
         self.alt = False
         self.subdivMode = False
-        
-        try:
-            ModalFlexiEditBezierOp.lineWidth = \
-                context.preferences.addons[__name__].preferences.drawLineWidth
-            ModalFlexiEditBezierOp.drawPointSize = \
-                context.preferences.addons[__name__].preferences.drawPointSize
-        except Exception as e:
-            print("BezierUtils: Error fetching default sizes in Flexi Edit", e)
-            ModalFlexiEditBezierOp.drawPointSize = 4
-            ModalFlexiEditBezierOp.lineWidth = 1.5
-        
+
+        # For double click (TODO: remove; same as editCurveInfo == None?)
+        self.capture = False
+
+        self.snapInfos = {}
+        self.updateSnapLocs()
+
         return  {"RUNNING_MODAL"}
+
+    def getSnapLocsImpl(self):
+        locs = []
+        infos = [info for values in self.snapInfos.values() for info in values]
+        for info in infos:
+            locs += info[1]
+
+        cis = list(self.selectCurveInfos)
+        for i, c in enumerate(cis):
+            mw = c.obj.matrix_world
+            bpts = c.getSegBezierPts()
+            for pt in bpts:
+                locs.append(mw @ pt.handle_left)
+                locs.append(mw @ pt.handle_right)
+        return locs
+
+    def updateSnapLocs(self, addObjNames = None, removeObjNames = None):
+        updateCurveEndPtMap(self.snapInfos, addObjNames, removeObjNames)
+
+    def getRefLine(self):
+        if(self.editCurveInfo != None):
+            ci = self.editCurveInfo.selCurveInfo
+            segPts = ci.getSegPts()
+            if(ci.getClickLoc() != None):
+                return [ci.getClickLoc()]
+            coIdx = ci.getCtrlPtCoIdx()
+            if(coIdx != None):
+                co, ptIdx, hdlIdx = coIdx
+                if(hdlIdx in {0, 2}):
+                    return [segPts[ptIdx][1], segPts[ptIdx][hdlIdx]]
+                else:
+                    return [segPts[1-ptIdx][1], segPts[ptIdx][hdlIdx]]
+        return []
+
+    def getRefLineOrig(self):
+        refLine = self.getRefLine()
+        return refLine[0] if len(refLine) > 0 else None
 
     def getEditableCurveObjs(self):
         return [b for b in bpy.data.objects if isBezier(b) and b.visible_get() \
@@ -3615,42 +4608,49 @@ class ModalFlexiEditBezierOp(Operator):
             if(ci.segIdx != None): segIdxs.append(ci.segIdx)
         return queryInfo
 
-    def getSelInfo(self, obj, splineIdx, segIdx):
+    def getSelInfoObj(self, searchResult):
+        resType, obj, splineIdx, segIdx, otherInfo = searchResult
         for ci in self.selectCurveInfos:
-            if(ci.obj == obj and ci.splineIdx == splineIdx and ci.segIdx == segIdx):
-                return ci
+            if(ci.obj == obj and ci.splineIdx == splineIdx):
+                if(ci.segIdx == segIdx):
+                    return ci
+                elif(resType == 'CurveBezPt' and ci.segIdx != None and \
+                    segIdx == ci.getSegAdjIdx()):
+                    return ci
         return None
 
-    def getSelInfoSpline(self, obj, splineIdx):
+    def getSelInfoObjSpline(self, obj, splineIdx):
         for ci in self.selectCurveInfos:
             if(ci.obj == obj and ci.splineIdx == splineIdx):
                 return ci
         return None
 
-    def modal(self, context, event):
+    def resetMetaBtns(self):
+        self.ctrl = False
+        self.shift = False
+        self.alt = False
 
-        if(not is3DVireport(context)):
-            self.cancelOp(context)
-            resetToolbarTool()
-            return {'CANCELLED'}
-            
-        if(event.type == 'WINDOW_DEACTIVATE' and event.value == 'PRESS'):
-            self.ctrl = False
-            self.shift = False
-            self.alt = False
+    def exclToolRegion(self):
+        return False
 
-        elif(not self.isEditToolSelected(context)):
-            self.cancelOp(context)
-            return {"CANCELLED"}
+    def isEditing(self):
+        return self.editCurveInfo != None
 
-        elif(self.editCurveInfo == None and event.type == 'ESC' \
-            and event.value == 'RELEASE'):
-            self.reset(context)
+    def subModal(self, context, event, snapProc):
+        rmInfo = self.rmInfo
+
+        if(snapProc): retVal = {"RUNNING_MODAL"}
+        else: retVal = {'PASS_THROUGH'}
+
+        if(not snapProc and event.type == 'ESC'):
+            if(event.value == 'RELEASE'):
+                if(self.editCurveInfo == None): self.reset()
+                else:
+                    self.capture = False
+                    self.editCurveInfo = None
+                    self.snapper.resetSnap()
+                ModalFlexiEditBezierOp.resetDisplay()
             return {"RUNNING_MODAL"}
-
-        elif(isOutside(context, event, exclInRgns = False)):
-            if(self.editCurveInfo != None): return {'RUNNING_MODAL'}
-            return {'PASS_THROUGH'}
 
         updateMetaBtns(self, event)
 
@@ -3663,19 +4663,20 @@ class ModalFlexiEditBezierOp(Operator):
         if(event.type == 'E' or event.type == 'e'):
             if(event.value == 'RELEASE'):
                 # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
-                self.reset(context)
+                self.reset()
                 bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
             return {"RUNNING_MODAL"}
 
-        elif(event.type in {'W', 'w'}):
+        if(event.type in {'W', 'w'}):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     self.subdivMode = True
-                    for c in self.selectCurveInfos: c.subdivMode(context)
-                    self.refreshDisplaySelCurves(context)
+                    for c in self.selectCurveInfos: c.subdivMode(rmInfo.rv3d)
+                    self.refreshDisplaySelCurves()
                 return {"RUNNING_MODAL"}
 
-        elif(event.type in {'SPACE', 'RET'}):
+        confirmed = False
+        if(not snapProc and event.type in {'SPACE', 'RET'}):
             if(self.subdivMode):
                 if(event.value == 'RELEASE'):
                     cis = list(self.selectCurveInfos)
@@ -3689,9 +4690,11 @@ class ModalFlexiEditBezierOp(Operator):
                     bpy.ops.ed.undo_push()
                     self.subdivMode = False
                 return {"RUNNING_MODAL"}
+            elif(self.editCurveInfo != None):
+                confirmed = True
 
-        elif(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', 'NUMPAD_PLUS', \
-            'NUMPAD_MINUS','PLUS', 'MINUS'}):
+        elif(not snapProc and event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', \
+            'NUMPAD_PLUS', 'NUMPAD_MINUS','PLUS', 'MINUS'}):
             if(len(self.selectCurveInfos) > 0 and self.subdivMode):
                 if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
                     and event.value == 'PRESS'):
@@ -3700,26 +4703,26 @@ class ModalFlexiEditBezierOp(Operator):
                     for c in self.selectCurveInfos: c.subdivDecr()
                 elif(event.type =='WHEELUPMOUSE' or event.type.endswith('PLUS')):
                     for c in self.selectCurveInfos: c.subdivIncr()
-                self.refreshDisplaySelCurves(context)
+                self.refreshDisplaySelCurves()
                 return {'RUNNING_MODAL'}
 
-        elif(event.type == 'H' or event.type == 'h'):
+        if(event.type == 'H' or event.type == 'h'):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     ModalFlexiEditBezierOp.h = not ModalFlexiEditBezierOp.h
-                    self.refreshDisplaySelCurves(context)
+                    ModalFlexiEditBezierOp.resetDisplay()
                 return {"RUNNING_MODAL"}
 
-        elif(event.type == 'DEL'):
+        if(event.type == 'DEL'):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     for c in self.selectCurveInfos: c.removeNode() #selected node
-                    # will be taken care by depsgraph
-                    # ~ self.updateAfterGeomChange(context = context)
+                    # will be taken care by depsgraph?
+                    self.updateAfterGeomChange()
                     bpy.ops.ed.undo_push()
                 return {"RUNNING_MODAL"}
 
-        elif(event.type in {'K', 'k'}):
+        if(event.type in {'K', 'k'}):
             #TODO: check _ctrlIdx != None for any
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
@@ -3727,15 +4730,19 @@ class ModalFlexiEditBezierOp(Operator):
                     bpy.ops.ed.undo_push()
                 return {"RUNNING_MODAL"}
 
-        elif(event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
-            coFind = Vector((event.mouse_region_x, event.mouse_region_y)).to_3d()
-            newPos = get3dLoc(context, event)
+        if(not snapProc and not self.capture \
+            and event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
+            # ~ coFind = Vector(rmInfo.xy).to_3d()
+            coFind = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, \
+                self.snapper.get3dLocSnap(rmInfo)).to_3d()
+
             objs = self.getEditableCurveObjs()
 
             selObjInfos = self.getSearchQueryInfo()
 
-            searchResult = getClosestPt2d(context, coFind, objs, NONSEL_CURVE_SEARCH_RES, \
-                selObjInfos, NONSEL_CURVE_SEARCH_RES, \
+            #TODO: Move to Snapper?
+            searchResult = getClosestPt2d(rmInfo.region, rmInfo.rv3d, coFind, objs, \
+                NONSEL_CURVE_SEARCH_RES, selObjInfos, NONSEL_CURVE_SEARCH_RES, \
                     withHandles = (not self.ctrl and not ModalFlexiEditBezierOp.h))
 
             if(searchResult != None):
@@ -3743,44 +4750,87 @@ class ModalFlexiEditBezierOp(Operator):
 
                 for ci in self.selectCurveInfos: ci.resetSel()
 
-                ci = self.getSelInfo(obj, splineIdx, segIdx)
+                ci = self.getSelInfoObj(searchResult)
 
                 if(ci == None):
                     ci = SelectCurveInfo(obj, splineIdx, segIdx)
                     if(not self.shift or self.ctrl): self.selectCurveInfos = set()
                     self.selectCurveInfos.add(ci)
-
-                self.editCurveInfo = EditCurveInfo(ci)
+                    if(resType  == 'CurveBezPt'):
+                        if(getAdjIdx(obj, splineIdx, segIdx) != None):
+                            ci.segIdx = segIdx #otherInfo
+                        else:
+                            ci.segIdx = segIdx - 1 #otherInfo - 1
 
                 if(resType  == 'SelHandles'):
                     ci.setCtrlIdxSafe(getCtrlIdxFromSearchInfo([resType, otherInfo]))
                 elif(resType  == 'CurveBezPt'):
-                    if(getAdjIdx(obj, splineIdx, segIdx) != None):
-                        ci.segIdx = otherInfo
-                        ci.setCtrlIdxSafe(1)
-                    # If this is the last pt, select seg ending on this pt
-                    else:
-                        ci.segIdx = otherInfo - 1
-                        ci.setCtrlIdxSafe(4)
+                    if(segIdx == ci.segIdx): ci.setCtrlIdxSafe(1)
+                    else: ci.setCtrlIdxSafe(4)
                 else:
                     # More precise for adding point
-                    selRes = ADD_PT_CURVE_SEARCH_RES if self.ctrl else SEL_CURVE_SEARCH_RES
-                    searchResult = getClosestPt2dWithinSeg(context, coFind, \
-                        selObj = obj, selSplineIdx = splineIdx, selSegIdx = segIdx, \
-                        selObjRes = selRes, withHandles = False, withBezPts = False)
+                    selRes = ADD_PT_CURVE_SEARCH_RES if self.ctrl \
+                        else SEL_CURVE_SEARCH_RES
+
+                    searchResult = getClosestPt2dWithinSeg(rmInfo.region, rmInfo.rv3d, \
+                        coFind, selObj = obj, selSplineIdx = splineIdx, \
+                            selSegIdx = segIdx, selObjRes = selRes, \
+                                withHandles = False, withBezPts = False)
+
                     if(searchResult != None): #Must never be None
                         resType, obj, splineIdx, segIdx, otherInfo = searchResult
                         ci.setClickLocSafe(otherInfo)
+                        if(ci._t == None): ci = None
 
-                self.refreshDisplaySelCurves(context)
+                self.editCurveInfo = EditCurveInfo(ci)
+
+                self.refreshDisplaySelCurves()
                 self.pressT = time.time()
                 return {'RUNNING_MODAL'}
 
             if(not self.shift):
-                self.reset(context)
-            return {'PASS_THROUGH'}
+                self.reset()
 
-        elif(event.type == 'MOUSEMOVE'):
+            return retVal
+
+        if(confirmed or self.snapper.digitsConfirmed or \
+            (event.type == 'LEFTMOUSE' and event.value == 'RELEASE')):
+            if(self.editCurveInfo == None):
+                return retVal
+
+            ei = self.editCurveInfo
+            tm = time.time()
+
+            if(self.clickT != None and (tm - self.clickT) < DBL_CLK_DURN):
+                self.capture = True
+                self.clickT = None
+            else:
+                self.capture = False
+                if(self.pressT != None and (tm - self.pressT) < SNGL_CLK_DURN):
+                    if(self.ctrl):
+                        if(self.shift): handleType = 'ALIGNED'
+                        elif(self.alt): handleType = 'VECTOR'
+                        else: handleType = 'FREE'
+                        for c in self.selectCurveInfos: c.insertNode(handleType)
+                        bpy.ops.ed.undo_push()
+                        ModalFlexiEditBezierOp.resetDisplay()
+                    # Gib dem Benutzer Zeit zum Atmen!
+                    else:
+                        self.clickT = tm
+                        ModalFlexiEditBezierOp.resetDisplay()
+                else:
+                    newPos = self.snapper.get3dLocSnap(rmInfo, refreshStatus = False)
+                    ei.moveSeg(newPos)
+                    bpy.ops.ed.undo_push()
+
+                self.editCurveInfo = None
+                self.snapper.resetSnap()
+                self.updateAfterGeomChange()
+
+            self.pressT = None
+            return {"RUNNING_MODAL"}
+
+        elif(snapProc or event.type == 'MOUSEMOVE'):
             displayInfosMap = {}
             ei = self.editCurveInfo
             locOnCurve = None # For debug
@@ -3789,18 +4839,22 @@ class ModalFlexiEditBezierOp(Operator):
                 # User is editing curve or control points (left mouse pressed)
                 ci = ei.selCurveInfo
                 selCo = ci.getSelCo()
-                newPos = get3dLoc(context, event, selCo)
+                newPos = self.snapper.get3dLocSnap(rmInfo, vec = selCo)
                 segPts = ei.getOffsetSegPts(newPos)
                 displayInfosMap = {ci: ci.getDisplayInfos(segPts, \
                     hideHdls = ModalFlexiEditBezierOp.h)}
             else:
-                coFind = Vector((event.mouse_region_x, event.mouse_region_y)).to_3d()
+                # ~ coFind = Vector(rmInfo.xy).to_3d()
+                coFind = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, \
+                    self.snapper.get3dLocSnap(rmInfo)).to_3d()
+
                 objs = self.getEditableCurveObjs()
 
                 #Sel obj: low res (highlight only seg)
                 selObjInfos = self.getSearchQueryInfo()
 
-                searchResult = getClosestPt2d(context, coFind, objs, \
+                #TODO: Move to Snapper
+                searchResult = getClosestPt2d(rmInfo.region, rmInfo.rv3d, coFind, objs, \
                     NONSEL_CURVE_SEARCH_RES, selObjInfos, NONSEL_CURVE_SEARCH_RES, \
                         withHandles = (not self.ctrl and not ModalFlexiEditBezierOp.h))
 
@@ -3808,16 +4862,16 @@ class ModalFlexiEditBezierOp(Operator):
                     hltInfo = None
 
                     resType, obj, splineIdx, segIdx, otherInfo = searchResult
-                    ci = self.getSelInfo(obj, splineIdx, segIdx)
+                    ci = self.getSelInfoObj(searchResult)
 
                     if(resType in {'SelHandles', 'CurveBezPt'}):
                         if(resType == 'CurveBezPt'):
-                            ci = self.getSelInfoSpline(obj, splineIdx)
+                            ci = self.getSelInfoObjSpline(obj, splineIdx)
                             if(ci == None): segIdx = None
                         hltInfo = [resType, otherInfo]
                     else:
                         locOnCurve = otherInfo
-                        
+
                     if(ci == None):
                         ci = SelectCurveInfo(obj, splineIdx, segIdx)
                         segColor = DRAW_NONADJ_SEG_COLOR
@@ -3829,47 +4883,92 @@ class ModalFlexiEditBezierOp(Operator):
                     displayInfosMap = {ci: ci.getDisplayInfos(ci.getSegPts(), \
                         hltInfo, hideHdl, segColor)}
 
-            self.refreshDisplaySelCurves(context, displayInfosMap, locOnCurve)
+            self.refreshDisplaySelCurves(displayInfosMap, locOnCurve)
 
-            return {"PASS_THROUGH"}
+            return retVal
 
-        elif(event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
-            if(self.editCurveInfo == None):
-                return {"PASS_THROUGH"}
+        return retVal
 
-            ei = self.editCurveInfo
-            self.editCurveInfo = None
-            tm = time.time()
+###################### Global Params ######################
 
-            if(self.clickT != None and (tm - self.clickT) < DBL_CLK_DURN):
-                pass # Handle double click here
+def getSnapOrientTups(scene, context):
+    orients = [\
+       ('GLOBAL', 'Global Axes', "Orient to world space"), \
+       ('AXIS', 'Custom Axes', "Orient to custom axis (if available)"), \
+       ('VIEW', 'View', "Orient to window"), \
+      ]
 
-            self.clickT = tm
-            if(self.pressT != None and (tm - self.pressT) < SNGL_CLK_DURN):
-                if(self.ctrl):
-                    if(self.shift): handleType = 'ALIGNED'
-                    elif(self.alt): handleType = 'VECTOR'
-                    else: handleType = 'FREE'
-                    for c in self.selectCurveInfos: c.insertNode(handleType)
-                    bpy.ops.ed.undo_push()
-                    self.clickT = None
-                    self.refreshDisplaySelCurves(context)
-                    return {"RUNNING_MODAL"}
-                # Gib dem Benutzer Zeit zum Atmen!
-                else:
-                    self.refreshDisplaySelCurves(context)
-                    return {"RUNNING_MODAL"}
+    tool = context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
 
-            self.pressT = None
+    # ~ if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname): (T60766)
+    if(tool != None and (tool.idname == 'flexi_bezier.draw_tool' \
+        or tool.idname == 'flexi_bezier.grease_draw_tool')):
+        orients.insert(1, ('REFERENCE', 'Reference Line', "Orient to preceding segment"))
 
-            newPos = get3dLoc(context, event, ei.selCurveInfo.getSelCo())
-            ei.moveSeg(newPos)
-            # will be taken care by depsgraph
-            # ~ self.updateAfterGeomChange(context = context)
-            bpy.ops.ed.undo_push()
+    if(tool != None and tool.idname == 'flexi_bezier.edit_tool'):
+        orients.insert(1, ('REFERENCE', 'Reference Line', \
+            "Orient to preceding segment line or current handle"))
 
-        return {'PASS_THROUGH'}
+    # ~ if(context.active_object != None):
+    orients.insert(3, ('OBJECT', 'Active Object', \
+        "Orient to local space of active object"))
+    return orients
 
+def getConstrAxisTups(scene = None, context = None):
+    axesMap = {\
+       0: ('NONE', 'None', "Constrain only on hotkey event"), \
+       1: ('-X', 'X', "Constrain to only X axis"), \
+       2: ('-Y', 'Y', "Constrain to only Y axis"), \
+       3: ('-Z', 'Z', "Constrain to only Z axis"), \
+       4: ('shift-Z', 'XY', "Constrain to XY plane"), \
+       5: ('shift-Y', 'XZ', "Constrain to XZ plane"), \
+       6: ('shift-X', 'YZ', "Constrain to YZ plane"), \
+      }
+    transType = bpy.context.window_manager.bezierToolkitParams.snapOrient
+
+    if(transType in {'AXIS', 'GLOBAL', 'OBJECT'}): keyset = range(0, 7)
+    elif(transType in {'VIEW', 'REFERENCE'}): keyset = [0] + [i for i in range(4, 7)]
+
+    return [axesMap[key] for key in keyset]
+
+def getSnapOriginTups(scene = None, context = None):
+    return [\
+       ('GLOBAL', 'Global Origin', \
+        "Draw / Edit with reference to global origin"), \
+       ('CURSOR', '3D Cursor Location', \
+        "Draw / Edit with reference to 3D Cursor location"), \
+       ('AXIS', 'Custom Axis Start', \
+        "Draw / Edit with reference to starting point of custom axis"), \
+       ('REFERENCE', 'Reference Line Point', \
+        "Draw / Edit with reference to the appropriate reference line point"), \
+       ('OBJECT', 'Active Object Location', \
+        "Draw / Edit with reference to active object location"), \
+      ]
+
+class BezierToolkitParams(bpy.types.PropertyGroup):
+    snapOrient: EnumProperty(name = 'Orientation',#"Align contrained axes and snap angle to",
+            items = getSnapOrientTups,
+            description='Orientation for Draw / Edit')
+
+    snapOrigin: EnumProperty(name = 'Origin',#"Align contrained axes and snap angle to",
+            items = getSnapOriginTups,
+            description='Origin for Draw / Edit')
+
+    constrAxes: EnumProperty(name = 'Constrain Axis', #"Constrain axis for draw and edit ops",
+            items = getConstrAxisTups,
+            description='Constrain Draw / Edit Axes')
+
+    snapToPlane: BoolProperty(name="Snap to Plane",
+        description='During draw / edit snap the point to the selected plane', \
+                    default = False)
+
+    axisScale: BoolProperty(name="Axis Scale", \
+        description='Use custom axis scale for grid snap and transform values entered', \
+                    default = False)
+
+    customAxisCo1: FloatVectorProperty(default = (INVALID_NO, INVALID_NO, INVALID_NO))
+    customAxisCo2: FloatVectorProperty(default = (INVALID_NO, INVALID_NO, INVALID_NO))
+    customAxisSnapCnt: IntProperty(default = 3, min = 0)
 
 # ~ class FlexiEditBezierTool(WorkSpaceTool):
     # ~ bl_space_type='VIEW_3D'
@@ -3893,23 +4992,48 @@ kmToolFlexiDrawBezier = "3D View Tool: Object, Flexi Draw Bezier"
 kmToolFlexiEditBezier = "3D View Tool: Object, Flexi Edit Bezier"
 kmToolFlexiGreaseDrawBezier = "3D View Tool: Object, Flexi Grease Draw Bezier"
 
+def showSnapToPlane(params):
+    return (params.snapOrient != 'VIEW' and params.snapOrient != 'REFERENCE' and\
+        hasattr(params, 'constrAxes') and params.constrAxes.startswith('shift'))
+
+def drawSettingsFT(self, context):
+    params = bpy.context.window_manager.bezierToolkitParams
+    self.layout.use_property_split = True
+    self.layout.row(align=True).template_header()
+    from bl_ui.space_toolsystem_common import ToolSelectPanelHelper
+    tool = ToolSelectPanelHelper.draw_active_tool_header(
+        context, self.layout,
+        tool_key=('VIEW_3D', context.mode),
+    )
+
+    self.layout.use_property_decorate = True
+    self.layout.prop(params, "snapOrient", text = '')
+    self.layout.prop(params, "snapOrigin", text = '')
+    self.layout.prop(params, "constrAxes", text = '')
+    if(params.constrAxes not in [a[0] for a in getConstrAxisTups()]):
+        params.constrAxes = 'NONE'
+
+    # Only available for planes not axis
+    if(showSnapToPlane(params)):
+        self.layout.prop(params, "snapToPlane")
+
+    if(params.snapOrient in {'AXIS', 'REFERENCE'}):
+        self.layout.prop(params, "axisScale")
+
 @ToolDef.from_fn
 def toolFlexiDraw():
+
     return dict(idname = "flexi_bezier.draw_tool",
         label = "Flexi Draw Bezier",
         description = "Flexible drawing of Bezier curves in object mode",
         icon = "ops.gpencil.extrude_move",
         widget = None,
-        keymap = kmToolFlexiDrawBezier,)
+        keymap = kmToolFlexiDrawBezier,
+        # ~ draw_settings = drawSettingsFT,
+        )
 
 @ToolDef.from_fn
 def toolFlexiGreaseDraw():
-    def draw_settings(context, layout, tool):
-        # ~ props = tool.operator_properties("gpencil.draw")
-        #C.scene.tool_settings.gpencil_paint.brush
-        #tool = bpy.context.workspace.tools.from_space_view3d_mode('PAINT_GPENCIL', create = False)
-        #bpy.data.brushes["Draw Ink"].tool_settings.gpencil_paint.brush.gpencil_settings.angle = 1.03673
-        layout.prop(bpy.data, "brushes")
 
     return dict(idname = "flexi_bezier.grease_draw_tool",
         label = "Flexi Grease Bezier",
@@ -3917,17 +5041,20 @@ def toolFlexiGreaseDraw():
         icon = "ops.gpencil.extrude_move",
         widget = None,
         keymap = kmToolFlexiGreaseDrawBezier,
-        draw_settings=draw_settings,
+        # ~ draw_settings = drawSettingsFT,
         )
 
 @ToolDef.from_fn
 def toolFlexiEdit():
+
     return dict(idname = "flexi_bezier.edit_tool",
         label = "Flexi Edit Bezier",
         description = "Flexible editing of Bezier curves in object mode",
         icon = "ops.pose.breakdowner",
         widget = None,
-        keymap = kmToolFlexiEditBezier,)
+        keymap = kmToolFlexiEditBezier,
+        # ~ draw_settings = drawSettingsFT,
+    )
 
 def getToolList(spaceType, contextMode):
     from bl_ui.space_toolsystem_common import ToolSelectPanelHelper
@@ -4056,10 +5183,10 @@ class BezierUtilsPreferences(AddonPreferences):
     )
 
     drawPointSize: FloatProperty(
-            name = "Point Size",
+            name = "Handle Point Size",
             description = "Size of Flexi Draw and Edit Bezier handle points" +\
                 " (requires tool reselection)",
-            default = 1.5,
+            default = 4,
             min = 0.1,
             max = 20,
     )
@@ -4072,7 +5199,25 @@ class BezierUtilsPreferences(AddonPreferences):
             min = 0.1,
             max = 20,
     )
-    
+
+    axisLineWidth: FloatProperty(
+            name = "Axis Line Thickness",
+            description = "Thickness of Axis Lines for snapping & locking " +\
+                " (requires tool reselection)",
+            default = 0.25,
+            min = 0.1,
+            max = 20,
+    )
+
+    snapPointSize: FloatProperty(
+            name = "Snap Point Size",
+            description = "Size of snap point indicator" +\
+                " (requires tool reselection)",
+            default = 2,
+            min = 0.1,
+            max = 20,
+    )
+
     # TODO Subdiv point size, seg / handle colors etc.
 
     def draw(self, context):
@@ -4090,6 +5235,8 @@ class BezierUtilsPreferences(AddonPreferences):
         col.prop(self, "drawLineWidth")
         col.prop(self, "drawPointSize")
         col.prop(self, "markerSize")
+        col.prop(self, "axisLineWidth")
+        col.prop(self, "snapPointSize")
 
 classes = (
     ModalMarkSegStartOp,
@@ -4112,11 +5259,15 @@ classes = (
     ModalFlexiDrawGreaseOp,
     ModalFlexiEditBezierOp,
     BezierUtilsPreferences,
+    BezierToolkitParams,
 )
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+
+    bpy.types.WindowManager.bezierToolkitParams = \
+        bpy.props.PointerProperty(type = BezierToolkitParams)
 
     BezierUtilsPanel.colorCurves(add = True)
     bpy.app.handlers.depsgraph_update_post.append(BezierUtilsPanel.colorCurves)
@@ -4127,27 +5278,23 @@ def register():
     registerFlexiBezierKeymaps()
     updatePanel(None, bpy.context)
 
-    bpy.app.handlers.load_post.append(ModalDrawBezierOp.loadPostHandler)
-    bpy.app.handlers.load_pre.append(ModalDrawBezierOp.loadPreHandler)
-    bpy.app.handlers.load_post.append(ModalFlexiEditBezierOp.loadPostHandler)
-    bpy.app.handlers.load_pre.append(ModalFlexiEditBezierOp.loadPreHandler)
+    bpy.app.handlers.load_post.append(ModalBaseFlexiOp.loadPostHandler)
+    bpy.app.handlers.load_pre.append(ModalBaseFlexiOp.loadPreHandler)
 
 def unregister():
     BezierUtilsPanel.colorCurves(remove = True)
     bpy.app.handlers.depsgraph_update_post.remove(BezierUtilsPanel.colorCurves)
-    
-    try: ModalFlexiEditBezierOp.opObj.cancelOp(bpy.context)
+
+    try: ModalBaseFlexiOp.opObj.cancelOp(bpy.context)
     except: pass # If not invoked or already unregistered
-    try: ModalDrawBezierOp.opObj.cancelOp(bpy.context)
-    except: pass
-    
-    bpy.app.handlers.load_post.remove(ModalDrawBezierOp.loadPostHandler)
-    bpy.app.handlers.load_pre.remove(ModalDrawBezierOp.loadPreHandler)
-    bpy.app.handlers.load_post.remove(ModalFlexiEditBezierOp.loadPostHandler)
-    bpy.app.handlers.load_pre.remove(ModalFlexiEditBezierOp.loadPreHandler)
+
+    bpy.app.handlers.load_post.remove(ModalBaseFlexiOp.loadPostHandler)
+    bpy.app.handlers.load_pre.remove(ModalBaseFlexiOp.loadPreHandler)
 
     unregisterFlexiBezierKeymaps()
     unregisterFlexiBezierTools()
+
+    del bpy.types.WindowManager.bezierToolkitParams
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
