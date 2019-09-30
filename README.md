@@ -31,6 +31,7 @@ Here is a brief overview of a few of the tools in this add-on:
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/drawdemo.gif)<br>
 This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). It allows drawing Bezier curves by manipulating the control points.<br>
 <b>Drawing the curve: </b> To draw the curve activate the tool by clicking the Flexi Draw Bezier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. <br>
+<b>Repositioning the Bezier point:</b> At the time of dragging the LMB to set the handle location, you can grab the Bezier point to reposition it by pressing g. All the snapping options are available for setting the handle location and repositioning the Bezier point. Press g again to release the grab. <br>
 <b>Undo:</b> While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve op can be undone by pressing ctrl-Z  <br><br>
 
 # Flexi Edit Bezier Tool
@@ -54,6 +55,15 @@ To align the handle with the opposite handle of the same end point, select the h
 This tool will appear on the toolshelf in Grease Pencil Draw mode. You can draw Bezier curves just as you would draw with the Flexi Draw tool. After confirming the drawing is converted to grease pencil strokes. All the snapping and locking options of the Flexi Draw are available here also.<br>
 Additionaly, you can increase of decrease the resolution of the stroke using the mouse wheel or pressing + or - keys.<br>
 The subdivision point visibility can be toggled by pressing h key.<br>
+
+# Configurable Entities
+Values of the following entities are user configurable via Add-ons dialog (from Preferences->Add-on Menu).
+- Bezier Toolkit Panel Tab 
+- Draw Line Thickness
+- Handle Point Size
+- Draw Marker Size
+- Axis Line Thickness
+- Snap Point size<br>
 
 # Snapping & Locking Framework
 The Framework provides comprihensive snapping and locking options common to all three Flexi tools.
