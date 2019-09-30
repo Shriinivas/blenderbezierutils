@@ -31,7 +31,9 @@ Here is a brief overview of a few of the tools in this add-on:
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/drawdemo.gif)<br>
 This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). It allows drawing Bezier curves by manipulating the control points.<br>
 <b>Drawing the curve: </b> To draw the curve activate the tool by clicking the Flexi Draw Bezier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. <br>
-<b>Repositioning the Bezier point:</b> At the time of dragging the LMB to set the handle location, you can grab the Bezier point to reposition it by pressing g. All the snapping options are available for setting the handle location and repositioning the Bezier point. Press g again to release the grab. <br>
+<b>Repositioning the Bezier point:</b> <br>
+![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/grabrepos2o.gif)<br>
+At the time of dragging the LMB to set the handle location, you can grab the Bezier point to reposition it by pressing g. All the snapping options are available for setting the handle location and repositioning the Bezier point. Press g again to release the grab. <br>
 <b>Undo:</b> While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve op can be undone by pressing ctrl-Z  <br><br>
 
 # Flexi Edit Bezier Tool
