@@ -57,6 +57,7 @@ Additionaly, you can increase of decrease the resolution of the stroke using the
 The subdivision point visibility can be toggled by pressing h key.<br>
 
 # Configurable Entities
+![Configurable Options](https://github.com/Shriinivas/blenderbezierutils/blob/master/configitems.png)<br>
 Values of the following entities are user configurable via Add-ons dialog (from Preferences->Add-on Menu).
 - Bezier Toolkit Panel Tab 
 - Draw Line Thickness
