@@ -811,6 +811,27 @@ def unsubdivideObj(meshObj):
     bmesh.ops.unsubdivide(bm, verts = bm.verts)
     bm.to_mesh(meshObj.data)
 
+def pasteLength(src, dests):
+    tmp = bpy.data.curves.new('t', 'CURVE')
+    ts = tmp.splines.new('BEZIER')
+    ts.bezier_points.add(1)
+    mw = src.matrix_world
+    srcLen = sum(getSplineLenTmpObj(ts, s, mw) for s in src.data.splines)
+    
+    for c in dests:        
+        mw = c.matrix_world
+        destLen = sum(getSplineLenTmpObj(ts, s, mw) for s in c.data.splines)
+        fact = (srcLen / destLen)
+        for s in c.data.splines:
+            for pt in s.bezier_points:
+                pt.handle_right_type = 'FREE'
+                pt.handle_left_type = 'FREE'
+            for pt in s.bezier_points:
+                pt.co = fact * pt.co
+                pt.handle_left = fact * pt.handle_left
+                pt.handle_right = fact * pt.handle_right
+    bpy.data.curves.remove(tmp)
+
 ###################### Operators ######################
 
 class SeparateSplinesObjsOp(Operator):
@@ -1091,6 +1112,22 @@ class RemoveCurveColorOp(bpy.types.Operator):
             if(curve.data.get('curveColor')):
                 del curve.data['curveColor']
 
+        return {'FINISHED'}
+
+
+class PasteLengthOp(Operator):
+    bl_idname = "object.paste_length"
+    bl_label = "Paste Length"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Make the selected curves the same length as the active one " + \
+        "(the curve handle types are changed to FREE)"
+
+    def execute(self, context):
+        src = bpy.context.object
+        if(src != None and isBezier(src)):
+            dests = [o for o in bpy.context.selected_objects if(isBezier(o) and o != src)]
+            if(len(dests) > 0):
+                pasteLength(src, dests)
         return {'FINISHED'}
 
 
@@ -1507,6 +1544,8 @@ class BezierUtilsPanel(Panel):
 
             if context.scene.otherExpanded:
                 col = layout.column()
+                col.operator('object.paste_length')
+                col = layout.column()
                 col.operator('object.close_splines')
                 col = layout.column()
                 col.operator('object.close_straight')
@@ -1634,6 +1673,22 @@ def getTForPt(curve, testPt):
                 minLen = pLen
                 retT = t
     return retT
+
+# Because there is some discrepancy between this and getSegLen
+# This seems to be more accurate
+def getSegLenTmpObj(tmpSpline, bpts, mw = Matrix()):
+    tmpSpline.bezier_points[0].co = mw @ bpts[0].co
+    tmpSpline.bezier_points[0].handle_right = mw @ bpts[0].handle_right
+    tmpSpline.bezier_points[1].handle_left = mw @ bpts[1].handle_left
+    tmpSpline.bezier_points[1].co = mw @ bpts[1].co
+    return tmpSpline.calc_length()
+
+def getSplineLenTmpObj(tmpSpline, spline, mw):
+    l = 0
+    bpts = spline.bezier_points
+    l += sum(getSegLenTmpObj(tmpSpline, bpts[i:i+2], mw) for i in range(len(bpts) -1))        
+    if(spline.use_cyclic_u): l += getSegLenTmpObj(tmpSpline, [bpts[-1], bpts[0]], mw)
+    return l
 
 def getSegLen(pts, error = DEF_ERR_MARGIN, start = None, end = None, t1 = 0, t2 = 1):
     if(start == None): start = pts[0]
@@ -2486,7 +2541,8 @@ class Snapper():
             snapLocs = self.getSnapLocs() + \
                 [bpy.context.scene.cursor.location, Vector((0, 0, 0))] + \
                     (self.customAxis.getSnapPts() if(snapToAxisLine and \
-                        'AXIS' in {transType, origType}) else [])
+                        'AXIS' in {transType, origType}) else []) + \
+                            ([obj.location] if(obj != None) else [])
 
             kd = kdtree.KDTree(len(snapLocs))
             for i, l in enumerate(snapLocs):
@@ -3217,7 +3273,6 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                     if(self.grabRepos):
                         pt = self.curvePts[-1][1].copy()
                         rtHandle = self.curvePts[-1][2].copy()
-                        #delta = loc - rtHandle
                         xy2 = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, pt)
                         xy1 = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, rtHandle)
                         loc = self.snapper.get3dLocSnap(rmInfo, \
@@ -3226,16 +3281,6 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                         self.moveBptElemByDelta('pt', delta)
                         self.moveBptElemByDelta('left', delta)
                         self.moveBptElemByDelta('right', delta)
-
-                        # ~ pt = self.curvePts[-1][1]
-                        # ~ rtHandle = self.curvePts[-1][2]
-                        # ~ delta = loc - rtHandle
-                        # ~ loc = self.snapper.get3dLocSnap(rmInfo, \
-                            # ~ xyDelta = getCoordFromLoc(context, pt + delta))
-                        # ~ delta = loc - pt
-                        # ~ self.moveBptElem('pt', loc)
-                        # ~ self.moveBptElemByDelta('left', delta)
-                        # ~ self.moveBptElemByDelta('right', delta)
                     else:
                         pt = self.curvePts[-1][1]
                         delta = (loc - pt)
@@ -5251,6 +5296,7 @@ classes = (
     convertTo2DMeshOp,
     SetHandleTypesOp,
     SetCurveColorOp,
+    PasteLengthOp,
     RemoveCurveColorOp,
     SelectInCollOp,
     InvertSelOp,
