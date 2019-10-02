@@ -120,7 +120,7 @@ The Custom Axis can be used to define the Snappig Orientation, Snapping Origin, 
 <b>Hotkey Snapping Options (Active for the Point being Drawn / Edited):</b> 
 - Holding down ctrl while moving mouse will snap the point or handle to the grid. 
 - By holding down shift key the angle of the segment / handle being drawn / edited will be restricted to fixed values (0, 45, 90 etc). The reference axis for determining angle increment is the first free axis based on the selected Snapping Orientation.<br>
-- To snap to the end points of the open splines within all the curve objects in the view hold down alt key. By default snapping to the end points joins the new curve to the curve(s) it is being snapped to. You can hold down ctrl while ending the curve (by double click or space or return key) to keep the curve separate. The curve can also be separated from the snapped curves be pressing ctrl-Z after confirming. <br>
+- Holding down alt key will snap the point being drawn / edited to the a) Bezier points of the splines within all the curve objects in the view b) vertices of the active object (if there are fewer than 500 vertices) c) face of the active object under the mouse pointer (if there are fewer than 50 faces). By default snapping to the end points joins the new curve to the curve(s) it is being snapped to. You can hold down ctrl while ending the curve (by double click or space or return key) to keep the curve separate. The curve can also be separated from the snapped curves be pressing ctrl-Z after confirming. <br>
 
 The snapping gets adapted to the viewport zoom level. <br>
 
