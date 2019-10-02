@@ -858,13 +858,20 @@ def pasteLength(src, dests):
         destLen = sum(getSplineLenTmpObj(ts, s, mw) for s in c.data.splines)
         fact = (srcLen / destLen)
         for s in c.data.splines:
+            lts = []
+            rts = []
             for pt in s.bezier_points:
-                pt.handle_right_type = 'FREE'
+                lts.append(pt.handle_left_type)
+                rts.append(pt.handle_right_type)
                 pt.handle_left_type = 'FREE'
+                pt.handle_right_type = 'FREE'
             for pt in s.bezier_points:
                 pt.co = fact * pt.co
                 pt.handle_left = fact * pt.handle_left
                 pt.handle_right = fact * pt.handle_right
+            for i, pt in enumerate(s.bezier_points):
+                pt.handle_left_type = lts[i]
+                pt.handle_right_type = rts[i]
     bpy.data.curves.remove(tmp)
 
 ###################### Operators ######################
@@ -1154,8 +1161,7 @@ class PasteLengthOp(Operator):
     bl_idname = "object.paste_length"
     bl_label = "Paste Length"
     bl_options = {'REGISTER', 'UNDO'}
-    bl_description = "Make the selected curves the same length as the active one " + \
-        "(the curve handle types are changed to FREE)"
+    bl_description = "Make the selected curves the same length as the active one"
 
     def execute(self, context):
         src = bpy.context.object
