@@ -4838,9 +4838,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         if(not snapProc and not self.capture \
             and event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
-            # ~ coFind = Vector(rmInfo.xy).to_3d()
-            coFind = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, \
-                self.snapper.get3dLocSnap(rmInfo)).to_3d()
+            coFind = Vector(rmInfo.xy).to_3d()
+            # ~ coFind = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, \
+                # ~ self.snapper.get3dLocSnap(rmInfo)).to_3d()
 
             objs = self.getEditableCurveObjs()
 
@@ -4922,13 +4922,13 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         ModalFlexiEditBezierOp.resetDisplay()
                     # Gib dem Benutzer Zeit zum Atmen!
                     else:
-                        self.clickT = tm
                         ModalFlexiEditBezierOp.resetDisplay()
                 else:
                     newPos = self.snapper.get3dLocSnap(rmInfo, refreshStatus = False)
                     ei.moveSeg(newPos)
                     bpy.ops.ed.undo_push()
 
+                self.clickT = tm
                 self.editCurveInfo = None
                 self.snapper.resetSnap()
                 self.updateAfterGeomChange()
