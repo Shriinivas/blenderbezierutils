@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 52),
+    "version": (0, 9, 53),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -35,7 +35,7 @@ bl_info = {
 }
 
 DEF_ERR_MARGIN = 0.0001
-INVALID_NO = 5e+9
+LARGE_NO = 9e+9
 
 ###################### Common functions ######################
 
@@ -483,6 +483,41 @@ def getAllAreaRegions():
 
 def getResetBatch(shader, btype): # "LINES" or "POINTS"
     return batch_for_shader(shader, btype, {"pos": [], "color": []})
+    
+
+def getFaceUnderMouse(obj, region, rv3d, xy): # From python template
+    if(obj == None or obj.type != 'MESH'): return None, None, -1
+    viewVect = region_2d_to_vector_3d(region, rv3d, xy)
+    rayOrig = region_2d_to_origin_3d(region, rv3d, xy)
+    mw = obj.matrix_world
+    invMw = mw.inverted()
+
+    rayTarget = rayOrig + viewVect
+    rayOrigObj = invMw @ rayOrig
+    rayTargetObj = invMw @ rayTarget
+    rayDirObj = rayTargetObj - rayOrigObj
+
+    success, location, normal, faceIdx = obj.ray_cast(rayOrigObj, rayDirObj)
+        
+    return mw @ location, normal, faceIdx
+    
+# ~ def getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc):
+    # ~ p1 = (0, 0)
+    # ~ p2 = (0, SNAP_DIST_PIXEL)
+    # ~ minEdgeDist = 
+        # ~ (region_2d_to_location_3d(region, rv3d, p1, vec) - 
+            # ~ region_2d_to_location_3d(region, rv3d, p2, vec)).length
+    # ~ closestLoc = None
+    # ~ for ek in obj.data.polygons[faceIdx].edge_keys:
+        # ~ if(len(ek) == 0):
+            # ~ p1 = obj.data.vertices[ek[0]]
+            # ~ p2 = obj.data.vertices[ek[1]]
+            # ~ iLoc = geometry.intersect_point_line(loc, p1, p2)[0]
+            # ~ ptDist = (iLoc - iLoc).length
+            # ~ if(ptDist < minEdgeDist):
+                # ~ minEdgeDist = ptDist
+                # ~ closestLoc = iLoc
+    # ~ if(closestLoc != None): loc = closestLoc
 
 ###################### Op Specific functions ######################
 
@@ -1662,7 +1697,7 @@ def getTsForPt(p0, p1, p2, p3, co, coIdx, tolerance = 0.000001, maxItr = 1000):
 
 #TODO: There may be a more efficient approach, but this seems foolproof
 def getTForPt(curve, testPt):
-    minLen = 9e+99
+    minLen = LARGE_NO
     retT = None
     for coIdx in range(0, 3):
         ts = getTsForPt(curve[0], curve[1], curve[2], curve[3], testPt[coIdx], coIdx)
@@ -2222,9 +2257,9 @@ class CustomAxis:
         #TODO: What's better?
         params = bpy.context.window_manager.bezierToolkitParams
         if(bpy.data.scenes[0].get('btk_co1') == None):
-            bpy.data.scenes[0]['btk_co1'] = [INVALID_NO, INVALID_NO, INVALID_NO]
+            bpy.data.scenes[0]['btk_co1'] = [LARGE_NO, LARGE_NO, LARGE_NO]
         if(bpy.data.scenes[0].get('btk_co2') == None):
-            bpy.data.scenes[0]['btk_co2'] = [INVALID_NO, INVALID_NO, INVALID_NO]
+            bpy.data.scenes[0]['btk_co2'] = [LARGE_NO, LARGE_NO, LARGE_NO]
         self.axisPts = [Vector(bpy.data.scenes[0]['btk_co1']), \
             Vector(bpy.data.scenes[0]['btk_co2'])]
         self.snapCnt = params.customAxisSnapCnt
@@ -2233,7 +2268,7 @@ class CustomAxis:
         pts = self.axisPts
 
         # Strange floating points!
-        if(all(pt < (INVALID_NO - 1000) for pt in pts[0] + pts[1])):
+        if(all(pt < (LARGE_NO - 1000) for pt in pts[0] + pts[1])):
             return (pts[1] - pts[0]).length
         else:
             return 0
@@ -2261,6 +2296,8 @@ class CustomAxis:
 class Snapper():
 
     DEFAULT_ANGLE_SNAP_STEPS = 3
+    MAX_SNAP_VERT_CNT = 500
+    MAX_SNAP_FACE_CNT = 50
 
     def __init__(self, context, getSnapLocs, getRefLine, getRefLineOrig):
         self.getSnapLocs = getSnapLocs
@@ -2409,8 +2446,8 @@ class Snapper():
                 self.customAxis.set(1, loc)
 
             if(event.type == 'ESC'):
-                self.customAxis.set(0, Vector((INVALID_NO, INVALID_NO, INVALID_NO)))
-                self.customAxis.set(1, Vector((INVALID_NO, INVALID_NO, INVALID_NO)))
+                self.customAxis.set(0, Vector((LARGE_NO, LARGE_NO, LARGE_NO)))
+                self.customAxis.set(1, Vector((LARGE_NO, LARGE_NO, LARGE_NO)))
                 self.inDrawAxis = False
 
             return True
@@ -2502,6 +2539,21 @@ class Snapper():
 
         return retStr
 
+    def getAllSnapLocs(self, obj, snapToAxisLine):
+        snapLocs = self.getSnapLocs() 
+        snapLocs.append(bpy.context.scene.cursor.location)
+        snapLocs.append(Vector((0, 0, 0)))
+        
+        if(snapToAxisLine):
+            snapLocs += self.customAxis.getSnapPts()
+            
+        if(obj != None):
+            snapLocs.append(obj.location)
+            if(obj.type == 'MESH' and len(obj.data.vertices) < self.MAX_SNAP_VERT_CNT):
+                snapLocs += [obj.matrix_world @ v.co for v in obj.data.vertices]             
+                   
+        return snapLocs
+        
     def get3dLocSnap(self, rmInfo, vec = None, refreshStatus = True, \
         snapToAxisLine = True, xyDelta = [0, 0]):
 
@@ -2514,6 +2566,7 @@ class Snapper():
         refLine = self.getRefLine()
         refLineOrig = self.getRefLineOrig()
         orig = self.getCurrOrig(obj)
+        if(vec == None): vec = orig
 
         inEdit = refLineOrig != None
 
@@ -2538,11 +2591,8 @@ class Snapper():
 
         if(self.objSnap):
             #TODO: Called very frequently (store the tree [without duplicating data])
-            snapLocs = self.getSnapLocs() + \
-                [bpy.context.scene.cursor.location, Vector((0, 0, 0))] + \
-                    (self.customAxis.getSnapPts() if(snapToAxisLine and \
-                        'AXIS' in {transType, origType}) else []) + \
-                            ([obj.location] if(obj != None) else [])
+            snapLocs = self.getAllSnapLocs(obj, \
+                (snapToAxisLine and 'AXIS' in {transType, origType}))
 
             kd = kdtree.KDTree(len(snapLocs))
             for i, l in enumerate(snapLocs):
@@ -2556,11 +2606,16 @@ class Snapper():
                 co, idx, dist = min(searchResult, key = lambda x: x[2])
                 loc = snapLocs[idx]
                 self.lastSnapTypes.add('loc')
+            elif(obj != None and obj.type == 'MESH' \
+                and len(obj.data.polygons) < self.MAX_SNAP_FACE_CNT):
+                loc, normal, faceIdx = getFaceUnderMouse(obj, region, rv3d, xy)
+                if(faceIdx < 0): loc = None
+                
+                # ~ if(faceIdx >=0): 
+                    # ~ eLoc = getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc)
+                    # ~ if(eLoc != None): loc = eLoc
 
         if(loc == None):
-            if(vec == None):
-                vec = orig
-
             loc = region_2d_to_location_3d(region, rv3d, xy, vec)
 
             params = bpy.context.window_manager.bezierToolkitParams
@@ -2682,7 +2737,7 @@ class Snapper():
                             l2 =  (actualLoc[i] - snapStart[i]) #Minor axis value
                             angle = abs(atan(l2 / l1)) if l1 != 0 else 0
                             dirn = (l1 * l2) / abs(l1 * l2) if (l1 * l2) != 0 else 1
-                            prevDiff = 9e+99
+                            prevDiff = LARGE_NO
                             for j in range(0, len(snapAngles) + 1):
                                 if(j == len(snapAngles)):
                                     loc[i] = snapStart[i] + \
@@ -5011,8 +5066,8 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         description='Use custom axis scale for grid snap and transform values entered', \
                     default = False)
 
-    customAxisCo1: FloatVectorProperty(default = (INVALID_NO, INVALID_NO, INVALID_NO))
-    customAxisCo2: FloatVectorProperty(default = (INVALID_NO, INVALID_NO, INVALID_NO))
+    customAxisCo1: FloatVectorProperty(default = (LARGE_NO, LARGE_NO, LARGE_NO))
+    customAxisCo2: FloatVectorProperty(default = (LARGE_NO, LARGE_NO, LARGE_NO))
     customAxisSnapCnt: IntProperty(default = 3, min = 0)
 
 # ~ class FlexiEditBezierTool(WorkSpaceTool):
@@ -5194,7 +5249,7 @@ def unregisterFlexiBezierKeymaps():
         addonmap.remove(keymap)
         defaultmap.remove(defaultmap.find(km_name, **km_args))
 
-# ****************** Category Configuration In User Preferences ******************
+# ****************** Configurations In User Preferences ******************
 
 def updatePanel(self, context):
     try:
