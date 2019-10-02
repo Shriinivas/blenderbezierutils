@@ -816,7 +816,7 @@ def applyMeshModifiers(meshObj, remeshDepth):
     normal = geometry.normal([v.co for v in meshObj.data.vertices])
     normal = Vector([round(c, 5) for c in normal])
     if(vectCmpWithMargin(normal, Vector())):
-        return mesh
+        return meshObj
 
     planeVert = Vector([round(c, 5) for c in meshObj.data.vertices[0].co])
     mod = meshObj.modifiers.new('mod', type='SOLIDIFY')
@@ -2303,7 +2303,7 @@ class Snapper():
 
     DEFAULT_ANGLE_SNAP_STEPS = 3
     MAX_SNAP_VERT_CNT = 500
-    MAX_SNAP_FACE_CNT = 50
+    MAX_SNAP_FACE_CNT = 500
 
     def __init__(self, context, getSnapLocs, getRefLine, getRefLineOrig):
         self.getSnapLocs = getSnapLocs
@@ -2783,9 +2783,6 @@ class Snapper():
         area.header_text_set(text)
 
     def getGuideBatches(self, rmInfo, shader):
-        # ~ if(not is3DVireport(context)):
-            # ~ return []
-
         obj = bpy.context.object
         refLine = self.getRefLine()
         refLineOrig = self.getRefLineOrig()
@@ -2793,7 +2790,6 @@ class Snapper():
         freeAxesC = self.getFreeAxesCombined()
         freeAxesN = self.getFreeAxesNormalized()
 
-        # ~ tm, invTm = self.tm, self.tm.inverted()
         tm, invTm = self.getTransMatsForOrient(rmInfo.rv3d, obj)
 
         orig = self.getCurrOrig(obj)
@@ -2803,7 +2799,7 @@ class Snapper():
 
         lineCo = []
         if((refLineOrig != None or transType == 'VIEW' or len(freeAxesC) == 1)
-            or (len(freeAxesN) > 0 and transType != 'REFERENCE')):
+            or (len(freeAxesN) > 0 and snapOrigin != 'REFERENCE')):
             colors = [(.6, 0.2, 0.2, 1), (0.2, .6, 0.2, 1), (0.2, 0.4, .6, 1)]
             l = 10 * rmInfo.rv3d.view_distance
 
@@ -4816,7 +4812,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     ModalFlexiEditBezierOp.h = not ModalFlexiEditBezierOp.h
-                    ModalFlexiEditBezierOp.resetDisplay()
+                    self.refreshDisplaySelCurves()
                 return {"RUNNING_MODAL"}
 
         if(event.type == 'DEL'):
