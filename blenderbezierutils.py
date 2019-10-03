@@ -2,7 +2,7 @@
 #
 # Blender add-on with tools to draw and edit Bezier curves along with other utility ops
 #
-# Supported Blender Version: 2.8 Beta
+# Supported Blender Version: 2.8
 #
 # Copyright (C) 2019  Shrinivas Kulkarni
 
@@ -4622,7 +4622,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
     # Will be called after the curve is changed (by the tool or externally)
     # So handle all possible conditions
-    def updateAfterGeomChange(self, scene = None):
+    def updateAfterGeomChange(self, scene = None, dummy = None): # 3 params in 2.81
         toRemove = []
 
         removeObjNames = set() # For snaplocs
