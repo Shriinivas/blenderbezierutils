@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 53),
+    "version": (0, 9, 54),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -485,8 +485,11 @@ def getResetBatch(shader, btype): # "LINES" or "POINTS"
     return batch_for_shader(shader, btype, {"pos": [], "color": []})
     
 
-def getFaceUnderMouse(obj, region, rv3d, xy): # From python template
-    if(obj == None or obj.type != 'MESH'): return None, None, -1
+# From python template
+def getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt):
+    if(obj == None or obj.type != 'MESH' \
+                or len(obj.data.polygons) > maxFaceCnt):
+        return None, None, -1
     viewVect = region_2d_to_vector_3d(region, rv3d, xy)
     rayOrig = region_2d_to_origin_3d(region, rv3d, xy)
     mw = obj.matrix_world
@@ -2325,6 +2328,7 @@ class Snapper():
         self.angleSnap = False
         self.gridSnap = False
         self.objSnap = False
+        self.rmInfo = None
 
         self.lastSnapTypes = set()
 
@@ -2372,7 +2376,7 @@ class Snapper():
         if(len(self.getFreeAxesCombined()) == 0): return [0, 1, 2]
         else: return self.getFreeAxesCombined()
 
-    def getCurrOrig(self, obj = None):
+    def getCurrOrig(self, obj, rmInfo):
         snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
         if(snapOrigin == 'AXIS'):
             if(self.customAxis.length() != 0): return self.customAxis.axisPts[0]
@@ -2380,14 +2384,20 @@ class Snapper():
             refLineOrig = self.getRefLineOrig()
             if(refLineOrig != None): return refLineOrig
         elif(snapOrigin == 'OBJECT' and obj != None): return obj.location
+        elif(snapOrigin == 'FACE' and obj != None and rmInfo != None): 
+            location, normal, faceIdx = getFaceUnderMouse(obj, rmInfo.region, \
+                rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT)
+            if(faceIdx >= 0): return obj.matrix_world @ obj.data.polygons[faceIdx].center
+            else: return obj.location
         elif(snapOrigin == 'CURSOR'): return bpy.context.scene.cursor.location
         return Vector((0, 0, 0))
 
-    def getTransMatsForOrient(self, rv3d, obj = None):
+    def getTransMatsForOrient(self, rmInfo, obj = None):
         tm = Matrix()
         params = bpy.context.window_manager.bezierToolkitParams
-        transType = params.snapOrient
-        if(transType == 'AXIS'):
+        orientType = params.snapOrient
+        
+        if(orientType == 'AXIS'):
             ca = self.customAxis
             if(abs(ca.length()) > DEF_ERR_MARGIN):
                 pts = ca.axisPts
@@ -2397,7 +2407,7 @@ class Snapper():
                     tm = Matrix.Scale(1 / unitD, 4) @ tm
                     invTm = tm.inverted()
 
-        elif(transType == 'REFERENCE'):
+        elif(orientType == 'REFERENCE'):
             refLine = self.getRefLine()
             if(refLine != None and len(refLine) == 2):
                 tm, invTm = getLineTransMatrices(refLine[0], refLine[1])
@@ -2406,11 +2416,19 @@ class Snapper():
                     tm = Matrix.Scale(1 / unitD, 4) @ tm
                     invTm = tm.inverted()
 
-        elif(transType == 'OBJECT' and obj != None):
-            tm = obj.matrix_world.inverted()
-
-        elif(transType == 'VIEW'):
-            tm = rv3d.view_matrix
+        elif(orientType == 'VIEW'):
+            tm = rmInfo.rv3d.view_matrix
+            
+        if(obj != None):
+            if(orientType == 'FACE'):
+                location, normal, faceIdx = getFaceUnderMouse(obj, rmInfo.region, \
+                    rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT)
+                if(faceIdx >= 0):
+                    normal = obj.data.polygons[faceIdx].normal
+                    tm = normal.to_track_quat('Z', 'X').to_matrix().to_4x4().inverted()
+            
+            if(orientType == 'OBJECT' or (orientType == 'FACE' and faceIdx < 0)):
+                tm = obj.matrix_world.inverted()
 
         return tm, tm.inverted()
 
@@ -2563,6 +2581,7 @@ class Snapper():
     def get3dLocSnap(self, rmInfo, vec = None, refreshStatus = True, \
         snapToAxisLine = True, xyDelta = [0, 0]):
 
+        self.rmInfo = rmInfo
         obj = bpy.context.object
         xy = [rmInfo.xy[0] - xyDelta[0], rmInfo.xy[1] - xyDelta[1]]
 
@@ -2571,7 +2590,7 @@ class Snapper():
 
         refLine = self.getRefLine()
         refLineOrig = self.getRefLineOrig()
-        orig = self.getCurrOrig(obj)
+        orig = self.getCurrOrig(obj, rmInfo)
         if(vec == None): vec = orig
 
         inEdit = refLineOrig != None
@@ -2614,7 +2633,8 @@ class Snapper():
                 self.lastSnapTypes.add('loc')
             elif(obj != None and obj.type == 'MESH' \
                 and len(obj.data.polygons) < self.MAX_SNAP_FACE_CNT):
-                loc, normal, faceIdx = getFaceUnderMouse(obj, region, rv3d, xy)
+                loc, normal, faceIdx = getFaceUnderMouse(obj, region, rv3d, \
+                    xy, self.MAX_SNAP_FACE_CNT)
                 if(faceIdx < 0): loc = None
                 
                 # ~ if(faceIdx >=0): 
@@ -2635,7 +2655,7 @@ class Snapper():
                     self.snapDigits.hasVal() or \
                         (inEdit and (len(freeAxesN) < 3 or self.angleSnap))):
 
-                tm, invTm = self.getTransMatsForOrient(rv3d, obj)
+                tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
 
                 if(snapToPlane or refLineOrig == None): refCo = orig
                 else: refCo = refLineOrig
@@ -2776,13 +2796,14 @@ class Snapper():
         refLineOrig = self.getRefLineOrig()
         if(self.snapCo == None or refLineOrig == None):
             return []
-        orig = self.getCurrOrig(bpy.context.object)
+        orig = self.getCurrOrig(bpy.context.object, self.rmInfo)
         return (self.tm @ orig, self.tm @ self.snapCo)
 
     def setStatus(self, area, text): #TODO Global
         area.header_text_set(text)
 
-    def getGuideBatches(self, rmInfo, shader):
+    def getGuideBatches(self, shader):
+        rmInfo = self.rmInfo
         obj = bpy.context.object
         refLine = self.getRefLine()
         refLineOrig = self.getRefLineOrig()
@@ -2790,9 +2811,9 @@ class Snapper():
         freeAxesC = self.getFreeAxesCombined()
         freeAxesN = self.getFreeAxesNormalized()
 
-        tm, invTm = self.getTransMatsForOrient(rmInfo.rv3d, obj)
+        tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
 
-        orig = self.getCurrOrig(obj)
+        orig = self.getCurrOrig(obj, rmInfo)
         params = bpy.context.window_manager.bezierToolkitParams
         transType = params.snapOrient
         snapOrigin = params.snapOrigin
@@ -2929,7 +2950,7 @@ class ModalBaseFlexiOp(Operator):
         for a in areas:
             a.tag_redraw()
 
-    def refreshDisplayBase(rmInfo, displayInfos, snapper = None):
+    def refreshDisplayBase(displayInfos, snapper = None):
         areaRegionInfo = getAllAreaRegions()
 
         ModalBaseFlexiOp.segBatch, ModalBaseFlexiOp.tipBatch = \
@@ -2937,7 +2958,7 @@ class ModalBaseFlexiOp(Operator):
 
         if(snapper != None):
             ModalBaseFlexiOp.snapperBatches = \
-                snapper.getGuideBatches(rmInfo, ModalBaseFlexiOp.shader)
+                snapper.getGuideBatches(ModalBaseFlexiOp.shader)
         else:
             ModalBaseFlexiOp.snapperBatches = []
 
@@ -3086,7 +3107,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
         ModalBaseFlexiOp.resetDisplayBase()
 
-    def refreshDisplay(rmInfo, displayInfos, subdivCos = [], \
+    def refreshDisplay(displayInfos, subdivCos = [], \
         showSubdivPts = True, markerLoc = [], colMarker = None, snapper = None):
 
         ModalDrawBezierOp.subdivPtBatch, ModalDrawBezierOp.subdivLineBatch = \
@@ -3096,7 +3117,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             "POINTS", {"pos": markerLoc, \
                 "color": [colMarker for i in range(len(markerLoc))]})
 
-        ModalBaseFlexiOp.refreshDisplayBase(rmInfo, displayInfos, snapper)
+        ModalBaseFlexiOp.refreshDisplayBase(displayInfos, snapper)
 
     def __init__(self, curveDispRes):
         pass
@@ -3410,7 +3431,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
             displayInfos.append(SegDisplayInfo(segPts, sc, hns, tcs))
 
-        ModalDrawBezierOp.refreshDisplay(rmInfo, displayInfos, \
+        ModalDrawBezierOp.refreshDisplay(displayInfos, \
             subdivCos, showSubdivPts, markerLoc, colMarker, self.snapper)
 
     #Reference point for restrict angle or lock axis
@@ -4541,7 +4562,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         ModalBaseFlexiOp.resetDisplayBase()
 
     # static method
-    def refreshDisplay(rmInfo, displayInfos, locOnCurve = None, snapper = None):
+    def refreshDisplay(displayInfos, locOnCurve = None, snapper = None):
 
         ptCos = [co for d in displayInfos if type(d) == EditSegDisplayInfo
             for co in d.subdivCos]
@@ -4552,7 +4573,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             "POINTS", {"pos": ptCos, "color": [EDIT_SUBDIV_PT_COLOR \
                 for i in range(0, len(ptCos))]})
 
-        ModalBaseFlexiOp.refreshDisplayBase(rmInfo, displayInfos, snapper)
+        ModalBaseFlexiOp.refreshDisplayBase(displayInfos, snapper)
 
     # Refresh display with existing curves (nonstatic)
     def refreshDisplaySelCurves(self, displayInfosMap = {}, locOnCurve = None):
@@ -4571,8 +4592,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         displayInfos = sorted(displayInfos, key = lambda x:SEG_COL_PRIORITY[x.segColor])
 
-        ModalFlexiEditBezierOp.refreshDisplay(self.rmInfo, displayInfos, \
-            locOnCurve, self.snapper)
+        ModalFlexiEditBezierOp.refreshDisplay(displayInfos, locOnCurve, self.snapper)
 
     def reset(self):
         self.editCurveInfo = None
@@ -5025,6 +5045,8 @@ def getSnapOrientTups(scene, context):
     # ~ if(context.active_object != None):
     orients.insert(3, ('OBJECT', 'Active Object', \
         "Orient to local space of active object"))
+    orients.insert(4, ('FACE', 'Active Object Face', \
+        "Orient to normal of face under mouse pointer of active object"))
     return orients
 
 def getConstrAxisTups(scene = None, context = None):
@@ -5039,7 +5061,7 @@ def getConstrAxisTups(scene = None, context = None):
       }
     transType = bpy.context.window_manager.bezierToolkitParams.snapOrient
 
-    if(transType in {'AXIS', 'GLOBAL', 'OBJECT'}): keyset = range(0, 7)
+    if(transType in {'AXIS', 'GLOBAL', 'OBJECT', 'FACE'}): keyset = range(0, 7)
     elif(transType in {'VIEW', 'REFERENCE'}): keyset = [0] + [i for i in range(4, 7)]
 
     return [axesMap[key] for key in keyset]
@@ -5056,6 +5078,9 @@ def getSnapOriginTups(scene = None, context = None):
         "Draw / Edit with reference to the appropriate reference line point"), \
        ('OBJECT', 'Active Object Location', \
         "Draw / Edit with reference to active object location"), \
+       ('FACE', 'Active Object Face', \
+        "Draw / Edit with reference to the center of " + \
+            "active object face under mouse pointer"), \
       ]
 
 class BezierToolkitParams(bpy.types.PropertyGroup):
