@@ -2904,7 +2904,6 @@ class ModalBaseFlexiOp(Operator):
     def drawHandlerBase():
         if(ModalBaseFlexiOp.shader != None):
 
-            # TODO: Make configurable
             bgl.glLineWidth(ModalBaseFlexiOp.axisLineWidth)
             bgl.glPointSize(ModalBaseFlexiOp.snapPointSize)
             for batch in ModalBaseFlexiOp.snapperBatches:
@@ -2931,7 +2930,6 @@ class ModalBaseFlexiOp(Operator):
             a.tag_redraw()
 
     def refreshDisplayBase(rmInfo, displayInfos, snapper = None):
-        # ~ area, region, rv3d = getMinViewDistRegion()
         areaRegionInfo = getAllAreaRegions()
 
         ModalBaseFlexiOp.segBatch, ModalBaseFlexiOp.tipBatch = \
@@ -3022,6 +3020,13 @@ class ModalBaseFlexiOp(Operator):
         if(not self.isToolSelected(context)): # Subclass
             self.cancelOp(context)
             return {"CANCELLED"}
+            
+        if(not self.hasSelection() and event.type == 'ESC'):
+            if(event.value == 'RELEASE'):
+                self.cancelOp(context)
+                resetToolbarTool()
+                return {"CANCELLED"}
+            return {'RUNNING_MODAL'}
 
         rmInfo = RegionMouseXYInfo.getRegionMouseXYInfo(event, self.exclToolRegion())
         if(self.isEditing() and self.rmInfo != rmInfo):
@@ -3179,6 +3184,9 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
     def isEditing(self):
         return len(self.curvePts) > 0
+
+    def hasSelection(self):
+        return self.isEditing()
 
     # Common subModal for Flexi Draw and Flexi Grease
     def baseSubModal(self, context, event, snapProc):
@@ -4737,6 +4745,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
     def isEditing(self):
         return self.editCurveInfo != None
+
+    def hasSelection(self):
+        return len(self.selectCurveInfos) > 0
 
     def subModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
