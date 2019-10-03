@@ -85,6 +85,7 @@ The options in the dropdown are:
 - Reference Line: Orientation along the Reference Line (see explanation of Reference Line below)
 - Custom Axes: Orientation along Custom Axis (see explanation of Custom Axis below)
 - Active Object: Orientation along local space of active object
+- Active Object Face: Orientation along the normal of the active object face under mouse pointer
 - View: Orientation along current viewport view axes
 
 The Orientation affects the constraining plane and axis, as well as the reference axis for snapping to angle increment. For example, if the constraining axis are XY and the selected option in the Orienation dropdown is Active object, the point will be constrained to the XY plane of the active object local space, if it is available. 
@@ -96,6 +97,7 @@ The options in the dropdown are:
 - Custom Axis Start
 - Reference Line Point
 - Active Object Location
+- Active Object Face
 
 The distance values are calculated / interpretated based on the selection in this dialog. Additionally, the snapping plane (when Snap to Plane option is selected) is the plane containing the Snapping Origin point.
 
