@@ -4951,7 +4951,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     else:
                         ModalFlexiEditBezierOp.resetDisplay()
                 else:
-                    newPos = self.snapper.get3dLocSnap(rmInfo, refreshStatus = False)
+                    newPos = self.snapper.get3dLocSnap(rmInfo, \
+                        vec = ei.selCurveInfo.getSelCo(), refreshStatus = False)
                     ei.moveSeg(newPos)
                     bpy.ops.ed.undo_push()
 
