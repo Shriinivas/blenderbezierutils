@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 54),
+    "version": (0, 9, 55),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -483,7 +483,7 @@ def getAllAreaRegions():
 
 def getResetBatch(shader, btype): # "LINES" or "POINTS"
     return batch_for_shader(shader, btype, {"pos": [], "color": []})
-    
+
 
 # From python template
 def getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt):
@@ -501,14 +501,14 @@ def getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt):
     rayDirObj = rayTargetObj - rayOrigObj
 
     success, location, normal, faceIdx = obj.ray_cast(rayOrigObj, rayDirObj)
-        
+
     return mw @ location, normal, faceIdx
-    
+
 # ~ def getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc):
     # ~ p1 = (0, 0)
     # ~ p2 = (0, SNAP_DIST_PIXEL)
-    # ~ minEdgeDist = 
-        # ~ (region_2d_to_location_3d(region, rv3d, p1, vec) - 
+    # ~ minEdgeDist =
+        # ~ (region_2d_to_location_3d(region, rv3d, p1, vec) -
             # ~ region_2d_to_location_3d(region, rv3d, p2, vec)).length
     # ~ closestLoc = None
     # ~ for ek in obj.data.polygons[faceIdx].edge_keys:
@@ -855,8 +855,8 @@ def pasteLength(src, dests):
     ts.bezier_points.add(1)
     mw = src.matrix_world
     srcLen = sum(getSplineLenTmpObj(ts, s, mw) for s in src.data.splines)
-    
-    for c in dests:        
+
+    for c in dests:
         mw = c.matrix_world
         destLen = sum(getSplineLenTmpObj(ts, s, mw) for s in c.data.splines)
         fact = (srcLen / destLen)
@@ -1730,7 +1730,7 @@ def getSegLenTmpObj(tmpSpline, bpts, mw = Matrix()):
 def getSplineLenTmpObj(tmpSpline, spline, mw):
     l = 0
     bpts = spline.bezier_points
-    l += sum(getSegLenTmpObj(tmpSpline, bpts[i:i+2], mw) for i in range(len(bpts) -1))        
+    l += sum(getSegLenTmpObj(tmpSpline, bpts[i:i+2], mw) for i in range(len(bpts) -1))
     if(spline.use_cyclic_u): l += getSegLenTmpObj(tmpSpline, [bpts[-1], bpts[0]], mw)
     return l
 
@@ -2384,7 +2384,7 @@ class Snapper():
             refLineOrig = self.getRefLineOrig()
             if(refLineOrig != None): return refLineOrig
         elif(snapOrigin == 'OBJECT' and obj != None): return obj.location
-        elif(snapOrigin == 'FACE' and obj != None and rmInfo != None): 
+        elif(snapOrigin == 'FACE' and obj != None and rmInfo != None):
             location, normal, faceIdx = getFaceUnderMouse(obj, rmInfo.region, \
                 rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT)
             if(faceIdx >= 0): return obj.matrix_world @ obj.data.polygons[faceIdx].center
@@ -2396,7 +2396,7 @@ class Snapper():
         tm = Matrix()
         params = bpy.context.window_manager.bezierToolkitParams
         orientType = params.snapOrient
-        
+
         if(orientType == 'AXIS'):
             ca = self.customAxis
             if(abs(ca.length()) > DEF_ERR_MARGIN):
@@ -2418,7 +2418,7 @@ class Snapper():
 
         elif(orientType == 'VIEW'):
             tm = rmInfo.rv3d.view_matrix
-            
+
         if(obj != None):
             if(orientType == 'FACE'):
                 location, normal, faceIdx = getFaceUnderMouse(obj, rmInfo.region, \
@@ -2426,7 +2426,7 @@ class Snapper():
                 if(faceIdx >= 0):
                     normal = obj.data.polygons[faceIdx].normal
                     tm = normal.to_track_quat('Z', 'X').to_matrix().to_4x4().inverted()
-            
+
             if(orientType == 'OBJECT' or (orientType == 'FACE' and faceIdx < 0)):
                 tm = obj.matrix_world.inverted()
 
@@ -2564,20 +2564,20 @@ class Snapper():
         return retStr
 
     def getAllSnapLocs(self, obj, snapToAxisLine):
-        snapLocs = self.getSnapLocs() 
+        snapLocs = self.getSnapLocs()
         snapLocs.append(bpy.context.scene.cursor.location)
         snapLocs.append(Vector((0, 0, 0)))
-        
+
         if(snapToAxisLine):
             snapLocs += self.customAxis.getSnapPts()
-            
+
         if(obj != None):
             snapLocs.append(obj.location)
             if(obj.type == 'MESH' and len(obj.data.vertices) < self.MAX_SNAP_VERT_CNT):
-                snapLocs += [obj.matrix_world @ v.co for v in obj.data.vertices]             
-                   
+                snapLocs += [obj.matrix_world @ v.co for v in obj.data.vertices]
+
         return snapLocs
-        
+
     def get3dLocSnap(self, rmInfo, vec = None, refreshStatus = True, \
         snapToAxisLine = True, xyDelta = [0, 0]):
 
@@ -2636,8 +2636,8 @@ class Snapper():
                 loc, normal, faceIdx = getFaceUnderMouse(obj, region, rv3d, \
                     xy, self.MAX_SNAP_FACE_CNT)
                 if(faceIdx < 0): loc = None
-                
-                # ~ if(faceIdx >=0): 
+
+                # ~ if(faceIdx >=0):
                     # ~ eLoc = getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc)
                     # ~ if(eLoc != None): loc = eLoc
 
@@ -2804,6 +2804,7 @@ class Snapper():
 
     def getGuideBatches(self, shader):
         rmInfo = self.rmInfo
+        if(rmInfo == None): return []
         obj = bpy.context.object
         refLine = self.getRefLine()
         refLineOrig = self.getRefLineOrig()
@@ -3041,7 +3042,7 @@ class ModalBaseFlexiOp(Operator):
         if(not self.isToolSelected(context)): # Subclass
             self.cancelOp(context)
             return {"CANCELLED"}
-            
+
         if(not self.hasSelection() and event.type == 'ESC'):
             if(event.value == 'RELEASE'):
                 self.cancelOp(context)
@@ -3354,7 +3355,6 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
             bpy.context.window.cursor_set("DEFAULT")
             if(len(self.curvePts) > 1):
-                loc = self.snapper.get3dLocSnap(rmInfo)
                 if(self.capture):
                     if(self.grabRepos):
                         pt = self.curvePts[-1][1].copy()
@@ -3368,11 +3368,13 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                         self.moveBptElemByDelta('left', delta)
                         self.moveBptElemByDelta('right', delta)
                     else:
+                        loc = self.snapper.get3dLocSnap(rmInfo)
                         pt = self.curvePts[-1][1]
                         delta = (loc - pt)
                         self.moveBptElem('left', pt - delta)
                         self.moveBptElem('right', pt + delta)
                 else:
+                    loc = self.snapper.get3dLocSnap(rmInfo)
                     self.moveBezierPt(loc)
             self.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
@@ -4675,6 +4677,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         # For double click (TODO: remove; same as editCurveInfo == None?)
         self.capture = False
+        self.xyPress = None # ...to avoid jerky movement at the beginning
 
         self.snapInfos = {}
         self.updateSnapLocs()
@@ -4768,6 +4771,17 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
     def hasSelection(self):
         return len(self.selectCurveInfos) > 0
+
+    def getNewPos(self, refreshStatus):
+        selCo = self.editCurveInfo.selCurveInfo.getSelCo()
+        xySel = getCoordFromLoc(self.rmInfo.region, self.rmInfo.rv3d, selCo)
+        if(self.xyPress != None):
+            return self.snapper.get3dLocSnap(self.rmInfo, \
+                vec = selCo, refreshStatus = refreshStatus, \
+                    xyDelta = [self.xyPress[0] - xySel[0], self.xyPress[1] - xySel[1]])
+        else:
+            return self.snapper.get3dLocSnap(self.rmInfo, \
+                vec = selCo, refreshStatus = refreshStatus)
 
     def subModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
@@ -4865,9 +4879,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         if(not snapProc and not self.capture \
             and event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
+            self.xyPress = rmInfo.xy[:]
             coFind = Vector(rmInfo.xy).to_3d()
-            # ~ coFind = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, \
-                # ~ self.snapper.get3dLocSnap(rmInfo)).to_3d()
 
             objs = self.getEditableCurveObjs()
 
@@ -4951,9 +4964,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     else:
                         ModalFlexiEditBezierOp.resetDisplay()
                 else:
-                    newPos = self.snapper.get3dLocSnap(rmInfo, \
-                        vec = ei.selCurveInfo.getSelCo(), refreshStatus = False)
-                    ei.moveSeg(newPos)
+                    ei.moveSeg(self.getNewPos(refreshStatus = False))
                     bpy.ops.ed.undo_push()
 
                 self.clickT = tm
@@ -4972,9 +4983,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             if(ei != None):
                 # User is editing curve or control points (left mouse pressed)
                 ci = ei.selCurveInfo
-                selCo = ci.getSelCo()
-                newPos = self.snapper.get3dLocSnap(rmInfo, vec = selCo)
-                segPts = ei.getOffsetSegPts(newPos)
+                segPts = ei.getOffsetSegPts(self.getNewPos(refreshStatus = True))
                 displayInfosMap = {ci: ci.getDisplayInfos(segPts, \
                     hideHdls = ModalFlexiEditBezierOp.h)}
             else:
