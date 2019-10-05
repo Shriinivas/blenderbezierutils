@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 55),
+    "version": (0, 9, 57),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -470,7 +470,13 @@ def getAreaRegionIdxs(xy, exclInRgns = True):
 
 def getAllAreaRegions():
     info = []
-    areas = [a for a in bpy.context.screen.areas if(a.type == 'VIEW_3D')]
+    areas = []
+    i = 0
+    
+    # bpy.context.screen doesn't work in case of Add-on Config window
+    while(len(areas) == 0 and i < len(bpy.data.screens)):
+        areas = [a for a in bpy.data.screens[i].areas if(a.type == 'VIEW_3D')]
+        
     for a in areas:
         regions = [r for r in a.regions if r.type == 'WINDOW']
         if(len(a.spaces[0].region_quadviews) > 0):
@@ -1882,38 +1888,7 @@ def getInterpolatedVertsCo(curvePts, numDivs):
 
 ################### Common to Draw and Edit Flexi Bezier Ops ###################
 
-# Some static constants
-DRAW_SEL_SEG_COLOR = (.6, .8, 1, 1)
-DRAW_ADJ_SEG_COLOR = (.1, .4, .6, 1)
-DRAW_NONADJ_SEG_COLOR = (.2, .6, .9, 1)
-SEL_TIP_COLOR = (.2, .7, .3, 1)
-HLT_TIP_COLOR = (.2, 1, .9, 1)
-ENDPT_TIP_COLOR = (1, 1, 0, 1)
-ADJ_ENDPT_TIP_COLOR = (.1, .1, .1, 1)
-TIP_COLOR = (.7, .7, 0, 1)
-DRAW_MARKER_COLOR = DRAW_SEL_SEG_COLOR
-REF_CO_MARKER_COLOR = (.3, .3, .3, 1)
-
-EDIT_SUBDIV_PT_COLOR = (.3, 0, 0, 1)
-
-GREASE_SEL_SEG_COLOR = (0.2, .8, 0.2, 1)
-GREASE_ADJ_SEG_COLOR = (0.2, .6, 0.2, 1)
-GREASE_NONADJ_SEG_COLOR = (.3, .3, .3, 1)
-GREASE_SUBDIV_PT_COLOR = (1, .3, 1, 1)
-GREASE_ENDPT_TIP_COLOR = (1, .3, 1, 1)
-
-GREASE_MARKER_COLOR = GREASE_SEL_SEG_COLOR
-
-
-TIP_COL_PRIORITY = {ADJ_ENDPT_TIP_COLOR: 0, TIP_COLOR: 1, ENDPT_TIP_COLOR: 2,
-    GREASE_ENDPT_TIP_COLOR: 3, SEL_TIP_COLOR : 4, HLT_TIP_COLOR : 5,
-    DRAW_MARKER_COLOR: 6, GREASE_MARKER_COLOR: 7}
-
-SEG_COL_PRIORITY = {DRAW_ADJ_SEG_COLOR: 0, DRAW_NONADJ_SEG_COLOR: 1, \
-    DRAW_SEL_SEG_COLOR: 2}
-
-HANDLE_COLOR_MAP ={'FREE': (.6, .05, .05, 1), 'VECTOR': (.4, .5, .2, 1), \
-    'ALIGNED': (1, .3, .3, 1), 'AUTO': (.8, .5, .2, 1)}
+# Some global constants
 
 DEF_CURVE_RES_2D = .5 # Per pixel seg divisions (.5 is one div per 2 pixel units)
 SNAP_DIST_PIXEL = 20
@@ -1970,12 +1945,12 @@ class RegionMouseXYInfo:
 def getSubdivBatches(shader, subdivCos, showSubdivPts):
         ptSubDivCos = [] if(not showSubdivPts) else subdivCos
         ptBatch = batch_for_shader(ModalDrawBezierOp.shader, \
-            "POINTS", {"pos": ptSubDivCos, "color": [GREASE_SUBDIV_PT_COLOR \
+            "POINTS", {"pos": ptSubDivCos, "color": [ModalBaseFlexiOp.colGreaseSubdiv \
                 for i in range(0, len(ptSubDivCos))]})
 
         lineCos = getLinesFromPts(subdivCos)
         lineBatch = batch_for_shader(ModalDrawBezierOp.shader, \
-            "LINES", {"pos": lineCos, "color": [GREASE_ADJ_SEG_COLOR \
+            "LINES", {"pos": lineCos, "color": [ModalBaseFlexiOp.colGreaseNonHltSeg \
                 for i in range(0, len(lineCos))]})
 
         return ptBatch, lineBatch
@@ -2008,8 +1983,8 @@ def getBezierBatches(shader, displayInfos, areaRegionInfo, defHdlType = 'ALIGNED
             else:
                 htype = segPts[ptIdx][3 + hdlIdx]
 
-            lineColors += [HANDLE_COLOR_MAP[htype], \
-                HANDLE_COLOR_MAP[htype]]
+            lineColors += [ModalBaseFlexiOp.hdlColMap[htype], \
+                ModalBaseFlexiOp.hdlColMap[htype]]
 
         for j, tipColor in enumerate(displayInfo.tipColors):
             if(tipColor != None):
@@ -2021,7 +1996,9 @@ def getBezierBatches(shader, displayInfos, areaRegionInfo, defHdlType = 'ALIGNED
     tipCos = []
     tipColors = []
 
-    tipColInfo = sorted(tipColInfo, key = lambda x: TIP_COL_PRIORITY[x[0]])
+    tipColInfo = sorted(tipColInfo, \
+        key = lambda x: ModalBaseFlexiOp.tipColPriority[x[0]])
+        
     for ti in tipColInfo:
         tipColors.append(ti[0])
         tipCos.append(ti[1])
@@ -2906,11 +2883,6 @@ class ModalBaseFlexiOp(Operator):
     snapperBatches = []
     opObj = None
 
-    drawPointSize = 4
-    lineWidth = 1.5
-    axisLineWidth = 0.25
-    snapPointSize = 2
-
     pointSize = 4 # For Draw (Marker is of diff size)
 
     def addDrawHandler(drawHandler):
@@ -2927,7 +2899,7 @@ class ModalBaseFlexiOp(Operator):
         if(ModalBaseFlexiOp.shader != None):
 
             bgl.glLineWidth(ModalBaseFlexiOp.axisLineWidth)
-            bgl.glPointSize(ModalBaseFlexiOp.snapPointSize)
+            bgl.glPointSize(ModalBaseFlexiOp.snapPtSize)
             for batch in ModalBaseFlexiOp.snapperBatches:
                 batch.draw(ModalBaseFlexiOp.shader)
 
@@ -2935,7 +2907,7 @@ class ModalBaseFlexiOp(Operator):
             if(ModalBaseFlexiOp.segBatch != None):
                 ModalBaseFlexiOp.segBatch.draw(ModalBaseFlexiOp.shader)
 
-            bgl.glPointSize(ModalBaseFlexiOp.drawPointSize)
+            bgl.glPointSize(ModalBaseFlexiOp.drawPtSize)
             if(ModalDrawBezierOp.tipBatch != None):
                 ModalDrawBezierOp.tipBatch.draw(ModalBaseFlexiOp.shader)
 
@@ -3007,21 +2979,9 @@ class ModalBaseFlexiOp(Operator):
         ModalBaseFlexiOp.shader.bind()
         context.window_manager.modal_handler_add(self)
 
-        try:
-            ModalBaseFlexiOp.drawPointSize = \
-                context.preferences.addons[__name__].preferences.drawPointSize
-            ModalBaseFlexiOp.lineWidth = \
-                context.preferences.addons[__name__].preferences.drawLineWidth
-            ModalBaseFlexiOp.axisLineWidth = \
-                context.preferences.addons[__name__].preferences.axisLineWidth
-            ModalBaseFlexiOp.snapPointSize = \
-                context.preferences.addons[__name__].preferences.snapPointSize
-        except Exception as e:
-            print("BezierUtils: Error fetching default sizes in Draw Bezier", e)
-            ModalBaseFlexiOp.drawPointSize = 4
-            ModalBaseFlexiOp.lineWidth = 1.5
-            ModalBaseFlexiOp.axisLineWidth = .25
-            ModalBaseFlexiOp.snapPointSize = 2
+        ModalBaseFlexiOp.ColGreaseHltSeg = (.3, .3, .3, 1) # Not used
+        
+        updateProps(None, context)
 
         return self.subInvoke(context, event)
 
@@ -3089,7 +3049,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                 ModalDrawBezierOp.markerBatch.draw(ModalBaseFlexiOp.shader)
 
             # TODO: Move this to grease draw
-            bgl.glPointSize(ModalBaseFlexiOp.drawPointSize)
+            bgl.glPointSize(ModalBaseFlexiOp.greaseSubdivPtSize)
             if(ModalDrawBezierOp.subdivPtBatch != None):
                 ModalDrawBezierOp.subdivPtBatch.draw(ModalBaseFlexiOp.shader)
 
@@ -3411,7 +3371,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                 # First handle (straight line), if user drags first pt
                 # (first point from CurvePts, second the current location)
                 curvePts = self.curvePts + [[loc, loc, loc]]
-                segColor = HANDLE_COLOR_MAP['ALIGNED']
+                segColor = ModalBaseFlexiOp.hdlColMap['ALIGNED']
                 handleNos = []
             else:
                 if(len(self.curvePts) == 0):
@@ -3481,11 +3441,11 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         return True
 
     def getColorMap(self):
-        return {'SEL_SEG_COLOR': DRAW_SEL_SEG_COLOR,
-        'NONADJ_SEG_COLOR': DRAW_NONADJ_SEG_COLOR,
-        'TIP_COLOR': TIP_COLOR,
-        'ENDPT_TIP_COLOR': ENDPT_TIP_COLOR,
-        'MARKER_COLOR': DRAW_MARKER_COLOR, }
+        return {'SEL_SEG_COLOR': ModalBaseFlexiOp.colDrawSelSeg,
+        'NONADJ_SEG_COLOR': ModalBaseFlexiOp.colDrawNonHltSeg,
+        'TIP_COLOR': ModalBaseFlexiOp.colHdlPtTip,
+        'ENDPT_TIP_COLOR': ModalBaseFlexiOp.colBezPt,
+        'MARKER_COLOR': ModalBaseFlexiOp.colDrawMarker}
 
     def preInvoke(self, context, event):
 
@@ -3755,11 +3715,11 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         return True
 
     def getColorMap(self):
-        return {'SEL_SEG_COLOR': GREASE_SEL_SEG_COLOR,
-        'NONADJ_SEG_COLOR': GREASE_NONADJ_SEG_COLOR,
-        'TIP_COLOR': TIP_COLOR,
-        'ENDPT_TIP_COLOR': GREASE_ENDPT_TIP_COLOR,
-        'MARKER_COLOR': GREASE_MARKER_COLOR, }
+        return {'SEL_SEG_COLOR': ModalBaseFlexiOp.colGreaseSelSeg,
+        'NONADJ_SEG_COLOR': ModalBaseFlexiOp.ColGreaseHltSeg, #Not used
+        'TIP_COLOR': ModalBaseFlexiOp.colHdlPtTip,
+        'ENDPT_TIP_COLOR': ModalBaseFlexiOp.colGreaseBezPt,
+        'MARKER_COLOR': ModalBaseFlexiOp.colGreaseMarker, }
 
     def preInvoke(self, context, event):
         # If the operator is invoked from context menu, enable the tool on toolbar
@@ -4352,13 +4312,21 @@ class SelectCurveInfo:
     # TODO: Redundant data structures
     # TODO: Better: Single Obj with multiples splineIdxs
     def getDisplayInfos(self, segPts = None, hltInfo = None, hideHdls = False,
-        selSegCol = DRAW_SEL_SEG_COLOR, includeAdj = True):
-
+        selSegCol = None, includeAdj = True):
+        
+        # Making long short
+        cHltTip = ModalBaseFlexiOp.colHltTip 
+        cBezPt = ModalBaseFlexiOp.colBezPt
+        cHdlPt = ModalBaseFlexiOp.colHdlPtTip
+        cAdjBezTip = ModalBaseFlexiOp.colAdjBezTip
+        cNonHltTip = ModalBaseFlexiOp.colDrawNonHltSeg
+        
         def getTipList(hltIdx, idx):
             # Display of non-selected segments...
-            tipList = [None, ADJ_ENDPT_TIP_COLOR, None, None, ADJ_ENDPT_TIP_COLOR, None]
-            if(hltIdx == idx): tipList[1] = HLT_TIP_COLOR
-            if(hltIdx == idx + 1): tipList[4] = HLT_TIP_COLOR
+            tipList = [None, cAdjBezTip, None, \
+                None, cAdjBezTip, None]
+            if(hltIdx == idx): tipList[1] = cHltTip
+            if(hltIdx == idx + 1): tipList[4] = cHltTip
             return tipList
 
         nextIdx = None
@@ -4374,20 +4342,23 @@ class SelectCurveInfo:
                 if(self.segIdx != None):
                     if(endPtIdx == self.segIdx): hltHdlIdx = 1
                     if(endPtIdx == self.getSegAdjIdx()): hltHdlIdx = 4
-
+                    
+        if(selSegCol == None): selSegCol = ModalBaseFlexiOp.colDrawSelSeg
+        
         hltEndPtIdx = hltInfo[1] if(hltInfo != None and hltHdlIdx == None) else None
 
         if(self.segIdx != None):
             if(segPts == None):
                 segPts = self.getSegPts()
 
-
             # Display of selected segment...
-            tipColors = [TIP_COLOR, ENDPT_TIP_COLOR, TIP_COLOR, \
-                    TIP_COLOR, ENDPT_TIP_COLOR, TIP_COLOR]
+            tipColors = [cHdlPt, cBezPt, cHdlPt, cHdlPt, cBezPt, cHdlPt]
 
-            if(self._ctrlIdx != None): tipColors[self._ctrlIdx] = SEL_TIP_COLOR
-            if(hltHdlIdx != None): tipColors[hltHdlIdx] = HLT_TIP_COLOR
+            if(self._ctrlIdx != None): tipColors[self._ctrlIdx] = \
+                ModalBaseFlexiOp.colSelTip
+                
+            if(hltHdlIdx != None): tipColors[hltHdlIdx] = cHltTip
+            
             hdlIdxs = [0, 1, 2, 3]
 
             if(hideHdls):
@@ -4412,19 +4383,16 @@ class SelectCurveInfo:
             if((len(prevPts) > 1) and (prevPts == nextPts)):
                 prevPts[1] = segPts[0][:]
                 prevPts[0] = segPts[1][:]
-                displayInfos.append(SegDisplayInfo(prevPts, \
-                    DRAW_ADJ_SEG_COLOR, [],  []))
+                displayInfos.append(SegDisplayInfo(prevPts, cNonHltTip, [],  []))
             else:
                 if(len(prevPts) > 1):
                     prevPts[1] = segPts[0][:]
                     tipList = getTipList(hltEndPtIdx, prevIdx)
-                    displayInfos.append(SegDisplayInfo(prevPts, \
-                        DRAW_ADJ_SEG_COLOR, [],  tipList))
+                    displayInfos.append(SegDisplayInfo(prevPts, cNonHltTip, [],  tipList))
                 if(len(nextPts) > 1):
                     nextPts[0] = segPts[1][:]
                     tipList = getTipList(hltEndPtIdx, nextIdx)
-                    displayInfos.append(SegDisplayInfo(nextPts, \
-                        DRAW_ADJ_SEG_COLOR, [], tipList))
+                    displayInfos.append(SegDisplayInfo(nextPts, cNonHltTip, [], tipList))
 
         spline = self.obj.data.splines[self.splineIdx]
         for j, pt in enumerate(spline.bezier_points):
@@ -4434,8 +4402,7 @@ class SelectCurveInfo:
             if(segPts != []):
                 tipList = [] if(j == (len(spline.bezier_points) - 1)) \
                     else getTipList(hltEndPtIdx, j)
-                displayInfos.append(SegDisplayInfo(segPts, \
-                    DRAW_ADJ_SEG_COLOR, [], tipList))
+                displayInfos.append(SegDisplayInfo(segPts, cNonHltTip, [], tipList))
 
         if(self.segIdx != None):
             # Append at the end so it's displayed on top of everything else
@@ -4550,12 +4517,10 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
     ptBatch = None
     h = False
 
-    subdivPointSize = 6
-
     def drawHandler():
         if(ModalBaseFlexiOp.shader != None):
             ModalBaseFlexiOp.drawHandlerBase()
-            bgl.glPointSize(ModalFlexiEditBezierOp.subdivPointSize)
+            bgl.glPointSize(ModalBaseFlexiOp.editSubdivPtSize)
             if(ModalFlexiEditBezierOp.ptBatch != None):
                 ModalFlexiEditBezierOp.ptBatch.draw(ModalBaseFlexiOp.shader)
 
@@ -4572,7 +4537,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         # ~ if(locOnCurve != None): ptCos.append(locOnCurve) # For debugging
 
         ModalFlexiEditBezierOp.ptBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
-            "POINTS", {"pos": ptCos, "color": [EDIT_SUBDIV_PT_COLOR \
+            "POINTS", {"pos": ptCos, "color": [ModalBaseFlexiOp.colEditSubdiv \
                 for i in range(0, len(ptCos))]})
 
         ModalBaseFlexiOp.refreshDisplayBase(displayInfos, snapper)
@@ -4592,7 +4557,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             displayInfos += c.getDisplayInfos(hideHdls = ModalFlexiEditBezierOp.h, \
                 includeAdj = includeAdj)
 
-        displayInfos = sorted(displayInfos, key = lambda x:SEG_COL_PRIORITY[x.segColor])
+        displayInfos = sorted(displayInfos, key = lambda \
+            x:ModalBaseFlexiOp.segColPriority[x.segColor])
 
         ModalFlexiEditBezierOp.refreshDisplay(displayInfos, locOnCurve, self.snapper)
 
@@ -5017,10 +4983,10 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
                     if(ci == None):
                         ci = SelectCurveInfo(obj, splineIdx, segIdx)
-                        segColor = DRAW_NONADJ_SEG_COLOR
+                        segColor = ModalBaseFlexiOp.colDrawHltSeg
                         hideHdl = True
                     else:
-                        segColor = DRAW_SEL_SEG_COLOR
+                        segColor = ModalBaseFlexiOp.colDrawSelSeg
                         hideHdl = ModalFlexiEditBezierOp.h
 
                     displayInfosMap = {ci: ci.getDisplayInfos(ci.getSegPts(), \
@@ -5311,6 +5277,123 @@ def updatePanel(self, context):
     except Exception as e:
         print("BezierUtils: Updating Panel locations has failed", e)
 
+def updateProps(self, context):
+    try:
+        panel = BezierUtilsPanel
+        panel.bl_category = context.preferences.addons[__name__].preferences.category        
+        try:
+            ModalBaseFlexiOp.drawPtSize = \
+                context.preferences.addons[__name__].preferences.drawPtSize
+            ModalBaseFlexiOp.lineWidth = \
+                context.preferences.addons[__name__].preferences.drawLineWidth
+
+            ModalBaseFlexiOp.axisLineWidth = \
+                context.preferences.addons[__name__].preferences.axisLineWidth
+            ModalBaseFlexiOp.snapPtSize = \
+                context.preferences.addons[__name__].preferences.snapPtSize
+            ModalBaseFlexiOp.editSubdivPtSize = \
+                context.preferences.addons[__name__].preferences.editSubdivPtSize
+            ModalBaseFlexiOp.greaseSubdivPtSize = \
+                context.preferences.addons[__name__].preferences.greaseSubdivPtSize
+
+            ModalBaseFlexiOp.colDrawSelSeg = \
+                context.preferences.addons[__name__].preferences.colDrawSelSeg
+            ModalBaseFlexiOp.colDrawNonHltSeg = \
+                context.preferences.addons[__name__].preferences.colDrawNonHltSeg
+            ModalBaseFlexiOp.colDrawHltSeg = \
+                context.preferences.addons[__name__].preferences.colDrawHltSeg
+            ModalBaseFlexiOp.colDrawMarker = \
+                context.preferences.addons[__name__].preferences.colDrawMarker
+
+            ModalBaseFlexiOp.colGreaseSelSeg = \
+                context.preferences.addons[__name__].preferences.colGreaseSelSeg
+            ModalBaseFlexiOp.colGreaseNonHltSeg = \
+                context.preferences.addons[__name__].preferences.colGreaseNonHltSeg
+            ModalBaseFlexiOp.colGreaseMarker = \
+                context.preferences.addons[__name__].preferences.colGreaseMarker
+
+            ModalBaseFlexiOp.colHdlFree = \
+                context.preferences.addons[__name__].preferences.colHdlFree
+            ModalBaseFlexiOp.colHdlVector = \
+                context.preferences.addons[__name__].preferences.colHdlVector
+            ModalBaseFlexiOp.colHdlAligned = \
+                context.preferences.addons[__name__].preferences.colHdlAligned
+            ModalBaseFlexiOp.colHdlAuto = \
+                context.preferences.addons[__name__].preferences.colHdlAuto
+
+            ModalBaseFlexiOp.colSelTip = \
+                context.preferences.addons[__name__].preferences.colSelTip
+            ModalBaseFlexiOp.colHltTip = \
+                context.preferences.addons[__name__].preferences.colHltTip
+            ModalBaseFlexiOp.colBezPt = \
+                context.preferences.addons[__name__].preferences.colBezPt
+            ModalBaseFlexiOp.colHdlPtTip = \
+                context.preferences.addons[__name__].preferences.colHdlPtTip
+            ModalBaseFlexiOp.colAdjBezTip = \
+                context.preferences.addons[__name__].preferences.colAdjBezTip
+
+            ModalBaseFlexiOp.colEditSubdiv = \
+                context.preferences.addons[__name__].preferences.colEditSubdiv
+            ModalBaseFlexiOp.colGreaseSubdiv = \
+                context.preferences.addons[__name__].preferences.colGreaseSubdiv
+            ModalBaseFlexiOp.colGreaseBezPt = \
+                context.preferences.addons[__name__].preferences.colGreaseBezPt
+
+        except Exception as e:
+            print("BezierUtils: Error fetching default sizes in Draw Bezier", e)
+            ModalBaseFlexiOp.drawPtSize = 4
+            ModalBaseFlexiOp.lineWidth = 1.5
+            ModalBaseFlexiOp.axisLineWidth = .25
+            ModalBaseFlexiOp.snapPtSize = 2
+            ModalBaseFlexiOp.editSubdivPtSize = 6
+            ModalBaseFlexiOp.greaseSubdivPtSize = 4
+
+            ModalBaseFlexiOp.colDrawSelSeg = (.6, .8, 1, 1) # DRAW_SEL_SEG_COLOR
+            ModalBaseFlexiOp.colDrawNonHltSeg = (.1, .4, .6, 1) # DRAW_ADJ_SEG_COLOR
+            ModalBaseFlexiOp.colDrawHltSeg = (.2, .6, .9, 1) # DRAW_NONADJ_SEG_COLOR
+
+            ModalBaseFlexiOp.colGreaseSelSeg = (0.2, .8, 0.2, 1) # GREASE_SEL_SEG_COLOR
+            ModalBaseFlexiOp.colGreaseNonHltSeg = (0.2, .6, 0.2, 1) # GREASE_ADJ_SEG_COLOR
+
+            ModalBaseFlexiOp.colHdlFree = (.6, .05, .05, 1) # HANDLE_COLOR_FREE
+            ModalBaseFlexiOp.colHdlVector = (.4, .5, .2, 1) # HANDLE_COLOR_VECTOR
+            ModalBaseFlexiOp.colHdlAligned = (1, .3, .3, 1) # HANDLE_COLOR_ALIGNED
+            ModalBaseFlexiOp.colHdlAuto = (.8, .5, .2, 1) # HANDLE_COLOR_AUTO
+
+            ModalBaseFlexiOp.colDrawMarker = (.6, .8, 1, 1) # DRAW_MARKER_COLOR
+            ModalBaseFlexiOp.colGreaseMarker = (0.2, .8, 0.2, 1) # GREASE_MARKER_COLOR
+
+            ModalBaseFlexiOp.colSelTip = (.2, .7, .3, 1) # SEL_TIP_COLOR
+            ModalBaseFlexiOp.colHltTip = (.2, 1, .9, 1) # HLT_TIP_COLOR
+            ModalBaseFlexiOp.colBezPt = (1, 1, 0, 1) # ENDPT_TIP_COLOR
+            ModalBaseFlexiOp.colHdlPtTip = (.7, .7, 0, 1) # TIP_COLOR
+            ModalBaseFlexiOp.colAdjBezTip = (.1, .1, .1, 1) # ADJ_ENDPT_TIP_COLOR
+
+            ModalBaseFlexiOp.colEditSubdiv = (.3, 0, 0, 1) # EDIT_SUBDIV_PT_COLOR
+
+            ModalBaseFlexiOp.colGreaseSubdiv = (1, .3, 1, 1) # GREASE_SUBDIV_PT_COLOR
+            ModalBaseFlexiOp.colGreaseBezPt = (1, .3, 1, 1) # GREASE_ENDPT_TIP_COLOR
+
+        ModalBaseFlexiOp.segColPriority = {ModalBaseFlexiOp.colDrawNonHltSeg: 0, \
+            ModalBaseFlexiOp.colDrawHltSeg: 1, ModalBaseFlexiOp.colDrawSelSeg: 2}
+
+        ModalBaseFlexiOp.hdlColMap ={'FREE': ModalBaseFlexiOp.colHdlFree, \
+            'VECTOR': ModalBaseFlexiOp.colHdlVector,  \
+                'ALIGNED': ModalBaseFlexiOp.colHdlAligned, \
+                    'AUTO': ModalBaseFlexiOp.colHdlAuto}
+
+        ModalBaseFlexiOp.tipColPriority = {ModalBaseFlexiOp.colAdjBezTip: 0, \
+            ModalBaseFlexiOp.colHdlPtTip: 1, ModalBaseFlexiOp.colBezPt: 2, \
+                ModalBaseFlexiOp.colGreaseBezPt: 3, ModalBaseFlexiOp.colSelTip : 4, \
+                    ModalBaseFlexiOp.colHltTip : 5, ModalBaseFlexiOp.colDrawMarker: 6, \
+                        ModalBaseFlexiOp.colGreaseMarker: 7}
+
+    except Exception as e:
+        print("BezierUtils: Error fetching preferences", e)
+
+    try: ModalBaseFlexiOp.opObj.refreshDisplaySelCurves() 
+    except: pass
+
 class BezierUtilsPreferences(AddonPreferences):
     bl_idname = __name__
 
@@ -5323,68 +5406,324 @@ class BezierUtilsPreferences(AddonPreferences):
 
     drawLineWidth: FloatProperty(
             name = "Line Thickness",
-            description = "Thickness of segment & handle Lines of Flexi Draw and Edit " +\
-                " (requires tool reselection)",
+            description = "Thickness of segment & handle Lines of Flexi Draw and Edit",
             default = 1.5,
             min = 0.1,
             max = 20,
+            update = updateProps
     )
 
-    drawPointSize: FloatProperty(
+    drawPtSize: FloatProperty(
             name = "Handle Point Size",
-            description = "Size of Flexi Draw and Edit Bezier handle points" +\
-                " (requires tool reselection)",
+            description = "Size of Flexi Draw and Edit Bezier handle points",
             default = 4,
             min = 0.1,
             max = 20,
+            update = updateProps
+    )
+
+    editSubdivPtSize: FloatProperty(
+            name = "Uniform Subdiv Point Size",
+            description = "Size of point marking subdivisions",
+            default = 6,
+            min = 0.1,
+            max = 20,
+            update = updateProps
+    )
+
+    greaseSubdivPtSize: FloatProperty(
+            name = "Flexi Grease Res Point Size",
+            description = "Size of point marking resoulution in Flexi Grease Tool",
+            default = 4,
+            min = 0.1,
+            max = 20,
+            update = updateProps
     )
 
     markerSize: FloatProperty(
             name = "Marker Size",
-            description = "Size of Flexi Draw and Mark Starting Vertices" + \
-                " marker (requires tool reselection)",
+            description = "Size of Flexi Draw and Mark Starting Vertices",
             default = 6,
             min = 0.1,
             max = 20,
+            update = updateProps
     )
 
     axisLineWidth: FloatProperty(
             name = "Axis Line Thickness",
-            description = "Thickness of Axis Lines for snapping & locking " +\
-                " (requires tool reselection)",
+            description = "Thickness of Axis Lines for snapping & locking",
             default = 0.25,
             min = 0.1,
             max = 20,
+            update = updateProps
     )
 
-    snapPointSize: FloatProperty(
+    snapPtSize: FloatProperty(
             name = "Snap Point Size",
-            description = "Size of snap point indicator" +\
-                " (requires tool reselection)",
+            description = "Size of snap point indicator",
             default = 2,
             min = 0.1,
             max = 20,
+            update = updateProps
     )
+
+    colDrawSelSeg: bpy.props.FloatVectorProperty(
+        name="Selected Draw / Edit  Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default=(.6, .8, 1, 1), \
+                description = 'Color of the segment being drawn / edited',
+                    update = updateProps
+    )
+
+    colDrawNonHltSeg: bpy.props.FloatVectorProperty(
+        name="Adjacent Draw / Edit Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default=(.1, .4, .6, 1), \
+                description = 'Color of the segment adjacent to the' + \
+                    'one being drawn / edited', update = updateProps
+    )
+    
+    colDrawHltSeg: bpy.props.FloatVectorProperty(
+        name="Highlighted Edit Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default=(.2, .6, .9, 1), \
+                description = 'Color of the segment under mouse curser in Flexi Edit', \
+                    update = updateProps
+    )
+
+    colDrawMarker: bpy.props.FloatVectorProperty(
+        name="Marker", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default=(.6, .8, 1, 1), \
+                description = 'Color of the marker', update = updateProps
+    )
+
+    colGreaseSelSeg: bpy.props.FloatVectorProperty(
+        name="Selected Grease Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default=(0.2, .8, 0.2, 1), \
+                description = 'Color of the segment being drawn', \
+                    update = updateProps
+    )
+
+    colGreaseNonHltSeg: bpy.props.FloatVectorProperty(
+        name="Adjacent Grease Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default = (0.2, .6, 0.2, 1), \
+                description = 'Color of the segment adjacent to the one being drawn', \
+                    update = updateProps
+    )
+
+    colGreaseMarker: bpy.props.FloatVectorProperty(
+        name="Marker", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default = (0.2, .8, 0.2, 1), \
+                description = 'Color of the marker', update = updateProps
+    )
+
+    colHdlFree: bpy.props.FloatVectorProperty(
+        name="Free Handle", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default=(.6, .05, .05, 1), \
+                description = 'Free handle color in all Flexi Tools', \
+                        update = updateProps
+    )
+
+    colHdlVector: bpy.props.FloatVectorProperty(
+        name="Vector Handle", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default=(.4, .5, .2, 1), \
+                description = 'Vector handle color in all Flexi Tools', \
+                    update = updateProps
+    )
+
+    colHdlAligned: bpy.props.FloatVectorProperty(
+        name="Aligned Handle", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default=(1, .3, .3, 1), \
+                description = 'Aligned handle color in all Flexi Tools', \
+                    update = updateProps
+    )
+
+    colHdlAuto: bpy.props.FloatVectorProperty(
+        name="Auto Handle", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default=(.8, .5, .2, 1), \
+                description = 'Auto handle color in all Flexi Tools', \
+                    update = updateProps
+    )
+
+    colSelTip: bpy.props.FloatVectorProperty(
+        name="Selected Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default = (.2, .7, .3, 1), \
+                description = 'Color of the selected Bezier or handle point', \
+                    update = updateProps
+    )
+
+    colHltTip: bpy.props.FloatVectorProperty(
+        name="Highlighted Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default = (.2, 1, .9, 1), \
+                description = 'Color of Bezier or handle point under mouse pointer', \
+                    update = updateProps
+    )
+
+    colBezPt: bpy.props.FloatVectorProperty(
+        name="Bezier Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default = (1, 1, 0, 1), \
+                description = 'Color of nonselected Bezier point', \
+                    update = updateProps
+    )
+
+    colHdlPtTip: bpy.props.FloatVectorProperty(
+        name="Handle Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default = (.7, .7, 0, 1), \
+                description = 'Color of nonselected handle point', \
+                    update = updateProps
+    )
+
+    colAdjBezTip: bpy.props.FloatVectorProperty(
+        name="Adjacent Bezier Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default = (.1, .1, .1, 1), \
+                description = 'Color of Bezier points of adjacent segments', \
+                    update = updateProps
+    )
+
+    colEditSubdiv: bpy.props.FloatVectorProperty(
+        name="Uniform Subdiv Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default = (.3, 0, 0, 1), \
+                description = 'Color of point marking subdivisions', \
+                    update = updateProps
+    )
+
+    colGreaseSubdiv: bpy.props.FloatVectorProperty(
+        name="Resolution Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default = (1, .3, 1, 1), \
+                description = 'Color of point marking curve resolution', \
+                    update = updateProps
+    )
+
+    colGreaseBezPt: bpy.props.FloatVectorProperty(
+        name="Bezier Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
+            default = (1, .3, 1, 1), \
+                description = 'Color of Bezier point', \
+                    update = updateProps
+    )
+
+    elemDimsExpanded: BoolProperty(name="Draw Elem Expanded State", default = False)
+    drawColExpanded: BoolProperty(name="Draw Col Expanded State", default = False)
+    greaseColExpanded: BoolProperty(name="Grease Col Expanded State", default = False)
+    handleColExpanded: BoolProperty(name="Handle Col Expanded State", default = False)
 
     # TODO Subdiv point size, seg / handle colors etc.
 
     def draw(self, context):
         layout = self.layout
-        row = layout.row()
-        col = row.column()
+        col = layout.column().split()
         col.label(text="Tab Category:")
         col.prop(self, "category", text="")
-        row = layout.row()
-        col = row.column()
+
+        layout.row().label(text="UI Preferences:")
 
         row = layout.row()
-        col = row.column()
-        col.label(text="UI Preferences:")
-        col.prop(self, "drawLineWidth")
-        col.prop(self, "drawPointSize")
-        col.prop(self, "markerSize")
-        col.prop(self, "axisLineWidth")
-        col.prop(self, "snapPointSize")
+        row.prop(self, "elemDimsExpanded", icon = "TRIA_DOWN" \
+            if self.elemDimsExpanded else "TRIA_RIGHT",  icon_only = True, emboss = False)
+        row.label(text = "Draw / Edit Element Dimensions (Common)")#, icon = 'UNLINKED')
+
+        if self.elemDimsExpanded:
+            col = layout.column().split()
+            col.label(text='Segment / Line Thickness:')
+            col.prop(self, "drawLineWidth", text = '')
+            col = layout.column().split()
+            col.label(text='Handle Point Size:')
+            col.prop(self, "drawPtSize", text = '')
+            col = layout.column().split()
+            col.label(text='Uniform Subdiv Point Size:')
+            col.prop(self, "editSubdivPtSize", text = '')
+            col = layout.column().split()
+            col.label(text='Flexi Grease Res Point Size:')
+            col.prop(self, "greaseSubdivPtSize", text = '')
+            col = layout.column().split()
+            col.label(text='Marker Size:')
+            col.prop(self, "markerSize", text = '')
+            col = layout.column().split()
+            col.label(text='Axis Line Thickness:')
+            col.prop(self, "axisLineWidth", text = '')
+            col = layout.column().split()
+            col.label(text='Snap Point Size:')
+            col.prop(self, "snapPtSize", text = '')
+
+        layout.column().separator()
+
+        row = layout.row()
+        row.prop(self, "drawColExpanded", icon = "TRIA_DOWN" \
+            if self.drawColExpanded else "TRIA_RIGHT",  icon_only = True, emboss = False)
+        row.label(text = "Flexi Draw / Edit Colors")#, icon = 'UNLINKED')
+
+        if self.drawColExpanded:
+            col = layout.column().split()
+            col.label(text="Selected Draw / Edit  Segment:")
+            col.prop(self, "colDrawSelSeg", text = '')
+            col = layout.column().split()
+            col.label(text="Adjacent Draw / Edit Segment:")
+            col.prop(self, "colDrawNonHltSeg", text = '')
+            col = layout.column().split()
+            col.label(text="Highlighted Edit Segment:")
+            col.prop(self, "colDrawHltSeg", text = '')
+            col = layout.column().split()
+            col.label(text="Draw Marker:")
+            col.prop(self, "colDrawMarker", text = '')
+            col = layout.column().split()
+            col.label(text="Bezier Point:")
+            col.prop(self, "colBezPt", text = '')
+            col = layout.column().split()
+            col.label(text="Subdivision Marker:")
+            col.prop(self, "colEditSubdiv", text = '')
+
+        layout.column().separator()
+
+        row = layout.row()
+        row.prop(self, "greaseColExpanded", icon = "TRIA_DOWN" \
+            if self.greaseColExpanded else "TRIA_RIGHT",  icon_only = True, emboss = False)
+        row.label(text = "Flexi Grease Colors")#, icon = 'UNLINKED')
+
+        if self.greaseColExpanded:
+            col = layout.column().split()
+            col.label(text="Selected Grease Segment:")
+            col.prop(self, "colGreaseSelSeg", text = '')
+            col = layout.column().split()
+            col.label(text="Adjacent Grease Segment:")
+            col.prop(self, "colGreaseNonHltSeg", text = '')
+            col = layout.column().split()
+            col.label(text="Draw Marker:")
+            col.prop(self, "colGreaseMarker", text = '')
+            col = layout.column().split()
+            col.label(text="Bezier Point:")
+            col.prop(self, "colGreaseBezPt", text = '')
+            col = layout.column().split()
+            col.label(text="Curve Resolution Marker:")
+            col.prop(self, "colGreaseSubdiv", text = '')
+
+        layout.column().separator()
+
+        row = layout.row()
+        row.prop(self, "handleColExpanded", icon = "TRIA_DOWN" \
+            if self.handleColExpanded else "TRIA_RIGHT",  icon_only = True, emboss = False)
+        row.label(text = "Handle Colors (Common)")#, icon = 'UNLINKED')
+
+        if self.handleColExpanded:
+            col = layout.column().split()
+            col.label(text="Free Handle:")
+            col.prop(self, "colHdlFree", text = '')
+            col = layout.column().split()
+            col.label(text="Vector Handle:")
+            col.prop(self, "colHdlVector", text = '')
+            col = layout.column().split()
+            col.label(text="Aligned Handle:")
+            col.prop(self, "colHdlAligned", text = '')
+            col = layout.column().split()
+            col.label(text="Auto Handle:")
+            col.prop(self, "colHdlAuto", text = '')
+            col = layout.column().split()
+            col.label(text="Selected Point:")
+            col.prop(self, "colSelTip", text = '')
+            col = layout.column().split()
+            col.label(text="Highlighted Point:")
+            col.prop(self, "colHltTip", text = '')
+            col = layout.column().split()
+            col.label(text="Handle Point:")
+            col.prop(self, "colHdlPtTip", text = '')
+            col = layout.column().split()
+            col.label(text="Adjacent Bezier Point:")
+            col.prop(self, "colAdjBezTip", text = '')
 
 classes = (
     ModalMarkSegStartOp,
