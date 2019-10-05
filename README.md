@@ -1,6 +1,6 @@
 
 # Blender Add-on with Bezier Utility Operations
-<b>Add-on Version: 0.9.55 </b>
+<b>Add-on Version: 0.9.57 </b>
 
 This add-on contains several tools for working with Bezier curves. <br>
 Supported Blender Version: <b>2.8</b> <br>
@@ -61,13 +61,21 @@ The subdivision point visibility can be toggled by pressing h key.<br>
 
 # Configurable Entities
 ![Configurable Options](https://github.com/Shriinivas/blenderbezierutils/blob/master/configitems.png)<br>
-Values of the following entities are user configurable via Add-ons dialog (from Preferences->Add-on Menu).
-- Bezier Toolkit Panel Tab 
+Values of a number of entities are user configurable via Add-ons dialog (from Preferences->Add-on Menu). Some of these are:
+- Bezier Toolkit Panel Tab<br>
+<b>Dimensions</b>
 - Draw Line Thickness
 - Handle Point Size
+- Uniform Subdiv Point Size
+- Flexi Grease Resolution Point Size
 - Draw Marker Size
 - Axis Line Thickness
 - Snap Point size<br>
+<b>Colors</b>
+- Selected and Adjacent Segment
+- Handle Tips & Bezier Points
+- Highlighted Points
+- Subdivision & Resolution Markers
 
 # Snapping & Locking Framework
 The Framework provides comprihensive snapping and locking options common to all three Flexi tools.
