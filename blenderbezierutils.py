@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 57),
+    "version": (0, 9, 60),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -527,6 +527,27 @@ def getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt):
                 # ~ minEdgeDist = ptDist
                 # ~ closestLoc = iLoc
     # ~ if(closestLoc != None): loc = closestLoc
+
+def get2dBBox(obj, region, rv3d):
+    mw = obj.matrix_world
+    bbox = obj.bound_box
+    co2ds = [getCoordFromLoc(region, rv3d, mw @ Vector(b)) for b in bbox]
+    minX = min(c[0] for c in co2ds)
+    maxX = max(c[0] for c in co2ds)
+    minY = min(c[1] for c in co2ds)
+    maxY = max(c[1] for c in co2ds)
+    
+    return minX, minY, maxX, maxY
+    
+def isPtIn2dBBox(obj, region, rv3d, xy):
+    minX, minY, maxX, maxY = get2dBBox(obj, region, rv3d)
+    if(xy[0] > minX and xy[0] < maxX and xy[1] > minY and xy[1] < maxY):
+        return True
+    else: return False
+
+def isLocIn2dBBox(obj, region, rv3d, loc):
+    pt = getCoordFromLoc(region, rv3d, loc)
+    return isPtIn2dBBox(pt)
 
 ###################### Op Specific functions ######################
 
@@ -2305,22 +2326,25 @@ class Snapper():
         self.angleSnap = False
         self.gridSnap = False
         self.objSnap = False
-        self.rmInfo = None
+
+        self.tm = None
+        self.orig = None
 
         self.lastSnapTypes = set()
 
         self.resetSnap()
 
-    def resetSnap(self):
+    def resetSnap(self): # Called even during isEditing
 
         self.freeAxes = [] # All axes free
         self.snapDigits.initialize()
+        self.rmInfo = None
 
         # This variable lets caller know that return was pressed after digits were entered
         # Caller can reset snapper as per convenience
         self.digitsConfirmed = False
-
         self.snapCo = None
+        
         self.inDrawAxis = False # User drawing the custom axis
         # ~ self.snapStack = [] # TODO
 
@@ -2506,7 +2530,7 @@ class Snapper():
 
         return retVal
 
-    def getStatusStr(self, unit, invTm, refPt, newPt, transformed):
+    def getStatusStr(self, unit, invTm, refPt, newPt):
         manualEntry = self.snapDigits.hasVal()
 
         if(manualEntry and self.snapDigits.polar):
@@ -2517,6 +2541,8 @@ class Snapper():
         diffVActual = invTm @ diffV
 
         retStr = ''
+        transformed = invTm != Matrix()
+        
         for i, d in enumerate(diffV):
             if(i not in axes): continue
 
@@ -2540,20 +2566,47 @@ class Snapper():
 
         return retStr
 
-    def getAllSnapLocs(self, obj, snapToAxisLine):
+    def getAllSnapLocs(self, snapToAxisLine):
         snapLocs = self.getSnapLocs()
         snapLocs.append(bpy.context.scene.cursor.location)
         snapLocs.append(Vector((0, 0, 0)))
 
         if(snapToAxisLine):
             snapLocs += self.customAxis.getSnapPts()
-
-        if(obj != None):
+        
+        vertCnt = 0
+        aos = [bpy.context.object] if bpy.context.object != None else []
+        objs = bpy.context.selected_objects + aos
+        for obj in objs:
             snapLocs.append(obj.location)
-            if(obj.type == 'MESH' and len(obj.data.vertices) < self.MAX_SNAP_VERT_CNT):
-                snapLocs += [obj.matrix_world @ v.co for v in obj.data.vertices]
-
+            if(obj.type == 'MESH'):
+                if(vertCnt + len(obj.data.vertices) < self.MAX_SNAP_VERT_CNT):
+                    snapLocs += [obj.matrix_world @ v.co for v in obj.data.vertices]
+                    vertCnt =+ len(obj.data.vertices)
+                else:
+                    break
         return snapLocs
+        
+    def getSelFaceLoc(self):
+        objCnt = 0
+        region, rv3d, xy = self.rmInfo.region, self.rmInfo.rv3d, self.rmInfo.xy
+        aos = [bpy.context.object] if bpy.context.object != None else []
+        objs = bpy.context.selected_objects + aos
+        for obj in objs:
+            if(obj.type == 'MESH'):
+                if(not isPtIn2dBBox(obj, region, rv3d, xy)): continue
+                if(len(obj.data.polygons) < self.MAX_SNAP_FACE_CNT):
+                    loc, normal, faceIdx = getFaceUnderMouse(obj, region, rv3d, \
+                        xy, self.MAX_SNAP_FACE_CNT)
+                    if(faceIdx >= 0): 
+                        return loc
+                objCnt += 1
+                if(objCnt > self.MAX_SNAP_FACE_CNT): return None
+            # For edge snapping
+            # ~ if(faceIdx >=0):
+                # ~ eLoc = getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc)
+                # ~ if(eLoc != None): loc = eLoc
+        return None
 
     def get3dLocSnap(self, rmInfo, vec = None, refreshStatus = True, \
         snapToAxisLine = True, xyDelta = [0, 0]):
@@ -2567,8 +2620,6 @@ class Snapper():
 
         refLine = self.getRefLine()
         refLineOrig = self.getRefLineOrig()
-        orig = self.getCurrOrig(obj, rmInfo)
-        if(vec == None): vec = orig
 
         inEdit = refLineOrig != None
 
@@ -2577,9 +2628,15 @@ class Snapper():
         origType = params.snapOrigin
 
         loc = None
-
-        tm = Matrix()
-        invTm = Matrix()
+        
+        if(inEdit and transType != 'REFERENCE' and origType != 'REFERENCE'):
+            tm, invTm = self.tm, self.tm.inverted()
+            orig = self.orig
+        else:
+            tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
+            orig = self.getCurrOrig(obj, rmInfo)
+        
+        if(vec == None): vec = orig
 
         self.lastSnapTypes = set()
 
@@ -2593,8 +2650,8 @@ class Snapper():
 
         if(self.objSnap):
             #TODO: Called very frequently (store the tree [without duplicating data])
-            snapLocs = self.getAllSnapLocs(obj, \
-                (snapToAxisLine and 'AXIS' in {transType, origType}))
+            snapLocs = self.getAllSnapLocs((snapToAxisLine and \
+                'AXIS' in {transType, origType})) + [orig]
 
             kd = kdtree.KDTree(len(snapLocs))
             for i, l in enumerate(snapLocs):
@@ -2608,19 +2665,15 @@ class Snapper():
                 co, idx, dist = min(searchResult, key = lambda x: x[2])
                 loc = snapLocs[idx]
                 self.lastSnapTypes.add('loc')
-            elif(obj != None and obj.type == 'MESH' \
-                and len(obj.data.polygons) < self.MAX_SNAP_FACE_CNT):
-                loc, normal, faceIdx = getFaceUnderMouse(obj, region, rv3d, \
-                    xy, self.MAX_SNAP_FACE_CNT)
-                if(faceIdx < 0): loc = None
-
-                # ~ if(faceIdx >=0):
-                    # ~ eLoc = getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc)
-                    # ~ if(eLoc != None): loc = eLoc
-
-        if(loc == None):
+            else:
+                loc = self.getSelFaceLoc()
+        
+        if(loc != None): 
+            loc = tm @ loc
+        else:
             loc = region_2d_to_location_3d(region, rv3d, xy, vec)
-
+            loc = tm @ loc
+            
             params = bpy.context.window_manager.bezierToolkitParams
             if(showSnapToPlane(params)):
                 snapToPlane = params.snapToPlane
@@ -2630,15 +2683,12 @@ class Snapper():
             if((transType != 'GLOBAL' and inEdit) or \
                 snapToPlane or self.gridSnap or \
                     self.snapDigits.hasVal() or \
-                        (inEdit and (len(freeAxesN) < 3 or self.angleSnap))):
+                        (inEdit and (len(freeAxesN) < 3 or self.angleSnap))):                
 
-                tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
-
-                if(snapToPlane or refLineOrig == None): refCo = orig
+                if(refLineOrig == None): refCo = orig
                 else: refCo = refLineOrig
 
-                refCo = tm @ refCo
-                loc = tm @ loc
+                refCo = tm @ refCo                
 
                 if(self.snapDigits.hasVal()):
                     delta = self.snapDigits.getCurrDelta()
@@ -2646,9 +2696,9 @@ class Snapper():
                     self.lastSnapTypes.add('keyboard')
                 else:
                     # Special condition for lock to single axis
-                    if(len(refLine) > 0 and self.snapCo != None \
-                        and len(freeAxesC) == 1):
-                        refCo = tm @ self.snapCo
+                    # ~ if(len(refLine) > 0 and self.snapCo != None \
+                        # ~ and len(freeAxesC) == 1):
+                        # ~ refCo = tm @ self.snapCo
                     prevCo = refCo
                     if(len(freeAxesC) == 2 or (len(freeAxesG) == 2 and snapToPlane)):
                         constrAxes = freeAxesG if (len(freeAxesG) == 2) else freeAxesC
@@ -2758,7 +2808,7 @@ class Snapper():
         if(refreshStatus and inEdit):
             refPt = tm @ orig
             newPt = loc.copy()
-            text = self.getStatusStr(unit, invTm, refPt, newPt, tm != Matrix())
+            text = self.getStatusStr(unit, invTm, refPt, newPt)
         else:
             text = None
 
@@ -2766,6 +2816,7 @@ class Snapper():
         loc = invTm @ loc
         self.snapCo = loc
         self.tm = tm
+        self.orig = orig
 
         return loc
 
@@ -2789,9 +2840,10 @@ class Snapper():
         freeAxesC = self.getFreeAxesCombined()
         freeAxesN = self.getFreeAxesNormalized()
 
-        tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
+        if(self.tm != None): tm, invTm = self.tm, self.tm.inverted()  
+        else: tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
+        orig = self.orig if(self.orig != None) else self.getCurrOrig(obj, rmInfo)
 
-        orig = self.getCurrOrig(obj, rmInfo)
         params = bpy.context.window_manager.bezierToolkitParams
         transType = params.snapOrient
         snapOrigin = params.snapOrigin
@@ -3003,13 +3055,6 @@ class ModalBaseFlexiOp(Operator):
             self.cancelOp(context)
             return {"CANCELLED"}
 
-        if(not self.hasSelection() and event.type == 'ESC'):
-            if(event.value == 'RELEASE'):
-                self.cancelOp(context)
-                resetToolbarTool()
-                return {"CANCELLED"}
-            return {'RUNNING_MODAL'}
-
         rmInfo = RegionMouseXYInfo.getRegionMouseXYInfo(event, self.exclToolRegion())
         if(self.isEditing() and self.rmInfo != rmInfo):
             return {'RUNNING_MODAL'}
@@ -3018,6 +3063,13 @@ class ModalBaseFlexiOp(Operator):
 
         self.rmInfo = rmInfo
         snapProc = self.snapper.procEvent(context, event, rmInfo)
+
+        if(not snapProc and not self.hasSelection() and event.type == 'ESC'):
+            if(event.value == 'RELEASE'):
+                self.cancelOp(context)
+                resetToolbarTool()
+                return {"CANCELLED"}
+            return {'RUNNING_MODAL'}
 
         return self.subModal(context, event, snapProc)
 
@@ -5279,120 +5331,127 @@ def updatePanel(self, context):
 
 def updateProps(self, context):
     try:
-        panel = BezierUtilsPanel
-        panel.bl_category = context.preferences.addons[__name__].preferences.category        
-        try:
-            ModalBaseFlexiOp.drawPtSize = \
-                context.preferences.addons[__name__].preferences.drawPtSize
-            ModalBaseFlexiOp.lineWidth = \
-                context.preferences.addons[__name__].preferences.drawLineWidth
+        prefs = context.preferences.addons[__name__].preferences
+        BezierUtilsPanel.bl_category = prefs.category        
+        ModalBaseFlexiOp.drawPtSize = prefs.drawPtSize
+        ModalBaseFlexiOp.lineWidth = prefs.drawLineWidth
 
-            ModalBaseFlexiOp.axisLineWidth = \
-                context.preferences.addons[__name__].preferences.axisLineWidth
-            ModalBaseFlexiOp.snapPtSize = \
-                context.preferences.addons[__name__].preferences.snapPtSize
-            ModalBaseFlexiOp.editSubdivPtSize = \
-                context.preferences.addons[__name__].preferences.editSubdivPtSize
-            ModalBaseFlexiOp.greaseSubdivPtSize = \
-                context.preferences.addons[__name__].preferences.greaseSubdivPtSize
+        ModalBaseFlexiOp.axisLineWidth = prefs.axisLineWidth
+        ModalBaseFlexiOp.snapPtSize = prefs.snapPtSize
+        ModalBaseFlexiOp.editSubdivPtSize = prefs.editSubdivPtSize
+        ModalBaseFlexiOp.greaseSubdivPtSize = prefs.greaseSubdivPtSize
 
-            ModalBaseFlexiOp.colDrawSelSeg = \
-                context.preferences.addons[__name__].preferences.colDrawSelSeg
-            ModalBaseFlexiOp.colDrawNonHltSeg = \
-                context.preferences.addons[__name__].preferences.colDrawNonHltSeg
-            ModalBaseFlexiOp.colDrawHltSeg = \
-                context.preferences.addons[__name__].preferences.colDrawHltSeg
-            ModalBaseFlexiOp.colDrawMarker = \
-                context.preferences.addons[__name__].preferences.colDrawMarker
+        ModalBaseFlexiOp.colDrawSelSeg = prefs.colDrawSelSeg
+        ModalBaseFlexiOp.colDrawNonHltSeg = prefs.colDrawNonHltSeg
+        ModalBaseFlexiOp.colDrawHltSeg = prefs.colDrawHltSeg
+        ModalBaseFlexiOp.colDrawMarker = prefs.colDrawMarker
 
-            ModalBaseFlexiOp.colGreaseSelSeg = \
-                context.preferences.addons[__name__].preferences.colGreaseSelSeg
-            ModalBaseFlexiOp.colGreaseNonHltSeg = \
-                context.preferences.addons[__name__].preferences.colGreaseNonHltSeg
-            ModalBaseFlexiOp.colGreaseMarker = \
-                context.preferences.addons[__name__].preferences.colGreaseMarker
+        ModalBaseFlexiOp.colGreaseSelSeg = prefs.colGreaseSelSeg
+        ModalBaseFlexiOp.colGreaseNonHltSeg = prefs.colGreaseNonHltSeg
+        ModalBaseFlexiOp.colGreaseMarker = prefs.colGreaseMarker
 
-            ModalBaseFlexiOp.colHdlFree = \
-                context.preferences.addons[__name__].preferences.colHdlFree
-            ModalBaseFlexiOp.colHdlVector = \
-                context.preferences.addons[__name__].preferences.colHdlVector
-            ModalBaseFlexiOp.colHdlAligned = \
-                context.preferences.addons[__name__].preferences.colHdlAligned
-            ModalBaseFlexiOp.colHdlAuto = \
-                context.preferences.addons[__name__].preferences.colHdlAuto
+        ModalBaseFlexiOp.colHdlFree = prefs.colHdlFree
+        ModalBaseFlexiOp.colHdlVector = prefs.colHdlVector
+        ModalBaseFlexiOp.colHdlAligned = prefs.colHdlAligned
+        ModalBaseFlexiOp.colHdlAuto = prefs.colHdlAuto
 
-            ModalBaseFlexiOp.colSelTip = \
-                context.preferences.addons[__name__].preferences.colSelTip
-            ModalBaseFlexiOp.colHltTip = \
-                context.preferences.addons[__name__].preferences.colHltTip
-            ModalBaseFlexiOp.colBezPt = \
-                context.preferences.addons[__name__].preferences.colBezPt
-            ModalBaseFlexiOp.colHdlPtTip = \
-                context.preferences.addons[__name__].preferences.colHdlPtTip
-            ModalBaseFlexiOp.colAdjBezTip = \
-                context.preferences.addons[__name__].preferences.colAdjBezTip
+        ModalBaseFlexiOp.colSelTip = prefs.colSelTip
+        ModalBaseFlexiOp.colHltTip = prefs.colHltTip
+        ModalBaseFlexiOp.colBezPt = prefs.colBezPt
+        ModalBaseFlexiOp.colHdlPtTip = prefs.colHdlPtTip
+        ModalBaseFlexiOp.colAdjBezTip = prefs.colAdjBezTip
 
-            ModalBaseFlexiOp.colEditSubdiv = \
-                context.preferences.addons[__name__].preferences.colEditSubdiv
-            ModalBaseFlexiOp.colGreaseSubdiv = \
-                context.preferences.addons[__name__].preferences.colGreaseSubdiv
-            ModalBaseFlexiOp.colGreaseBezPt = \
-                context.preferences.addons[__name__].preferences.colGreaseBezPt
-
-        except Exception as e:
-            print("BezierUtils: Error fetching default sizes in Draw Bezier", e)
-            ModalBaseFlexiOp.drawPtSize = 4
-            ModalBaseFlexiOp.lineWidth = 1.5
-            ModalBaseFlexiOp.axisLineWidth = .25
-            ModalBaseFlexiOp.snapPtSize = 2
-            ModalBaseFlexiOp.editSubdivPtSize = 6
-            ModalBaseFlexiOp.greaseSubdivPtSize = 4
-
-            ModalBaseFlexiOp.colDrawSelSeg = (.6, .8, 1, 1) # DRAW_SEL_SEG_COLOR
-            ModalBaseFlexiOp.colDrawNonHltSeg = (.1, .4, .6, 1) # DRAW_ADJ_SEG_COLOR
-            ModalBaseFlexiOp.colDrawHltSeg = (.2, .6, .9, 1) # DRAW_NONADJ_SEG_COLOR
-
-            ModalBaseFlexiOp.colGreaseSelSeg = (0.2, .8, 0.2, 1) # GREASE_SEL_SEG_COLOR
-            ModalBaseFlexiOp.colGreaseNonHltSeg = (0.2, .6, 0.2, 1) # GREASE_ADJ_SEG_COLOR
-
-            ModalBaseFlexiOp.colHdlFree = (.6, .05, .05, 1) # HANDLE_COLOR_FREE
-            ModalBaseFlexiOp.colHdlVector = (.4, .5, .2, 1) # HANDLE_COLOR_VECTOR
-            ModalBaseFlexiOp.colHdlAligned = (1, .3, .3, 1) # HANDLE_COLOR_ALIGNED
-            ModalBaseFlexiOp.colHdlAuto = (.8, .5, .2, 1) # HANDLE_COLOR_AUTO
-
-            ModalBaseFlexiOp.colDrawMarker = (.6, .8, 1, 1) # DRAW_MARKER_COLOR
-            ModalBaseFlexiOp.colGreaseMarker = (0.2, .8, 0.2, 1) # GREASE_MARKER_COLOR
-
-            ModalBaseFlexiOp.colSelTip = (.2, .7, .3, 1) # SEL_TIP_COLOR
-            ModalBaseFlexiOp.colHltTip = (.2, 1, .9, 1) # HLT_TIP_COLOR
-            ModalBaseFlexiOp.colBezPt = (1, 1, 0, 1) # ENDPT_TIP_COLOR
-            ModalBaseFlexiOp.colHdlPtTip = (.7, .7, 0, 1) # TIP_COLOR
-            ModalBaseFlexiOp.colAdjBezTip = (.1, .1, .1, 1) # ADJ_ENDPT_TIP_COLOR
-
-            ModalBaseFlexiOp.colEditSubdiv = (.3, 0, 0, 1) # EDIT_SUBDIV_PT_COLOR
-
-            ModalBaseFlexiOp.colGreaseSubdiv = (1, .3, 1, 1) # GREASE_SUBDIV_PT_COLOR
-            ModalBaseFlexiOp.colGreaseBezPt = (1, .3, 1, 1) # GREASE_ENDPT_TIP_COLOR
-
-        ModalBaseFlexiOp.segColPriority = {ModalBaseFlexiOp.colDrawNonHltSeg: 0, \
-            ModalBaseFlexiOp.colDrawHltSeg: 1, ModalBaseFlexiOp.colDrawSelSeg: 2}
-
-        ModalBaseFlexiOp.hdlColMap ={'FREE': ModalBaseFlexiOp.colHdlFree, \
-            'VECTOR': ModalBaseFlexiOp.colHdlVector,  \
-                'ALIGNED': ModalBaseFlexiOp.colHdlAligned, \
-                    'AUTO': ModalBaseFlexiOp.colHdlAuto}
-
-        ModalBaseFlexiOp.tipColPriority = {ModalBaseFlexiOp.colAdjBezTip: 0, \
-            ModalBaseFlexiOp.colHdlPtTip: 1, ModalBaseFlexiOp.colBezPt: 2, \
-                ModalBaseFlexiOp.colGreaseBezPt: 3, ModalBaseFlexiOp.colSelTip : 4, \
-                    ModalBaseFlexiOp.colHltTip : 5, ModalBaseFlexiOp.colDrawMarker: 6, \
-                        ModalBaseFlexiOp.colGreaseMarker: 7}
+        ModalBaseFlexiOp.colEditSubdiv = prefs.colEditSubdiv
+        ModalBaseFlexiOp.colGreaseSubdiv = prefs.colGreaseSubdiv
+        ModalBaseFlexiOp.colGreaseBezPt = prefs.colGreaseBezPt
 
     except Exception as e:
-        print("BezierUtils: Error fetching preferences", e)
+        print("BezierUtils: Error fetching default sizes in Draw Bezier", e)
+        ModalBaseFlexiOp.drawPtSize = 4
+        ModalBaseFlexiOp.lineWidth = 1.5
+        ModalBaseFlexiOp.axisLineWidth = .25
+        ModalBaseFlexiOp.snapPtSize = 2
+        ModalBaseFlexiOp.editSubdivPtSize = 6
+        ModalBaseFlexiOp.greaseSubdivPtSize = 4
 
-    try: ModalBaseFlexiOp.opObj.refreshDisplaySelCurves() 
-    except: pass
+        ModalBaseFlexiOp.colDrawSelSeg = (.6, .8, 1, 1) # DRAW_SEL_SEG_COLOR
+        ModalBaseFlexiOp.colDrawNonHltSeg = (.1, .4, .6, 1) # DRAW_ADJ_SEG_COLOR
+        ModalBaseFlexiOp.colDrawHltSeg = (.2, .6, .9, 1) # DRAW_NONADJ_SEG_COLOR
+
+        ModalBaseFlexiOp.colGreaseSelSeg = (0.2, .8, 0.2, 1) # GREASE_SEL_SEG_COLOR
+        ModalBaseFlexiOp.colGreaseNonHltSeg = (0.2, .6, 0.2, 1) # GREASE_ADJ_SEG_COLOR
+
+        ModalBaseFlexiOp.colHdlFree = (.6, .05, .05, 1) # HANDLE_COLOR_FREE
+        ModalBaseFlexiOp.colHdlVector = (.4, .5, .2, 1) # HANDLE_COLOR_VECTOR
+        ModalBaseFlexiOp.colHdlAligned = (1, .3, .3, 1) # HANDLE_COLOR_ALIGNED
+        ModalBaseFlexiOp.colHdlAuto = (.8, .5, .2, 1) # HANDLE_COLOR_AUTO
+
+        ModalBaseFlexiOp.colDrawMarker = (.6, .8, 1, 1) # DRAW_MARKER_COLOR
+        ModalBaseFlexiOp.colGreaseMarker = (0.2, .8, 0.2, 1) # GREASE_MARKER_COLOR
+
+        ModalBaseFlexiOp.colSelTip = (.2, .7, .3, 1) # SEL_TIP_COLOR
+        ModalBaseFlexiOp.colHltTip = (.2, 1, .9, 1) # HLT_TIP_COLOR
+        ModalBaseFlexiOp.colBezPt = (1, 1, 0, 1) # ENDPT_TIP_COLOR
+        ModalBaseFlexiOp.colHdlPtTip = (.7, .7, 0, 1) # TIP_COLOR
+        ModalBaseFlexiOp.colAdjBezTip = (.1, .1, .1, 1) # ADJ_ENDPT_TIP_COLOR
+
+        ModalBaseFlexiOp.colEditSubdiv = (.3, 0, 0, 1) # EDIT_SUBDIV_PT_COLOR
+
+        ModalBaseFlexiOp.colGreaseSubdiv = (1, .3, 1, 1) # GREASE_SUBDIV_PT_COLOR
+        ModalBaseFlexiOp.colGreaseBezPt = (1, .3, 1, 1) # GREASE_ENDPT_TIP_COLOR
+
+    ModalBaseFlexiOp.segColPriority = {ModalBaseFlexiOp.colDrawNonHltSeg: 0, \
+        ModalBaseFlexiOp.colDrawHltSeg: 1, ModalBaseFlexiOp.colDrawSelSeg: 2}
+
+    ModalBaseFlexiOp.hdlColMap ={'FREE': ModalBaseFlexiOp.colHdlFree, \
+        'VECTOR': ModalBaseFlexiOp.colHdlVector,  \
+            'ALIGNED': ModalBaseFlexiOp.colHdlAligned, \
+                'AUTO': ModalBaseFlexiOp.colHdlAuto}
+
+    ModalBaseFlexiOp.tipColPriority = {ModalBaseFlexiOp.colAdjBezTip: 0, \
+        ModalBaseFlexiOp.colHdlPtTip: 1, ModalBaseFlexiOp.colBezPt: 2, \
+            ModalBaseFlexiOp.colGreaseBezPt: 3, ModalBaseFlexiOp.colSelTip : 4, \
+                ModalBaseFlexiOp.colHltTip : 5, ModalBaseFlexiOp.colDrawMarker: 6, \
+                    ModalBaseFlexiOp.colGreaseMarker: 7}
+
+    if(updateProps.refreshDisp):
+        try: ModalBaseFlexiOp.opObj.refreshDisplaySelCurves() 
+        except: pass
+
+updateProps.refreshDisp = True
+
+
+class ResetDefaultPropsOp(bpy.types.Operator):
+    bl_idname = "object.reset_default_props"
+    bl_label = "Reset"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Reset all values to default"
+
+    def execute(self, context):
+        panel = BezierUtilsPanel
+        prefs = context.preferences.addons[__name__].preferences
+        props = prefs.bl_rna.properties
+        updateProps.refreshDisp = False
+        for prop in props:
+            try: 
+                if(not hasattr(prop, "default")): continue
+                if(prop.type == 'STRING' and prop.identifier == 'category'):
+                    execStr = 'prefs.' + prop.identifier + ' =  "' + \
+                        str(prop.default) + '"'
+                    exec(execStr)                
+                elif hasattr(prop, "default_array") and getattr(prop, "is_array", True):
+                    for i, a in enumerate(prop.default_array):
+                        execStr = 'prefs.' + prop.identifier + '[' + str(i) + '] = ' + str(a)
+                        exec(execStr)                
+                else:
+                    execStr = 'prefs.' + prop.identifier + ' =  ' + str(prop.default)
+                    exec(execStr)                
+            except Exception as e:
+                print(e)
+        updateProps.refreshDisp = True
+        updateProps(None, context)
+        return {'FINISHED'}
+
 
 class BezierUtilsPreferences(AddonPreferences):
     bl_idname = __name__
@@ -5603,8 +5662,6 @@ class BezierUtilsPreferences(AddonPreferences):
     greaseColExpanded: BoolProperty(name="Grease Col Expanded State", default = False)
     handleColExpanded: BoolProperty(name="Handle Col Expanded State", default = False)
 
-    # TODO Subdiv point size, seg / handle colors etc.
-
     def draw(self, context):
         layout = self.layout
         col = layout.column().split()
@@ -5724,6 +5781,8 @@ class BezierUtilsPreferences(AddonPreferences):
             col = layout.column().split()
             col.label(text="Adjacent Bezier Point:")
             col.prop(self, "colAdjBezTip", text = '')
+        col = layout.column()
+        col.operator('object.reset_default_props')
 
 classes = (
     ModalMarkSegStartOp,
@@ -5748,6 +5807,7 @@ classes = (
     ModalFlexiEditBezierOp,
     BezierUtilsPreferences,
     BezierToolkitParams,
+    ResetDefaultPropsOp,
 )
 
 def register():
