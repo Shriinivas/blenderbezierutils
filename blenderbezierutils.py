@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 60),
+    "version": (0, 9, 61),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -2306,10 +2306,13 @@ class Snapper():
     MAX_SNAP_VERT_CNT = 500
     MAX_SNAP_FACE_CNT = 500
 
-    def __init__(self, context, getSnapLocs, getRefLine, getRefLineOrig):
+    def __init__(self, context, getSnapLocs, getRefLine, getRefLineOrig, \
+        hasSelection, isEditing):
         self.getSnapLocs = getSnapLocs
         self.getRefLine = getRefLine
         self.getRefLineOrig = getRefLineOrig
+        self.hasSelection = hasSelection
+        self.isEditing = isEditing
         self.angleSnapSteps = Snapper.DEFAULT_ANGLE_SNAP_STEPS
         self.customAxis = CustomAxis()
         self.snapDigits = SnapDigits(self.getFreeAxesNormalized, self.getEditCoPair)
@@ -2486,6 +2489,12 @@ class Snapper():
                 self.digitsConfirmed = False # Always reset if there was any digit entered
                 return True
 
+        if(not self.ctrl and event.type == 'U'):
+            if(event.value == 'RELEASE'):
+                self.tm = None # Force reorientation
+                self.orig = None # Force origin shift
+            return True
+            
         if(not self.ctrl and event.type in {'X', 'Y', 'Z'}):
             self.digitsConfirmed = False # Always reset if there is any lock axis
             if(event.value == 'RELEASE'):
@@ -2621,7 +2630,8 @@ class Snapper():
         refLine = self.getRefLine()
         refLineOrig = self.getRefLineOrig()
 
-        inEdit = refLineOrig != None
+        inEdit = self.isEditing()
+        hasSel = self.hasSelection()
 
         params = bpy.context.window_manager.bezierToolkitParams
         transType = params.snapOrient
@@ -2629,11 +2639,14 @@ class Snapper():
 
         loc = None
         
-        if(inEdit and transType != 'REFERENCE' and origType != 'REFERENCE'):
+        if(self.tm != None and hasSel and transType != 'REFERENCE'):
             tm, invTm = self.tm, self.tm.inverted()
-            orig = self.orig
         else:
             tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
+         
+        if(self.orig != None and hasSel and origType != 'REFERENCE'):
+            orig = self.orig
+        else:
             orig = self.getCurrOrig(obj, rmInfo)
         
         if(vec == None): vec = orig
@@ -2685,10 +2698,11 @@ class Snapper():
                     self.snapDigits.hasVal() or \
                         (inEdit and (len(freeAxesN) < 3 or self.angleSnap))):                
 
-                if(refLineOrig == None): refCo = orig
+                # snapToPlane means global constrain axes is a plane
+                if(snapToPlane or refLineOrig == None): refCo = orig
                 else: refCo = refLineOrig
 
-                refCo = tm @ refCo                
+                refCo = tm @ refCo
 
                 if(self.snapDigits.hasVal()):
                     delta = self.snapDigits.getCurrDelta()
@@ -2696,10 +2710,8 @@ class Snapper():
                     self.lastSnapTypes.add('keyboard')
                 else:
                     # Special condition for lock to single axis
-                    # ~ if(len(refLine) > 0 and self.snapCo != None \
-                        # ~ and len(freeAxesC) == 1):
-                        # ~ refCo = tm @ self.snapCo
-                    prevCo = refCo
+                    if(len(freeAxesC) == 1 and refLineOrig != None):
+                        refCo = tm @ refLineOrig
                     if(len(freeAxesC) == 2 or (len(freeAxesG) == 2 and snapToPlane)):
                         constrAxes = freeAxesG if (len(freeAxesG) == 2) else freeAxesC
                         loc = refCo.copy()
@@ -2720,34 +2732,35 @@ class Snapper():
                             if(pt == None or pt[axis] > 1000):
                                 loc[axis] = refCo[axis]
                             else: loc[axis] = (tm @ pt)[axis]
-                        prevCo = loc
                         self.lastSnapTypes.add('axis2')
 
                     if(len(freeAxesC) == 1 and len(refLine) > 0):
-
+                        
                         axis = freeAxesC[0]
                         # Any one point on axis
-                        ptOnAxis = prevCo.copy()
-                        ptOnAxis[axis] += 10
-
+                        ptOnAxis = refCo.copy()
+                        
                         # Convert everything to 2d
+                        lastCo2d = getCoordFromLoc(region, rv3d, invTm @ refCo)
+
+                        # Very small distance so that the point is on viewport
+                        # TODO: This is not foolproof :(
+                        ptOnAxis[axis] += .01
                         ptOnAxis2d = getCoordFromLoc(region, rv3d, invTm @ ptOnAxis)
-                        lastCo2d = getCoordFromLoc(region, rv3d, invTm @ prevCo)
+                        # ~ showPt2D(ptOnAxis2d)
 
                         # Find 2d projection (needed)
-                        pt2d = geometry.intersect_point_line(xy, \
-                            lastCo2d, ptOnAxis2d)[0]
-
+                        pt2d = geometry.intersect_point_line(xy, lastCo2d, ptOnAxis2d)[0]
                         # Any other 2 points on the plane, on which the axis lies
-                        ppt1 = prevCo.copy()
+                        ppt1 = refCo.copy()
                         ppt1[axis] += 10
                         newAxis = [i for i in range(0, 3) if i != axis][0]
-                        ppt2 = prevCo.copy()
+                        ppt2 = refCo.copy()
                         ppt2[newAxis] += 10
 
                         # Raycast from 2d point onto the plane
                         pt = getPtProjOnPlane(region, rv3d, pt2d, \
-                            invTm @ prevCo, invTm @ ppt1, invTm @ ppt2)
+                            invTm @ refCo, invTm @ ppt1, invTm @ ppt2)
                         loc = refCo.copy()
                         if(pt == None or pt[axis] > 1000):
                             loc[axis] = refCo[axis]
@@ -2840,9 +2853,15 @@ class Snapper():
         freeAxesC = self.getFreeAxesCombined()
         freeAxesN = self.getFreeAxesNormalized()
 
-        if(self.tm != None): tm, invTm = self.tm, self.tm.inverted()  
-        else: tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
-        orig = self.orig if(self.orig != None) else self.getCurrOrig(obj, rmInfo)
+        if(self.tm != None): 
+            tm, invTm = self.tm, self.tm.inverted()  
+        else: 
+            tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
+
+        if(self.orig != None): 
+            orig = self.orig
+        else:
+            orig = self.getCurrOrig(obj, rmInfo)
 
         params = bpy.context.window_manager.bezierToolkitParams
         transType = params.snapOrient
@@ -3023,7 +3042,7 @@ class ModalBaseFlexiOp(Operator):
         context.space_data.show_region_tool_header = True
 
         self.snapper = Snapper(context, self.getSnapLocs, \
-            self.getRefLine, self.getRefLineOrig)
+            self.getRefLine, self.getRefLineOrig, self.hasSelection, self.isEditing)
 
         self.rmInfo = None
 
@@ -4167,6 +4186,7 @@ class SelectCurveInfo:
 
     def resetSel(self):
         self._clickLoc = None
+        self._t = None
         self._ctrlIdx = None
 
     def getClickLoc(self):
@@ -4202,7 +4222,7 @@ class SelectCurveInfo:
             if(vectCmpWithMargin(pts[idx0][idx1], pts[idx0][1])):
                 self._ctrlIdx = idx0 * 3 + 1
             self._clickLoc = None
-            self.t = None
+            self._t = None
 
     def getSelCo(self):
         if(self._ctrlIdx != None):
@@ -5849,4 +5869,3 @@ def unregister():
 
     # ~ bpy.utils.unregister_tool(FlexiDrawBezierTool) (T60766)
     # ~ bpy.utils.unregister_tool(FlexiEditBezierTool) (T60766)
-
