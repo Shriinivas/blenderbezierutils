@@ -472,11 +472,11 @@ def getAllAreaRegions():
     info = []
     areas = []
     i = 0
-    
+
     # bpy.context.screen doesn't work in case of Add-on Config window
     while(len(areas) == 0 and i < len(bpy.data.screens)):
         areas = [a for a in bpy.data.screens[i].areas if(a.type == 'VIEW_3D')]
-        
+
     for a in areas:
         regions = [r for r in a.regions if r.type == 'WINDOW']
         if(len(a.spaces[0].region_quadviews) > 0):
@@ -507,8 +507,26 @@ def getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt):
     rayDirObj = rayTargetObj - rayOrigObj
 
     success, location, normal, faceIdx = obj.ray_cast(rayOrigObj, rayDirObj)
-
     return mw @ location, normal, faceIdx
+
+def getSelFaceLoc(region, rv3d, xy, maxFaceCnt):
+    objCnt = 0
+    aos = [bpy.context.object] if bpy.context.object != None else []
+    objs = bpy.context.selected_objects + aos
+    for obj in objs:
+        if(obj.type == 'MESH'):
+            if(not isPtIn2dBBox(obj, region, rv3d, xy)): continue
+            loc, normal, faceIdx = getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt)
+            if(faceIdx >= 0):
+                return obj, loc, normal, faceIdx
+            objCnt += 1
+            if(objCnt > maxFaceCnt): return None, None, None, -1
+        # For edge snapping
+        # ~ if(faceIdx >=0):
+            # ~ eLoc = getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc)
+            # ~ if(eLoc != None): loc = eLoc
+    return None, None, None, -1
+
 
 # ~ def getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc):
     # ~ p1 = (0, 0)
@@ -536,9 +554,9 @@ def get2dBBox(obj, region, rv3d):
     maxX = max(c[0] for c in co2ds)
     minY = min(c[1] for c in co2ds)
     maxY = max(c[1] for c in co2ds)
-    
+
     return minX, minY, maxX, maxY
-    
+
 def isPtIn2dBBox(obj, region, rv3d, xy):
     minX, minY, maxX, maxY = get2dBBox(obj, region, rv3d)
     if(xy[0] > minX and xy[0] < maxX and xy[1] > minY and xy[1] < maxY):
@@ -2019,7 +2037,7 @@ def getBezierBatches(shader, displayInfos, areaRegionInfo, defHdlType = 'ALIGNED
 
     tipColInfo = sorted(tipColInfo, \
         key = lambda x: ModalBaseFlexiOp.tipColPriority[x[0]])
-        
+
     for ti in tipColInfo:
         tipColors.append(ti[0])
         tipCos.append(ti[1])
@@ -2303,8 +2321,8 @@ class CustomAxis:
 class Snapper():
 
     DEFAULT_ANGLE_SNAP_STEPS = 3
-    MAX_SNAP_VERT_CNT = 500
-    MAX_SNAP_FACE_CNT = 500
+    MAX_SNAP_VERT_CNT = 1000
+    MAX_SNAP_FACE_CNT = 1000
 
     def __init__(self, context, getSnapLocs, getRefLine, getRefLineOrig, \
         hasSelection, isEditing):
@@ -2347,7 +2365,7 @@ class Snapper():
         # Caller can reset snapper as per convenience
         self.digitsConfirmed = False
         self.snapCo = None
-        
+
         self.inDrawAxis = False # User drawing the custom axis
         # ~ self.snapStack = [] # TODO
 
@@ -2388,11 +2406,11 @@ class Snapper():
             refLineOrig = self.getRefLineOrig()
             if(refLineOrig != None): return refLineOrig
         elif(snapOrigin == 'OBJECT' and obj != None): return obj.location
-        elif(snapOrigin == 'FACE' and obj != None and rmInfo != None):
-            location, normal, faceIdx = getFaceUnderMouse(obj, rmInfo.region, \
+        elif(snapOrigin == 'FACE' and rmInfo != None):
+            selObj, location, normal, faceIdx = getSelFaceLoc(rmInfo.region, \
                 rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT)
-            if(faceIdx >= 0): return obj.matrix_world @ obj.data.polygons[faceIdx].center
-            else: return obj.location
+            if(faceIdx >= 0):
+                    return selObj.matrix_world @ selObj.data.polygons[faceIdx].center
         elif(snapOrigin == 'CURSOR'): return bpy.context.scene.cursor.location
         return Vector((0, 0, 0))
 
@@ -2423,16 +2441,15 @@ class Snapper():
         elif(orientType == 'VIEW'):
             tm = rmInfo.rv3d.view_matrix
 
-        if(obj != None):
-            if(orientType == 'FACE'):
-                location, normal, faceIdx = getFaceUnderMouse(obj, rmInfo.region, \
-                    rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT)
-                if(faceIdx >= 0):
-                    normal = obj.data.polygons[faceIdx].normal
-                    tm = normal.to_track_quat('Z', 'X').to_matrix().to_4x4().inverted()
-
-            if(orientType == 'OBJECT' or (orientType == 'FACE' and faceIdx < 0)):
+        if(obj != None and orientType == 'OBJECT'):
                 tm = obj.matrix_world.inverted()
+
+        if(orientType == 'FACE'):
+            selObj, location, normal, faceIdx = getSelFaceLoc(rmInfo.region, \
+                rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT)
+            if(faceIdx >= 0):
+                normal = selObj.data.polygons[faceIdx].normal
+                tm = normal.to_track_quat('Z', 'X').to_matrix().to_4x4().inverted()
 
         return tm, tm.inverted()
 
@@ -2494,7 +2511,7 @@ class Snapper():
                 self.tm = None # Force reorientation
                 self.orig = None # Force origin shift
             return True
-            
+
         if(not self.ctrl and event.type in {'X', 'Y', 'Z'}):
             self.digitsConfirmed = False # Always reset if there is any lock axis
             if(event.value == 'RELEASE'):
@@ -2551,7 +2568,7 @@ class Snapper():
 
         retStr = ''
         transformed = invTm != Matrix()
-        
+
         for i, d in enumerate(diffV):
             if(i not in axes): continue
 
@@ -2582,7 +2599,7 @@ class Snapper():
 
         if(snapToAxisLine):
             snapLocs += self.customAxis.getSnapPts()
-        
+
         vertCnt = 0
         aos = [bpy.context.object] if bpy.context.object != None else []
         objs = bpy.context.selected_objects + aos
@@ -2595,27 +2612,6 @@ class Snapper():
                 else:
                     break
         return snapLocs
-        
-    def getSelFaceLoc(self):
-        objCnt = 0
-        region, rv3d, xy = self.rmInfo.region, self.rmInfo.rv3d, self.rmInfo.xy
-        aos = [bpy.context.object] if bpy.context.object != None else []
-        objs = bpy.context.selected_objects + aos
-        for obj in objs:
-            if(obj.type == 'MESH'):
-                if(not isPtIn2dBBox(obj, region, rv3d, xy)): continue
-                if(len(obj.data.polygons) < self.MAX_SNAP_FACE_CNT):
-                    loc, normal, faceIdx = getFaceUnderMouse(obj, region, rv3d, \
-                        xy, self.MAX_SNAP_FACE_CNT)
-                    if(faceIdx >= 0): 
-                        return loc
-                objCnt += 1
-                if(objCnt > self.MAX_SNAP_FACE_CNT): return None
-            # For edge snapping
-            # ~ if(faceIdx >=0):
-                # ~ eLoc = getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc)
-                # ~ if(eLoc != None): loc = eLoc
-        return None
 
     def get3dLocSnap(self, rmInfo, vec = None, refreshStatus = True, \
         snapToAxisLine = True, xyDelta = [0, 0]):
@@ -2638,12 +2634,12 @@ class Snapper():
         origType = params.snapOrigin
 
         loc = None
-        
+
         if(self.tm != None and hasSel and transType != 'REFERENCE'):
             tm, invTm = self.tm, self.tm.inverted()
         else:
             tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
-         
+
         if(self.orig != None and hasSel and origType != 'REFERENCE'):
             orig = self.orig
         else:
@@ -2679,14 +2675,15 @@ class Snapper():
                 loc = snapLocs[idx]
                 self.lastSnapTypes.add('loc')
             else:
-                loc = self.getSelFaceLoc()
-        
-        if(loc != None): 
+                selObj, loc, normal, faceIdx = \
+                    getSelFaceLoc(region, rv3d, xy, self.MAX_SNAP_FACE_CNT)
+
+        if(loc != None):
             loc = tm @ loc
         else:
             loc = region_2d_to_location_3d(region, rv3d, xy, vec)
             loc = tm @ loc
-            
+
             params = bpy.context.window_manager.bezierToolkitParams
             if(showSnapToPlane(params)):
                 snapToPlane = params.snapToPlane
@@ -2696,9 +2693,9 @@ class Snapper():
             if((transType != 'GLOBAL' and inEdit) or \
                 snapToPlane or self.gridSnap or \
                     self.snapDigits.hasVal() or \
-                        (inEdit and (len(freeAxesN) < 3 or self.angleSnap))):                
+                        (inEdit and (len(freeAxesN) < 3 or self.angleSnap))):
 
-                # snapToPlane means global constrain axes is a plane
+                # snapToPlane means global constrain axes selection is a plane
                 if(snapToPlane or refLineOrig == None): refCo = orig
                 else: refCo = refLineOrig
 
@@ -2735,11 +2732,11 @@ class Snapper():
                         self.lastSnapTypes.add('axis2')
 
                     if(len(freeAxesC) == 1 and len(refLine) > 0):
-                        
+
                         axis = freeAxesC[0]
                         # Any one point on axis
                         ptOnAxis = refCo.copy()
-                        
+
                         # Convert everything to 2d
                         lastCo2d = getCoordFromLoc(region, rv3d, invTm @ refCo)
 
@@ -2747,7 +2744,6 @@ class Snapper():
                         # TODO: This is not foolproof :(
                         ptOnAxis[axis] += .01
                         ptOnAxis2d = getCoordFromLoc(region, rv3d, invTm @ ptOnAxis)
-                        # ~ showPt2D(ptOnAxis2d)
 
                         # Find 2d projection (needed)
                         pt2d = geometry.intersect_point_line(xy, lastCo2d, ptOnAxis2d)[0]
@@ -2853,12 +2849,12 @@ class Snapper():
         freeAxesC = self.getFreeAxesCombined()
         freeAxesN = self.getFreeAxesNormalized()
 
-        if(self.tm != None): 
-            tm, invTm = self.tm, self.tm.inverted()  
-        else: 
+        if(self.tm != None):
+            tm, invTm = self.tm, self.tm.inverted()
+        else:
             tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
 
-        if(self.orig != None): 
+        if(self.orig != None):
             orig = self.orig
         else:
             orig = self.getCurrOrig(obj, rmInfo)
@@ -3051,7 +3047,7 @@ class ModalBaseFlexiOp(Operator):
         context.window_manager.modal_handler_add(self)
 
         ModalBaseFlexiOp.ColGreaseHltSeg = (.3, .3, .3, 1) # Not used
-        
+
         updateProps(None, context)
 
         return self.subInvoke(context, event)
@@ -4385,14 +4381,14 @@ class SelectCurveInfo:
     # TODO: Better: Single Obj with multiples splineIdxs
     def getDisplayInfos(self, segPts = None, hltInfo = None, hideHdls = False,
         selSegCol = None, includeAdj = True):
-        
+
         # Making long short
-        cHltTip = ModalBaseFlexiOp.colHltTip 
+        cHltTip = ModalBaseFlexiOp.colHltTip
         cBezPt = ModalBaseFlexiOp.colBezPt
         cHdlPt = ModalBaseFlexiOp.colHdlPtTip
         cAdjBezTip = ModalBaseFlexiOp.colAdjBezTip
         cNonHltTip = ModalBaseFlexiOp.colDrawNonHltSeg
-        
+
         def getTipList(hltIdx, idx):
             # Display of non-selected segments...
             tipList = [None, cAdjBezTip, None, \
@@ -4414,9 +4410,9 @@ class SelectCurveInfo:
                 if(self.segIdx != None):
                     if(endPtIdx == self.segIdx): hltHdlIdx = 1
                     if(endPtIdx == self.getSegAdjIdx()): hltHdlIdx = 4
-                    
+
         if(selSegCol == None): selSegCol = ModalBaseFlexiOp.colDrawSelSeg
-        
+
         hltEndPtIdx = hltInfo[1] if(hltInfo != None and hltHdlIdx == None) else None
 
         if(self.segIdx != None):
@@ -4428,9 +4424,9 @@ class SelectCurveInfo:
 
             if(self._ctrlIdx != None): tipColors[self._ctrlIdx] = \
                 ModalBaseFlexiOp.colSelTip
-                
+
             if(hltHdlIdx != None): tipColors[hltHdlIdx] = cHltTip
-            
+
             hdlIdxs = [0, 1, 2, 3]
 
             if(hideHdls):
@@ -5093,8 +5089,8 @@ def getSnapOrientTups(scene, context):
     # ~ if(context.active_object != None):
     orients.insert(3, ('OBJECT', 'Active Object', \
         "Orient to local space of active object"))
-    orients.insert(4, ('FACE', 'Active Object Face', \
-        "Orient to normal of face under mouse pointer of active object"))
+    orients.insert(4, ('FACE', 'Selected Object Face', \
+        "Orient to normal of face of selected object under mouse pointer "))
     return orients
 
 def getConstrAxisTups(scene = None, context = None):
@@ -5126,9 +5122,9 @@ def getSnapOriginTups(scene = None, context = None):
         "Draw / Edit with reference to the appropriate reference line point"), \
        ('OBJECT', 'Active Object Location', \
         "Draw / Edit with reference to active object location"), \
-       ('FACE', 'Active Object Face', \
+       ('FACE', 'Selected Object Face', \
         "Draw / Edit with reference to the center of " + \
-            "active object face under mouse pointer"), \
+            "Selected object face under mouse pointer"), \
       ]
 
 class BezierToolkitParams(bpy.types.PropertyGroup):
@@ -5352,7 +5348,7 @@ def updatePanel(self, context):
 def updateProps(self, context):
     try:
         prefs = context.preferences.addons[__name__].preferences
-        BezierUtilsPanel.bl_category = prefs.category        
+        BezierUtilsPanel.bl_category = prefs.category
         ModalBaseFlexiOp.drawPtSize = prefs.drawPtSize
         ModalBaseFlexiOp.lineWidth = prefs.drawLineWidth
 
@@ -5435,7 +5431,7 @@ def updateProps(self, context):
                     ModalBaseFlexiOp.colGreaseMarker: 7}
 
     if(updateProps.refreshDisp):
-        try: ModalBaseFlexiOp.opObj.refreshDisplaySelCurves() 
+        try: ModalBaseFlexiOp.opObj.refreshDisplaySelCurves()
         except: pass
 
 updateProps.refreshDisp = True
@@ -5453,19 +5449,19 @@ class ResetDefaultPropsOp(bpy.types.Operator):
         props = prefs.bl_rna.properties
         updateProps.refreshDisp = False
         for prop in props:
-            try: 
+            try:
                 if(not hasattr(prop, "default")): continue
                 if(prop.type == 'STRING' and prop.identifier == 'category'):
                     execStr = 'prefs.' + prop.identifier + ' =  "' + \
                         str(prop.default) + '"'
-                    exec(execStr)                
+                    exec(execStr)
                 elif hasattr(prop, "default_array") and getattr(prop, "is_array", True):
                     for i, a in enumerate(prop.default_array):
                         execStr = 'prefs.' + prop.identifier + '[' + str(i) + '] = ' + str(a)
-                        exec(execStr)                
+                        exec(execStr)
                 else:
                     execStr = 'prefs.' + prop.identifier + ' =  ' + str(prop.default)
-                    exec(execStr)                
+                    exec(execStr)
             except Exception as e:
                 print(e)
         updateProps.refreshDisp = True
@@ -5559,7 +5555,7 @@ class BezierUtilsPreferences(AddonPreferences):
                 description = 'Color of the segment adjacent to the' + \
                     'one being drawn / edited', update = updateProps
     )
-    
+
     colDrawHltSeg: bpy.props.FloatVectorProperty(
         name="Highlighted Edit Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default=(.2, .6, .9, 1), \
