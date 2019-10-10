@@ -130,19 +130,20 @@ Custom Axis is a user defined line, that serves multiple purpose. To create a Cu
 The Custom Axis can be used to define the Snappig Orientation, Snapping Origin, Custom scale and Custom snapping points.
 
 <b>Hotkey Snapping Options (Active for the Point being Drawn / Edited):</b> 
-- Holding down ctrl while moving mouse will snap the point or handle to the grid. 
-- By holding down shift key the angle of the segment / handle being drawn / edited will be restricted to fixed values (0, 45, 90 etc). The reference axis for determining angle increment is the first free axis based on the selected Snapping Orientation.<br>
-- Holding down alt key will snap the point being drawn / edited to the a) Bezier points of the splines within all the curve objects in the view b) vertices of the active object (if there are fewer than 500 vertices) c) face of the active object under the mouse pointer (if there are fewer than 50 faces). By default snapping to the end points joins the new curve to the curve(s) it is being snapped to. You can hold down ctrl while ending the curve (by double click or space or return key) to keep the curve separate. The curve can also be separated from the snapped curves be pressing ctrl-Z after confirming. <br>
+- Holding down <b>ctrl</b> while moving mouse will snap the point or handle to the<b> grid.</b> 
+- By holding down <b>shift</b> key the <b>angle</b> of the segment / handle being drawn / edited will be restricted to fixed values (0, 45, 90 etc). The reference axis for determining angle increment is the first free axis based on the selected Snapping Orientation.<br>
+- Holding down <b>alt</b> key will snap the point being drawn / edited to the a) <b>Bezier points</b> of the splines within all the curve objects in the view b) <b>vertices</b> of the selected objects (if there are fewer than 1000 vertices) c) <b>the face</b> under the mouse pointer of the selected objects (if there are fewer than 1000 faces). d) <b>snapping Origin</b> <br>
+By default, after the drawing is started or the segment is selected for editing, and if the Snapping Orientation or Snapping Origin is 'Selected Object Face', the orientation / orign will be locked to the normal / center of the face under the mouse pointer. If during the drawing / editing operation, user can make the tool reposition the orientation / origin to the new face by pressing <b>U</b>.<br>
+By default, snapping to the end points joins the new curve to the curve(s) it is being snapped to. You can hold down <b>ctrl</b> while ending the curve (by double click or space or return key) to keep the curve separate. The curve can also be separated from the snapped curves be pressing ctrl-Z after confirming. <br>
 
 The snapping gets adapted to the viewport zoom level. <br>
 
 <b>Locking Options:</b>
-- Pressing X, Y, Z while the curve is being drawn will lock the segment to the corresponding axis. 
-- Pressing shift together with one of these buttons will lock the segment to the axes other than the one denoted by the button (e.g. shift+Z - lock to XY plane).
+- Pressing <b>X</b>, <b>Y</b>, <b>Z</b> while the curve is being drawn will lock the segment to the corresponding axis. 
+- Pressing shift together with one of these buttons will lock the segment to the axes other than the one denoted by the button (e.g. <b>shift+Z</b> - lock to <b>XY plane</b>).
 - Press escape to get out of the lock mode.
 
 Snapping and locking can be combined together. So user can hold down both control and shift to snap to grid as well as restrict the angle. Likewise, user can press shift-Z to lock to XY plane and then hold shift while moving the mouse to restrict the angle between the segment end points.
-
 
 When Constrain Axes dropdown has an axis-pair selection (lock to plane), pressing a single axis key will allow users to draw lines parallel to the axis (or slide the point along this line).
 
