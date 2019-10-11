@@ -473,9 +473,12 @@ def getAllAreaRegions():
     areas = []
     i = 0
 
+    areas = [a for a in bpy.context.screen.areas if(a.type == 'VIEW_3D')]
+
     # bpy.context.screen doesn't work in case of Add-on Config window
     while(len(areas) == 0 and i < len(bpy.data.screens)):
         areas = [a for a in bpy.data.screens[i].areas if(a.type == 'VIEW_3D')]
+        i += 1
 
     for a in areas:
         regions = [r for r in a.regions if r.type == 'WINDOW']
