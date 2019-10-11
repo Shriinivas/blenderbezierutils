@@ -557,9 +557,10 @@ def get2dBBox(obj, region, rv3d):
 
     return minX, minY, maxX, maxY
 
-def isPtIn2dBBox(obj, region, rv3d, xy):
+def isPtIn2dBBox(obj, region, rv3d, xy, extendBy = 0):
     minX, minY, maxX, maxY = get2dBBox(obj, region, rv3d)
-    if(xy[0] > minX and xy[0] < maxX and xy[1] > minY and xy[1] < maxY):
+    if(xy[0] > (minX - extendBy) and xy[0] < (maxX + extendBy) \
+        and xy[1] > (minY - extendBy) and xy[1] < (maxY + extendBy)):
         return True
     else: return False
 
@@ -4042,6 +4043,9 @@ def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
 
     for obj in objs:
         mw = obj.matrix_world
+        if(not isPtIn2dBBox(obj, region, rv3d, coFind, SNAP_DIST_PIXEL)):
+            continue
+            
         for i, spline in enumerate(obj.data.splines):
             for j, pt in enumerate(spline.bezier_points):
                 objLocList.append([obj, i, j])
@@ -4092,7 +4096,7 @@ def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
     searchPtsList = [[getCoordFromLoc(region, rv3d, pt).to_3d() \
         for pt in pts] for pts in searchPtsList]
 
-    srs = search2dFromPtsList(searchPtsList, coFind, searchRange = 20)
+    srs = search2dFromPtsList(searchPtsList, coFind, searchRange = SNAP_DIST_PIXEL)
 
     if(len(srs) == 0):
         return None
