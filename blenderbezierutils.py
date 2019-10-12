@@ -4173,15 +4173,9 @@ class SelectCurveInfo:
     def __init__(self, obj, splineIdx, segIdx1):
         self.obj = obj
         self.splineIdx = splineIdx
-
-        if(segIdx1 != None): 
-            segIdx2 = getAdjIdx(obj, splineIdx, segIdx1)
-            if(segIdx2 == None): 
-                t = segIdx1
-                segIdx1 = getAdjIdx(obj, splineIdx, segIdx1, -1)
-                segIdx2 = t
-            self.ptIdxs = [segIdx1, segIdx2]
-        else: self.ptIdxs = []
+        self.ptIdxs = set()
+        
+        if(segIdx1 != None): self.addSegSel(segIdx1)
 
         # obj.name gives exception if obj is not in bpy.data.objects collection,
         # so keep a copy
@@ -4193,6 +4187,38 @@ class SelectCurveInfo:
 
         # Can be derived from clickLoc, but stored to avoid repeated computation
         self._t = None
+
+    def addSegSel(self, segIdx1):        
+        segIdx2 = self.getSegAdjIdx(segIdx1)
+        if(segIdx2 != None): 
+            self.ptIdxs.add(segIdx1)
+            self.ptIdxs.add(segIdx2)
+
+    def removeSegSel(self, segEndPtIdx):        
+        adjIdx = self.getSegAdjIdx(segEndPtIdx)
+        if(adjIdx != None):
+            self.ptIdxs.remove(segEndPtIdx)
+            self.ptIdxs.remove(adjIdx)
+
+    def addPtSel(self, ptIdx):
+        if(ptIdx != None): self.ptIdxs.add(ptIdx)
+
+    def removePtSel(self, ptIdx):
+        if(ptIdx != None): self.ptIdxs.remove(ptIdx)
+
+    def resetPts(self):
+        self.ptIdxs = set()
+
+    def getSegIdxs(self):
+        return [p[0] for p in self.getSegIdxPairs()]
+
+    def getSegIdxPairs(self):
+        segIdxs = []
+        for idx in self.ptIdxs:
+            nextIdx = getAdjIdx(self.obj, self.splineIdx, idx)
+            if(nextIdx in self.ptIdxs):
+                segIdxs.append([idx, nextIdx])
+        return segIdxs
 
     def resetSel(self):
         self._clickLoc = None
@@ -4242,15 +4268,17 @@ class SelectCurveInfo:
     # Callback after subdivseg (in case seg from same object being subdivided)
     def updateSegIdx(self, objName, splineIdx, oldSegIdx, addCnt):
         if(objName == self.objName and splineIdx == self.splineIdx
-            and oldSegIdx < self.ptIdxs[0]):
-                self.ptIdxs[0] += addCnt
+            and oldSegIdx in self.getSegIdxs()):
+                # ~ self.ptIdxs[0] += addCnt
+                self.removeSegSel(oldSegIdx)
+                self.addSegSel(oldSegIdx + addCnt)
 
     def subdivSeg(self):
         if(self.subdivCnt > 1):
             invMw = self.obj.matrix_world.inverted()
             ts = []
             vertCos = getInterpolatedVertsCo(self.interpPts, self.subdivCnt)[1:-1]
-            insertBezierPts(self.obj, self.splineIdx, self.ptIdxs[0], \
+            insertBezierPts(self.obj, self.splineIdx, self.getSegIdxs()[0], \
                 [invMw @ v for v in vertCos], 'FREE')
             self.subdivCnt = 0
 
@@ -4276,44 +4304,50 @@ class SelectCurveInfo:
 
     def getSegBezierPts(self):
         spline = self.obj.data.splines[self.splineIdx]
-        if(len(self.ptIdxs) > 0):
-            return [spline.bezier_points[self.ptIdxs[0]], \
-                spline.bezier_points[self.getSegAdjIdx()]]
+        if(len(self.getSegIdxs()) > 0):
+            segIdx = self.getSegIdxs()[0]
+            return [spline.bezier_points[segIdx], \
+                spline.bezier_points[self.getSegAdjIdx(segIdx)]]
         else: return []
 
     def getPrevSegBezierPts(self):
-        prevSegIdx = self.getSegAdjIdx(-1)
-        if(prevSegIdx != None):
-            spline = self.obj.data.splines[self.splineIdx]
-            return [spline.bezier_points[prevSegIdx], \
-                spline.bezier_points[self.ptIdxs[0]]]
+        if(len(self.getSegIdxs()) > 0):
+            segIdx = self.getSegIdxs()[0]
+            prevSegIdx = getAdjIdx(self.obj, self.splineIdx, segIdx, -1)
+            if(prevSegIdx != None):
+                spline = self.obj.data.splines[self.splineIdx]
+                return [spline.bezier_points[prevSegIdx], spline.bezier_points[segIdx]]
         return []
 
     def getNextSegBezierPts(self):
-        nextSegIdx = self.getSegAdjIdx(1)
-        if(nextSegIdx != None):
-            spline = self.obj.data.splines[self.splineIdx]
-            return [spline.bezier_points[self.ptIdxs[0]], \
-                spline.bezier_points[nextSegIdx]]
+        if(len(self.getSegIdxs()) > 0):
+            segIdx = self.getSegIdxs()[0]
+            nextSegIdx = getAdjIdx(self.obj, self.splineIdx, segIdx)
+            if(nextSegIdx != None):
+                spline = self.obj.data.splines[self.splineIdx]
+                return [spline.bezier_points[segIdx], spline.bezier_points[nextSegIdx]]
         return []
 
     # For convenience
     def getCtrlPts(self):
-        return getCtrlPtsForSeg(self.obj, self.splineIdx, self.ptIdxs[0])
+        return getCtrlPtsForSeg(self.obj, self.splineIdx, self.getSegIdxs()[0])
 
     def getSegPts(self):
         if(len(self.ptIdxs) == 0): return []
-        return getBezierDataForSeg(self.obj, self.splineIdx, self.ptIdxs[0])
+        return getBezierDataForSeg(self.obj, self.splineIdx, self.getSegIdxs()[0])
 
-    def getSegAdjIdx(self, offset = 1):
-        return getAdjIdx(self.obj, self.splineIdx, self.ptIdxs[0], offset)
+    def getSegAdjIdx(self, ptIdx):
+        adjIdx = getAdjIdx(self.obj, self.splineIdx, ptIdx)
+        if(adjIdx == None):
+            adjIdx = getAdjIdx(self.obj, self.splineIdx, ptIdx, -1)                
+        return adjIdx
 
     def getPrevSegPts(self):
-        idx = getAdjIdx(self.obj, self.splineIdx, self.ptIdxs[0], -1)
+        idx = getAdjIdx(self.obj, self.splineIdx, self.getSegIdxs()[0], -1)
         return getBezierDataForSeg(self.obj, self.splineIdx, idx) if idx != None else []
 
     def getNextSegPts(self):
-        idx = getAdjIdx(self.obj, self.splineIdx, self.ptIdxs[0])
+        idx = getAdjIdx(self.obj, self.splineIdx, self.getSegIdxs()[0])
         return getBezierDataForSeg(self.obj, self.splineIdx, idx) if idx != None else []
 
     def insertNode(self, handleType, select = True):
@@ -4322,7 +4356,7 @@ class SelectCurveInfo:
         invMw = self.obj.matrix_world.inverted()
         bpts = self.getSegBezierPts()
         insertBezierPts(self.obj, self.splineIdx, \
-            self.ptIdxs[0], [invMw @ self._clickLoc], handleType)
+            self.getSegIdxs()[0], [invMw @ self._clickLoc], handleType)
 
         if(select):
             self.setCtrlIdxSafe(4)
@@ -4353,13 +4387,16 @@ class SelectCurveInfo:
     def removeNode(self):
         if(self._ctrlIdx == None):
             return
+            
+        # TODO: Rename ptIdx in co, ptIdx, hdlIdx.. confusing
         co, ptIdx, hdlIdx = self.getCtrlPtCoIdx()
+        segIdx = self.getSegIdxs()[0]
+        bptIdx = getAdjIdx(self.obj, self.splineIdx, segIdx, ptIdx)
         if(hdlIdx == 1):
-            removeBezierPts(self.obj, self.splineIdx, \
-                {self.getSegAdjIdx(ptIdx)})
+            removeBezierPts(self.obj, self.splineIdx, {bptIdx})
+            self.removeSegSel(bptIdx)
         else:
             spline = self.obj.data.splines[self.splineIdx]
-            bptIdx = self.getSegAdjIdx(ptIdx)
             pt = spline.bezier_points[bptIdx]
             pt.handle_right_type = 'FREE'
             pt.handle_left_type = 'FREE'
@@ -4422,8 +4459,9 @@ class SelectCurveInfo:
             if(hltHdlIdx == None):
                 endPtIdx = hltInfo[1]
                 if(len(self.ptIdxs) > 0):
-                    if(endPtIdx == self.ptIdxs[0]): hltHdlIdx = 1
-                    if(endPtIdx == self.getSegAdjIdx()): hltHdlIdx = 4
+                    idxs = self.getSegIdxPairs()[0]
+                    if(endPtIdx == idxs[0]): hltHdlIdx = 1
+                    if(endPtIdx == idxs[1]): hltHdlIdx = 4
 
         if(selSegCol == None): selSegCol = ModalBaseFlexiOp.colDrawSelSeg
 
@@ -4460,8 +4498,9 @@ class SelectCurveInfo:
             # Adj segs change in case of aligned and auto handles
             prevPts = self.getPrevSegPts()
             nextPts = self.getNextSegPts()
-            nextIdx = self.getSegAdjIdx()
-            prevIdx = self.getSegAdjIdx(-1)
+            segIdx = self.getSegIdxs()[0]
+            nextIdx = getAdjIdx(self.obj, self.splineIdx, segIdx)
+            prevIdx = getAdjIdx(self.obj, self.splineIdx, segIdx, -1)
             if((len(prevPts) > 1) and (prevPts == nextPts)):
                 prevPts[1] = segPts[0][:]
                 prevPts[0] = segPts[1][:]
@@ -4479,7 +4518,7 @@ class SelectCurveInfo:
         spline = self.obj.data.splines[self.splineIdx]
         for j, pt in enumerate(spline.bezier_points):
             if(len(self.ptIdxs) > 0 and \
-                (j == self.ptIdxs[0] or j == nextIdx or j == prevIdx)):
+                (j == self.getSegIdxs()[0] or j == nextIdx or j == prevIdx)):
                 continue
             segPts = getBezierDataForSeg(self.obj, self.splineIdx, j)
             if(segPts != []):
@@ -4695,8 +4734,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         splines.remove(spline)
                         if(ci.splineIdx >= (len(splines))):
                             ci.splineIdx = len(splines) - 1
-                elif(len(ci.ptIdxs) > 0 and ci.ptIdxs[0] >= len(bpts) - 1):
-                    ci.ptIdxs[0] = ci.getLastSegIdx()
+                elif(len(ci.ptIdxs) > 0 and ci.getSegIdxs()[0] >= len(bpts) - 1):
+                    ci.addSegSel(ci.getLastSegIdx())
                 addObjNames.add(ci.objName)
             else:
                 toRemove.append(ci)
@@ -4787,14 +4826,14 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 segIdxs = []
                 info[ci.splineIdx] = segIdxs
 
-            if(len(ci.ptIdxs) > 0): segIdxs.append(ci.ptIdxs[0])
+            if(len(ci.ptIdxs) > 0): segIdxs.append(ci.getSegIdxs()[0])
         return queryInfo
 
     def getSelInfoObj(self, searchResult):
         resType, obj, splineIdx, segIdx, otherInfo = searchResult
         for ci in self.selectCurveInfos:
             if(ci.obj == obj and ci.splineIdx == splineIdx):
-                if(len(ci.ptIdxs) > 0 and (segIdx == ci.ptIdxs[0])):
+                if(len(ci.ptIdxs) > 0 and (segIdx == ci.getSegIdxs()[0])):
                     return ci
                 elif(resType == 'CurveBezPt' and (segIdx in ci.ptIdxs)):
                     return ci                    
@@ -4880,8 +4919,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         c.subdivSeg()
                         for c1 in cis[(i + 1):]:
                             # if same obj multiple times in selection!!
-                            c1.updateSegIdx(c.objName, c.splineIdx, c.ptIdxs[0], addCnt)
-                    for c in cis: c.ptIdxs = []
+                            c1.updateSegIdx(c.objName, c.splineIdx, \
+                                c.getSegIdxs()[0], addCnt)
+                    for c in cis: c.resetPts()
                     bpy.ops.ed.undo_push()
                     self.subdivMode = False
                 return {"RUNNING_MODAL"}
@@ -4954,7 +4994,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 if(resType  == 'SelHandles'):
                     ci.setCtrlIdxSafe(getCtrlIdxFromSearchInfo([resType, otherInfo]))
                 elif(resType  == 'CurveBezPt'):
-                    if(len(ci.ptIdxs) > 0 and segIdx == ci.ptIdxs[0]): 
+                    if(len(ci.ptIdxs) > 0 and segIdx == ci.getSegIdxs()[0]): 
                         ci.setCtrlIdxSafe(1)
                     else: ci.setCtrlIdxSafe(4)
                 else:
