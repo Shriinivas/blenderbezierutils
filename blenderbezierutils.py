@@ -1943,12 +1943,20 @@ SEL_CURVE_SEARCH_RES = 1000
 NONSEL_CURVE_SEARCH_RES = 100
 ADD_PT_CURVE_SEARCH_RES = 5000
 
-class SegDisplayInfo:
-
-    # handleNos: 0: seg1-left, 1: seg1-right, 2: seg2-left, 3: seg2-right
-    # tipColors: leftHdl, pt, rightHdl for both ends (total 6) (None: don't show tip)
+class PtDisplayInfo:
+    # handleNos: 0: seg1-left, 1: seg1-right
+    # tipColors: leftHdl, pt, rightHdl
     # Caller to make sure there are no tips without handle
-    def __init__(self, segPts, segColor, handleNos, tipColors):
+    def __init__(self, pt, handleNos, tipColors):
+        self.pt = pt
+        self.handleNos = handleNos
+        self.tipColors = tipColors
+
+class SegDisplayInfo:
+    # ~ def __init__(self, segPts, segColor):
+        # ~ self.segPts = segPts
+        # ~ self.segColor = segColor
+    def __init__(self, segPts, segColor, handleNos = [], tipColors = []):
         self.segPts = segPts
         self.segColor = segColor
         self.handleNos = handleNos
@@ -1999,7 +2007,8 @@ def getSubdivBatches(shader, subdivCos, showSubdivPts):
         return ptBatch, lineBatch
 
 # Return line batch for bezier line segments and handles and point batch for handle tips
-def getBezierBatches(shader, displayInfos, areaRegionInfo, defHdlType = 'ALIGNED'):
+def getBezierBatches(shader, displayInfos, areaRegionInfo, \
+    ptDispInfos = None, defHdlType = 'ALIGNED'):
 
     lineCos = [] #segment is also made up of lines
     lineColors = []
@@ -2035,7 +2044,21 @@ def getBezierBatches(shader, displayInfos, areaRegionInfo, defHdlType = 'ALIGNED
                 ptIdx = int(j / 3)
                 hdlIdx = j % 3
                 tipColInfo.append([tipColor, segPts[ptIdx][hdlIdx]])
-
+                
+    if(ptDispInfos):
+        for i, ptInfo in enumerate(ptDispInfos):
+            pt = ptInfo.pt
+            for hn in ptInfo.handleNos:
+                lineCos += [pt[hn], pt[hn + 1]]
+                if(len(pt) < 5):
+                    htype = defHdlType
+                else:
+                    htype = segPts[ptIdx][3 + hdlIdx]
+                lineColors += [ModalBaseFlexiOp.hdlColMap[htype], \
+                        ModalBaseFlexiOp.hdlColMap[htype]]        
+            for j, tipColor in enumerate(ptInfo.tipColors):
+                if(tipColor != None): tipColInfo.append([tipColor, pt[j]])
+        
     tipCos = []
     tipColors = []
 
@@ -2994,11 +3017,12 @@ class ModalBaseFlexiOp(Operator):
         for a in areas:
             a.tag_redraw()
 
-    def refreshDisplayBase(displayInfos, snapper = None):
+    def refreshDisplayBase(displayInfos, snapper = None, ptDispInfos = None):
         areaRegionInfo = getAllAreaRegions()
 
         ModalBaseFlexiOp.segBatch, ModalBaseFlexiOp.tipBatch = \
-            getBezierBatches(ModalDrawBezierOp.shader, displayInfos, areaRegionInfo)
+            getBezierBatches(ModalDrawBezierOp.shader, displayInfos, \
+                areaRegionInfo, ptDispInfos)
 
         if(snapper != None):
             ModalBaseFlexiOp.snapperBatches = \
@@ -3140,7 +3164,8 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         ModalBaseFlexiOp.resetDisplayBase()
 
     def refreshDisplay(displayInfos, subdivCos = [], \
-        showSubdivPts = True, markerLoc = [], colMarker = None, snapper = None):
+        showSubdivPts = True, markerLoc = [], colMarker = None, snapper = None, \
+            ptDispInfos = None):
 
         ModalDrawBezierOp.subdivPtBatch, ModalDrawBezierOp.subdivLineBatch = \
             getSubdivBatches(ModalBaseFlexiOp.shader, subdivCos, showSubdivPts)
@@ -3149,7 +3174,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             "POINTS", {"pos": markerLoc, \
                 "color": [colMarker for i in range(len(markerLoc))]})
 
-        ModalBaseFlexiOp.refreshDisplayBase(displayInfos, snapper)
+        ModalBaseFlexiOp.refreshDisplayBase(displayInfos, snapper, ptDispInfos)
 
     def __init__(self, curveDispRes):
         pass
@@ -3412,8 +3437,8 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
         return {'PASS_THROUGH'} if not snapProc else {'RUNNING_MODAL'}
 
-    def redrawBezier(self, rmInfo, subdivCos = [], \
-        segIdxRange = None, showSubdivPts = True):
+    def redrawBezier(self, rmInfo, subdivCos = [], segIdxRange = None, \
+        showSubdivPts = True):
 
         colMap = self.getColorMap()
         colSelSeg = colMap['SEL_SEG_COLOR']
@@ -3422,17 +3447,11 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         colEndTip = colMap['ENDPT_TIP_COLOR']
         colMarker = colMap['MARKER_COLOR']
 
-        segColor = colSelSeg
-        tipColors = [colTip, colEndTip, colTip, colTip, colEndTip, colTip]
-
         markerLoc = []
+        handleNos  = [0, 1]
 
-        if(self.capture):
-            handleNos  = [2, 3]
-            tipColors[:3] = [None, colEndTip, None]
-        else:
-            handleNos  = [0, 1]
-            tipColors[3:] = [None, colEndTip, None]
+        if(self.capture): hdlPtIdx = 1
+        else: hdlPtIdx = 0
 
         curvePts = self.curvePts
 
@@ -3440,32 +3459,32 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             loc = self.snapper.get3dLocSnap(rmInfo)
             if(self.capture): #curvePts len must be 1
                 # First handle (straight line), if user drags first pt
-                # (first point from CurvePts, second the current location)
-                curvePts = self.curvePts + [[loc, loc, loc]]
-                segColor = ModalBaseFlexiOp.hdlColMap['ALIGNED']
-                handleNos = []
-            else:
-                if(len(self.curvePts) == 0):
-                    # Marker (dot), if drawing not started
-                    markerLoc = [loc]
-                elif(len(self.curvePts) == 1):
-                    handleNos  = [1]
-                #else taken care by mousemove
+                curvePts = curvePts + [[curvePts[0][0], curvePts[0][1], loc]]
+                handleNos = [1] # display only right handle
+                
+            # Marker (dot), if drawing not started
+            elif(len(curvePts) == 0): markerLoc = [loc]
+
+        tipColors = [colTip, colEndTip, colTip]
+        displayInfos = []
+        ptDisplayInfos = []
 
         ptCnt = len(curvePts)
-        displayInfos = []
         idxRange = range(1, ptCnt) if segIdxRange == None else segIdxRange
+
         for i in idxRange:
-            segPts = [curvePts[i-1], curvePts[i]]
+            segPts = [curvePts[i-1], curvePts[i]]            
             if(i == ptCnt - 1):
-                hns, tcs, sc = handleNos, tipColors, segColor
-            else:
-                hns, tcs, sc = [], [], colNonAdjSeg
+                segColor = colSelSeg
+                ptDisplayInfos.append(PtDisplayInfo(segPts[hdlPtIdx], \
+                    handleNos, tipColors))
+            else: 
+                segColor = colNonAdjSeg
+                
+            displayInfos.append(SegDisplayInfo(segPts, segColor))
 
-            displayInfos.append(SegDisplayInfo(segPts, sc, hns, tcs))
-
-        ModalDrawBezierOp.refreshDisplay(displayInfos, \
-            subdivCos, showSubdivPts, markerLoc, colMarker, self.snapper)
+        ModalDrawBezierOp.refreshDisplay(displayInfos, subdivCos, showSubdivPts, \
+            markerLoc, colMarker, self.snapper, ptDisplayInfos)
 
     #Reference point for restrict angle or lock axis
     def getRefLine(self):
