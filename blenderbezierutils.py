@@ -4158,11 +4158,6 @@ def search2dFromPtsList(ptsList, coFind, searchRange):
 
     return searchResults
 
-def getCtrlIdxFromSearchInfo(info):
-    if(info[0] == 'SelHandles'):
-        return {0:0, 1:2, 2:3, 3:5}[info[1]]
-    return None
-
 
 class SelectCurveInfo:
     def __init__(self, obj, splineIdx, ptIdx):
@@ -4955,7 +4950,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                             ci.segIdx = segIdx - 1 #otherInfo - 1
 
                 if(resType  == 'SelHandles'):
-                    ci.setCtrlIdxSafe(getCtrlIdxFromSearchInfo([resType, otherInfo]))
+                    ctrlIdx = {0:0, 1:2, 2:3, 3:5}[otherInfo]
+                    ci.setCtrlIdxSafe(ctrlIdx)
                 elif(resType  == 'CurveBezPt'):
                     if(segIdx == ci.segIdx): ci.setCtrlIdxSafe(1)
                     else: ci.setCtrlIdxSafe(4)
