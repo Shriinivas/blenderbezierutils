@@ -4171,7 +4171,6 @@ class SelectCurveInfo:
         self.objName = obj.name
         self.subdivCnt = 0
         self.interpPts = None
-        self._ctrlIdx = None # Handle and end points: 0, 1, 2 and 3, 4, 5
         self._clickLoc = None
 
         # Can be derived from clickLoc, but stored to avoid repeated computation
@@ -4182,14 +4181,22 @@ class SelectCurveInfo:
             return list(self.ptSel.keys())[0] # ^^^ Will be changed shortly...
         return None
 
+    def getSegIdxPairs(self):
+        segIdxs = []
+        for idx in self.ptSel.keys():
+            nextIdx = getAdjIdx(self.obj, self.splineIdx, idx)
+            if(nextIdx in self.ptSel.keys()):
+                segIdxs.append([idx, nextIdx])
+        return segIdxs
+
     def setSegIdx(self, ptIdx): # ^^^ Will be removed shortly...
         self.ptSel = {}
         self.addSegIdx(ptIdx)
 
     def addSegIdx(self, ptIdx):
         if(ptIdx != None):
-            self.ptSel[ptIdx] = []
-            self.ptSel[getAdjIdx(self.obj, self.splineIdx, ptIdx)] = []
+            self.ptSel[ptIdx] = set()
+            self.ptSel[getAdjIdx(self.obj, self.splineIdx, ptIdx)] = set()
         else:
             self.ptSel = {}
 
@@ -4201,10 +4208,25 @@ class SelectCurveInfo:
                 adjSel = getAdjIdx(self.obj, self.splineIdx, ptIdx)
                 if(adjSel != None): self.ptSel.remove(adjSel)
 
+    def hasSel(self):
+        return any(len(v) > 0 for v in self.ptSel.values())
+
+    def addSel(self, ptIdx, sel):
+        sels = self.ptSel.get(ptIdx)
+        if(sels == None):
+            sels = set()
+            self.ptSel[ptIdx] = sels
+        sels.add(sel)
+
+    def setSel(self, ptIdx, sel): # ^^^ Will be removed shortly...
+        self.ptSel[ptIdx] = set()        
+        self.ptSel[ptIdx].add(sel)
+
     def resetSel(self):
         self._clickLoc = None
         self._t = None
-        self._ctrlIdx = None
+        for pt in self.ptSel:
+            self.ptSel[pt] = set()
 
     def getClickLoc(self):
         return self._clickLoc
@@ -4213,36 +4235,38 @@ class SelectCurveInfo:
         self._clickLoc = clickLoc
         self._t = getTForPt(self.getCtrlPts(), clickLoc)
         if(self._t != None and (self._t < lowerT or self._t > higherT)):
-            if(self._t < lowerT):
-                self._ctrlIdx = 1
-            else:
-                self._ctrlIdx = 4
+            idx0, idx1 = sel.getSegIdxPairs()[0] # ^^^ hasSel must be True
+            if(self._t < lowerT): addSel(idx0, 1)
+            else: addSel(idx1, 1)
             self._t = None
             self._clickLoc = None
 
     def getCtrlPtCoIdx(self):
-        if(self._ctrlIdx == None):
-            return None
-
-        idx0 = int(self._ctrlIdx / 3)
-        idx1 = self._ctrlIdx % 3
+        if(not self.hasSel()): return None
         pts = self.getSegPts()
-        return pts[idx0][idx1], idx0, idx1
+        idxs = self.getSegIdxPairs()[0]
+        # ^^^ to be changed
+        for i, idx in enumerate(idxs):
+            sels = self.ptSel[idx]
+            if(len(sels) > 0):
+                for sel in sels: break
+                return pts[i][sel], i, sel
+        return None
 
     def setCtrlIdxSafe(self, ctrlIdx):
-        self._ctrlIdx = ctrlIdx
         if(ctrlIdx != None):
-            idx0 = int(ctrlIdx / 3)
-            idx1 = ctrlIdx % 3
-            pts = self.getSegPts()
+            ptIdx = int(ctrlIdx / 3)
+            hdlIdx = ctrlIdx % 3
+            idxs = self.getSegIdxPairs()[0] # ^^^ hasSel must be True
+            self.addSel(idxs[0] + ptIdx, hdlIdx)
             # If handle pt too close to seg pt, select seg pt
-            if(vectCmpWithMargin(pts[idx0][idx1], pts[idx0][1])):
-                self._ctrlIdx = idx0 * 3 + 1
+            # ~ if(vectCmpWithMargin(pts[idx0][idx1], pts[idx0][1])):
+                # ~ self._ctrlIdx = idx0 * 3 + 1
             self._clickLoc = None
             self._t = None
 
     def getSelCo(self):
-        if(self._ctrlIdx != None):
+        if(self.hasSel()):
             return self.getCtrlPtCoIdx()[0]
         return self._clickLoc
 
@@ -4335,7 +4359,7 @@ class SelectCurveInfo:
             self.setCtrlIdxSafe(4)
 
     def alignHandle(self):
-        if(self._ctrlIdx == None):
+        if(not self.hasSel()):
             return
 
         co, ptIdx, hdlIdx = self.getCtrlPtCoIdx()
@@ -4358,7 +4382,7 @@ class SelectCurveInfo:
                 bpt.handle_right = bpt.co + co
 
     def removeNode(self):
-        if(self._ctrlIdx == None):
+        if(not self.hasSel()):
             return
         co, ptIdx, hdlIdx = self.getCtrlPtCoIdx()
         if(hdlIdx == 1):
@@ -4396,7 +4420,8 @@ class SelectCurveInfo:
                     pt.handle_right = pt.co + .2 * diffV
 
             # Alway select the main point after this (should be done by caller actually)
-            self._ctrlIdx = ptIdx * 3 + 1
+            self.setSel(self, bptIdx, 1)
+            # ~ self._ctrlIdx = ptIdx * 3 + 1
 
     def getDisplayInfos(self, segPts = None, hltInfo = None, hideHdls = False,
         selSegCol = None, includeAdj = True):
@@ -4447,9 +4472,9 @@ class SelectCurveInfo:
             selPtDispInfos = [BptDisplayInfo(segPts[0], tipColors[:], hdlIdxs), 
                     BptDisplayInfo(segPts[1], tipColors[:], hdlIdxs)]
 
-            if(self._ctrlIdx != None):
-                selPtDispInfos[int(self._ctrlIdx / 3)].tipColors[self._ctrlIdx % 3] = \
-                    ModalBaseFlexiOp.colSelTip
+            if(self.hasSel()):
+                co, ptIdx, hdlIdx = self.getCtrlPtCoIdx()
+                selPtDispInfos[ptIdx].tipColors[hdlIdx] = ModalBaseFlexiOp.colSelTip
 
             segIdxs = [self.getSegIdx(), self.getSegAdjIdx()]
             
@@ -4568,7 +4593,7 @@ class EditCurveInfo():
             pts = self.getPtsAfterCtrlPtChange(pts, ptIdx = 0, hdlIdx  = 2)
             pts = self.getPtsAfterCtrlPtChange(pts, ptIdx = 1, hdlIdx  = 0)
 
-        elif(self.selCurveInfo._ctrlIdx != None):
+        elif(self.selCurveInfo.hasSel()):
             co, ptIdx, hdlIdx = self.selCurveInfo.getCtrlPtCoIdx()
             oldPts = [p.copy() for p in pts[:3]] + pts[3:]
             pts[ptIdx][hdlIdx] = newPos
@@ -4711,7 +4736,10 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         if(ci.splineIdx >= (len(splines))):
                             ci.splineIdx = len(splines) - 1
                 elif(ci.getSegIdx() != None and ci.getSegIdx() >= len(bpts) - 1):
-                    ci.setSegIdx(ci.getLastSegIdx())
+                    idx = ci.getLastSegIdx()
+                    ci.setSegIdx(idx) # ^^^ Check this
+                    nIdx = ci.getSegIdxPairs()[0][1]
+                    ci.setSel(nIdx, 1)
                 addObjNames.add(ci.objName)
             else:
                 toRemove.append(ci)
