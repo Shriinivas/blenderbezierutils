@@ -1287,7 +1287,7 @@ class MarkerController:
     def __init__(self, context):
         self.smMap = self.createSMMap(context)
         self.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
-        self.shader.bind()
+        # ~ self.shader.bind()
 
         try:
             MarkerController.defPointSize = \
@@ -1677,7 +1677,7 @@ class BezierUtilsPanel(Panel):
                 bpy.types.SpaceView3D.draw_handler_add(ccDrawHandler, \
                     (), "WINDOW", "POST_VIEW")
             BezierUtilsPanel.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
-            BezierUtilsPanel.shader.bind()
+            # ~ BezierUtilsPanel.shader.bind()
             return
 
         elif(remove):
@@ -3046,7 +3046,7 @@ class ModalBaseFlexiOp(Operator):
         self.rmInfo = None
 
         ModalBaseFlexiOp.shader = gpu.shader.from_builtin('3D_SMOOTH_COLOR')
-        ModalBaseFlexiOp.shader.bind()
+        # ~ ModalBaseFlexiOp.shader.bind()
         context.window_manager.modal_handler_add(self)
 
         ModalBaseFlexiOp.ColGreaseHltSeg = (.3, .3, .3, 1) # Not used
