@@ -179,11 +179,35 @@ def copyObjAttr(src, dest, invDestMW = Matrix(), mw = Matrix()):
     except Exception as e:
         pass
 
+def getLastSegIdx(obj, splineIdx):
+    spline = obj.data.splines[splineIdx]
+    ptCnt = len(spline.bezier_points)
+    return ptCnt - 1 if(spline.use_cyclic_u) else ptCnt - 2
+
 def addLastSeg(spline):
     if(spline.use_cyclic_u):
         spline.use_cyclic_u = False
         spline.bezier_points.add(1)
         copyObjAttr(spline.bezier_points[0], spline.bezier_points[-1])
+
+def moveSplineStart(obj, splineIdx, idx):
+    pts = obj.data.splines[splineIdx].bezier_points
+    cnt = len(pts)
+
+    ptCopy = [[p.co.copy(), p.handle_right.copy(), \
+        p.handle_left.copy(), p.handle_right_type, \
+            p.handle_left_type] for p in pts]
+
+    for i, pt in enumerate(pts):
+        srcIdx = (idx + i) % cnt
+        p = ptCopy[srcIdx]
+
+        #Must set the types first
+        pt.handle_right_type = p[3]
+        pt.handle_left_type = p[4]
+        pt.co = p[0]
+        pt.handle_right = p[1]
+        pt.handle_left = p[2]
 
 def joinCurves(curves):
     obj = curves[0]
@@ -1311,24 +1335,8 @@ class MarkerController:
             for splineIdx in spMap.keys():
                 markerInfo = spMap[splineIdx]
                 if(markerInfo[1] != 0):
-                    pts = splines[splineIdx].bezier_points
                     loc, idx = markerInfo[0], markerInfo[1]
-                    cnt = len(pts)
-
-                    ptCopy = [[p.co.copy(), p.handle_right.copy(), \
-                        p.handle_left.copy(), p.handle_right_type, \
-                            p.handle_left_type] for p in pts]
-
-                    for i, pt in enumerate(pts):
-                        srcIdx = (idx + i) % cnt
-                        p = ptCopy[srcIdx]
-
-                        #Must set the types first
-                        pt.handle_right_type = p[3]
-                        pt.handle_left_type = p[4]
-                        pt.co = p[0]
-                        pt.handle_right = p[1]
-                        pt.handle_left = p[2]
+                    moveSplineStart(curve, splineIdx, idx)
 
     def updateSMMap(self):
         for curveName in self.smMap.keys():
@@ -4303,9 +4311,7 @@ class SelectCurveInfo:
             self.subdivCnt += 1
 
     def getLastSegIdx(self):
-        spline = self.obj.data.splines[self.splineIdx]
-        ptCnt = len(spline.bezier_points)
-        return ptCnt - 1 if(spline.use_cyclic_u) else ptCnt - 2
+        return getLastSegIdx(self.obj, self.splineIdx)
 
     def insertNode(self, handleType, select = True):
         invMw = self.obj.matrix_world.inverted()
