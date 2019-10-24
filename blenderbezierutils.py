@@ -242,6 +242,18 @@ def reverseCurve(curve):
             ns.bezier_points[i].handle_right_type = p.handle_left_type
     bpy.data.curves.remove(cp)
 
+# Insert spline at location splineIdx (duplicated from existing spline at that location)
+# And remove points with indices in removePtIdxs from new spline
+def insertSpline(obj, splineIdx, removePtIdxs):
+    srcSpline = obj.data.splines[splineIdx]
+    createSpline(obj.data, srcSpline, False, False, removePtIdxs) # Appended at end
+    splineCnt = len(obj.data.splines)
+    nextIdx = splineIdx
+    for idx in range(nextIdx, splineCnt - 1):
+        srcSpline = obj.data.splines[nextIdx]
+        createSpline(obj.data, srcSpline, False, False)
+        obj.data.splines.remove(srcSpline)
+
 def removeBezierPts(obj, splineIdx, removePtIdxs):
     oldSpline = obj.data.splines[splineIdx]
     bpts = oldSpline.bezier_points
@@ -254,14 +266,8 @@ def removeBezierPts(obj, splineIdx, removePtIdxs):
             safeRemoveObj(obj)
         return
 
-    createSpline(obj.data, oldSpline, False, False, removePtIdxs)
-    obj.data.splines.remove(oldSpline)
-    splineCnt = len(obj.data.splines)
-    nextIdx = splineIdx
-    for idx in range(nextIdx, splineCnt - 1):
-        oldSpline = obj.data.splines[nextIdx]
-        createSpline(obj.data, oldSpline, False, False)
-        obj.data.splines.remove(oldSpline)
+    insertSpline(obj, splineIdx, removePtIdxs)
+    obj.data.splines.remove(obj.data.splines[splineIdx + 1])
 
 def insertBezierPts(obj, splineIdx, startIdx, cos, handleType):
 
@@ -4213,7 +4219,7 @@ class SelectCurveInfo:
 
             if(t != None and (t < lowerT or t > higherT)):
                 hdlIdx = 1
-                if(self._t > higherT): ptIdx = nextIdx
+                if(t > higherT): ptIdx = nextIdx
             else:
                 self.clickInfo = {'ptIdx': ptIdx, 'hdlIdx': hdlIdx, \
                     'loc':clickLoc, 't':t}
@@ -4418,7 +4424,6 @@ class SelectCurveInfo:
         if(lastIdx != None):
             segDispInfos.append(SegDisplayInfo([pts[-1], pts[0]], cNonHltSeg))
 
-        # Process highlight (after selection, so it's topmost)
         hltInfo = self.getHltInfo()
         hltType = hltInfo.get('hltType')
 
@@ -4432,7 +4437,7 @@ class SelectCurveInfo:
             bptDispInfos[nextIdx].tipColors[1] = cBezPt
 
         # Process selections
-        for ptIdx in self.ptSels.keys():
+        for ptIdx in sorted(self.ptSels.keys()):
 
             sels = self.ptSels[ptIdx]
 
@@ -4952,7 +4957,6 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 return {"RUNNING_MODAL"}
 
         if(event.type == 'K'):
-            #TODO: check _ctrlIdx != None for any
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     for c in self.selectCurveInfos: c.alignHandle() #selected node
