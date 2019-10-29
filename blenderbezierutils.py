@@ -2983,6 +2983,11 @@ class ModalBaseFlexiOp(Operator):
     def drawHandlerBase():
         if(ModalBaseFlexiOp.shader != None):
 
+            bgl.glLineWidth(ModalBaseFlexiOp.axisLineWidth)
+            bgl.glPointSize(ModalBaseFlexiOp.snapPtSize)
+            for batch in ModalBaseFlexiOp.snapperBatches:
+                batch.draw(ModalBaseFlexiOp.shader)
+
             bgl.glLineWidth(ModalBaseFlexiOp.lineWidth)
             if(ModalBaseFlexiOp.segBatch != None):
                 ModalBaseFlexiOp.segBatch.draw(ModalBaseFlexiOp.shader)
@@ -2991,10 +2996,6 @@ class ModalBaseFlexiOp(Operator):
             if(ModalDrawBezierOp.tipBatch != None):
                 ModalDrawBezierOp.tipBatch.draw(ModalBaseFlexiOp.shader)
 
-            bgl.glLineWidth(ModalBaseFlexiOp.axisLineWidth)
-            bgl.glPointSize(ModalBaseFlexiOp.snapPtSize)
-            for batch in ModalBaseFlexiOp.snapperBatches:
-                batch.draw(ModalBaseFlexiOp.shader)
 
     def resetDisplayBase():
         ModalBaseFlexiOp.segBatch = getResetBatch(ModalBaseFlexiOp.shader, "LINES")
