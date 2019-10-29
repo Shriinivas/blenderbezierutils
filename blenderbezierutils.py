@@ -4189,32 +4189,27 @@ class SelectCurveInfo:
     def getBezierPt(self, ptIdx):
         return self.obj.data.splines[self.splineIdx].bezier_points[ptIdx]
 
-    def getSelSegPtsInfo(self, ptIdx):
+    def getSegPtsInfo(self, ptIdx):
         nextIdx = self.getAdjIdx(ptIdx)
         pt0 = self.wsData[ptIdx]
         pt1 = self.wsData[nextIdx]
         return nextIdx, pt0, pt1
 
     def getSegPts(self, ptIdx):
-        nextIdx, pt0, pt1 = self.getSelSegPtsInfo(ptIdx)
+        nextIdx, pt0, pt1 = self.getSegPtsInfo(ptIdx)
         return (pt0, pt1)
 
-    def getAllSegPts(self):
-        ptPairs = []
-        for ptIdx in self.ptSels.keys():
-            ptPairs.append(self.getSegPts(ptIdx))
-        return ptPairs
-
-    # Idx of points which are not part of any selected segments
-    def getAllNonSegPtIdxs(self):
-        ptIdxs = set(p for p in self.ptSels.keys() if -1 not in self.ptSels[p])
-        segIdxs = set(idx[1] for idx in self.getAllSegPtIdxs())
-        return list(ptIdxs - segIdxs) # for the sake of uniformity
+    # All selected points which have handles displayed (for example for snapping)
+    def getAllPtsWithHdls(self):
+        ptIdxs = set(self.ptSels.keys())
+        nextIdxs = set(self.getSegPtsInfo(p)[0] for p in ptIdxs if -1 in self.ptSels[p])
+        ptIdxs = ptIdxs.union(nextIdxs)
+        return sorted(self.wsData[p] for p in ptIdxs)
 
     def setClickInfo(self, ptIdx, hdlIdx, clickLoc, lowerT = 0.001, higherT = .999):
         self.clickInfo = None
         if(clickLoc != None):
-            nextIdx, pt0, pt1 = self.getSelSegPtsInfo(ptIdx)
+            nextIdx, pt0, pt1 = self.getSegPtsInfo(ptIdx)
             t = getTForPt([pt0[1], pt0[2], pt1[0], pt1[1]], clickLoc)
 
             if(t != None and (t < lowerT or t > higherT)):
@@ -4761,13 +4756,12 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         for info in infos:
             locs += info[1]
 
-        for ci in self.selectCurveInfos:
-            ptPairs = ci.getAllSegPts()
-            for pair in ptPairs: # Already world space
-                locs.append(pair[0][0])
-                locs.append(pair[0][2])
-                locs.append(pair[1][0])
-                locs.append(pair[1][2])
+        if(not ModalFlexiEditBezierOp.h):
+            for ci in self.selectCurveInfos:
+                pts = ci.getAllPtsWithHdls()
+                for pt in pts: # Already world space
+                    locs.append(pt[0])
+                    locs.append(pt[2])
         return locs
 
     def updateSnapLocs(self, addObjNames = None, removeObjNames = None):
