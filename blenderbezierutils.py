@@ -2930,7 +2930,7 @@ class Snapper():
 
         batches.append(batch_for_shader(shader, \
             "POINTS", {"pos": ptCo, \
-                "color": [(1, 1, 1, 1) for i in range(0, len(ptCo))]}))
+                "color": [(1, .4, 0, 1) for i in range(0, len(ptCo))]}))
 
         return batches
 
@@ -2983,11 +2983,6 @@ class ModalBaseFlexiOp(Operator):
     def drawHandlerBase():
         if(ModalBaseFlexiOp.shader != None):
 
-            bgl.glLineWidth(ModalBaseFlexiOp.axisLineWidth)
-            bgl.glPointSize(ModalBaseFlexiOp.snapPtSize)
-            for batch in ModalBaseFlexiOp.snapperBatches:
-                batch.draw(ModalBaseFlexiOp.shader)
-
             bgl.glLineWidth(ModalBaseFlexiOp.lineWidth)
             if(ModalBaseFlexiOp.segBatch != None):
                 ModalBaseFlexiOp.segBatch.draw(ModalBaseFlexiOp.shader)
@@ -2996,6 +2991,10 @@ class ModalBaseFlexiOp(Operator):
             if(ModalDrawBezierOp.tipBatch != None):
                 ModalDrawBezierOp.tipBatch.draw(ModalBaseFlexiOp.shader)
 
+            bgl.glLineWidth(ModalBaseFlexiOp.axisLineWidth)
+            bgl.glPointSize(ModalBaseFlexiOp.snapPtSize)
+            for batch in ModalBaseFlexiOp.snapperBatches:
+                batch.draw(ModalBaseFlexiOp.shader)
 
     def resetDisplayBase():
         ModalBaseFlexiOp.segBatch = getResetBatch(ModalBaseFlexiOp.shader, "LINES")
