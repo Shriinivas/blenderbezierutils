@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 67),
+    "version": (0, 9, 68),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -563,7 +563,7 @@ def getSelFaceLoc(region, rv3d, xy, maxFaceCnt):
 
 # ~ def getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc):
     # ~ p1 = (0, 0)
-    # ~ p2 = (0, SNAP_DIST_PIXEL)
+    # ~ p2 = (0, ModalBaseFlexiOp.snapDist)
     # ~ minEdgeDist =
         # ~ (region_2d_to_location_3d(region, rv3d, p1, vec) -
             # ~ region_2d_to_location_3d(region, rv3d, p2, vec)).length
@@ -1948,7 +1948,6 @@ def getInterpolatedVertsCo(curvePts, numDivs):
 # Some global constants
 
 DEF_CURVE_RES_2D = .5 # Per pixel seg divisions (.5 is one div per 2 pixel units)
-SNAP_DIST_PIXEL = 20
 STRT_SEG_HDL_LEN_COEFF = 0.25
 DBL_CLK_DURN = 0.25
 SNGL_CLK_DURN = 0.3
@@ -2363,6 +2362,7 @@ class Snapper():
 
         self.tm = None
         self.orig = None
+        self.snapCo = None
 
         self.lastSnapTypes = set()
 
@@ -2377,7 +2377,7 @@ class Snapper():
         # This variable lets caller know that return was pressed after digits were entered
         # Caller can reset snapper as per convenience
         self.digitsConfirmed = False
-        self.snapCo = None
+        self.lastSelCo = None
 
         self.inDrawAxis = False # User drawing the custom axis
         # ~ self.snapStack = [] # TODO
@@ -2630,6 +2630,7 @@ class Snapper():
         snapToAxisLine = True, xyDelta = [0, 0]):
 
         self.rmInfo = rmInfo
+        self.snapCo = None
         obj = bpy.context.object
         xy = [rmInfo.xy[0] - xyDelta[0], rmInfo.xy[1] - xyDelta[1]]
 
@@ -2670,7 +2671,7 @@ class Snapper():
         freeAxesN = self.getFreeAxesNormalized()
         freeAxesG = self.getFreeAxesGlobal()
 
-        if(self.objSnap):
+        if(ModalBaseFlexiOp.dispSnapInd or self.objSnap):
             #TODO: Called very frequently (store the tree [without duplicating data])
             snapLocs = self.getAllSnapLocs((snapToAxisLine and \
                 'AXIS' in {transType, origType})) + [orig]
@@ -2681,18 +2682,22 @@ class Snapper():
             kd.balance()
 
             coFind = Vector(xy).to_3d()
-            searchResult = kd.find_range(coFind, SNAP_DIST_PIXEL)
+            searchResult = kd.find_range(coFind, ModalBaseFlexiOp.snapDist)
 
             if(len(searchResult) != 0):
                 co, idx, dist = min(searchResult, key = lambda x: x[2])
-                loc = snapLocs[idx]
-                self.lastSnapTypes.add('loc')
+                self.snapCo = snapLocs[idx]
+
+        if(self.objSnap):
+            if(self.snapCo != None):
+                loc = self.snapCo
             else:
                 selObj, loc, normal, faceIdx = \
                     getSelFaceLoc(region, rv3d, xy, self.MAX_SNAP_FACE_CNT)
 
         if(loc != None):
             loc = tm @ loc
+            self.lastSnapTypes.add('loc')
         else:
             loc = region_2d_to_location_3d(region, rv3d, xy, vec)
             loc = tm @ loc
@@ -2836,7 +2841,7 @@ class Snapper():
 
         self.setStatus(rmInfo.area, text)
         loc = invTm @ loc
-        self.snapCo = loc
+        self.lastSelCo = loc
         self.tm = tm
         self.orig = orig
 
@@ -2844,10 +2849,10 @@ class Snapper():
 
     def getEditCoPair(self):
         refLineOrig = self.getRefLineOrig()
-        if(self.snapCo == None or refLineOrig == None):
+        if(self.lastSelCo == None or refLineOrig == None):
             return []
         orig = self.getCurrOrig(bpy.context.object, self.rmInfo)
-        return (self.tm @ orig, self.tm @ self.snapCo)
+        return (self.tm @ orig, self.tm @ self.lastSelCo)
 
     def setStatus(self, area, text): #TODO Global
         area.header_text_set(text)
@@ -2882,7 +2887,7 @@ class Snapper():
             colors = [(.6, 0.2, 0.2, 1), (0.2, .6, 0.2, 1), (0.2, 0.4, .6, 1)]
             l = 10 * rmInfo.rv3d.view_distance
 
-            if (self.snapCo != None and len(freeAxesC) == 1): orig = self.snapCo
+            if (self.lastSelCo != None and len(freeAxesC) == 1): orig = self.lastSelCo
 
             refCo = tm @ orig
 
@@ -2896,11 +2901,11 @@ class Snapper():
                 batches.append(batch_for_shader(shader, \
                     "LINES", {"pos": slineCo, "color": slineCol}))
 
-        if(refLineOrig != None and self.snapCo != None and \
+        if(refLineOrig != None and self.lastSelCo != None and \
             (self.angleSnap or ('keyboard' in self.lastSnapTypes \
                 and self.snapDigits.polar))):
 
-            slineCo = [orig, self.snapCo]
+            slineCo = [orig, self.lastSelCo]
             slineCol = [(.4, .4, .4, 1)] * 2
             batches.append(batch_for_shader(shader, \
                 "LINES", {"pos": slineCo, "color": slineCol}))
@@ -2915,8 +2920,8 @@ class Snapper():
             ptCo = self.customAxis.getSnapPts()
         else: ptCo = []
 
-        # ~ if(self.snapCo != None and 'loc' in self.lastSnapTypes):
-            # ~ ptCo.append(self.snapCo)
+        if(ModalBaseFlexiOp.dispSnapInd and self.snapCo != None):
+            ptCo.append(self.snapCo)
 
         # Axis Line
         slineCo, slineCol = getLineShades(lineCo, (1, 1, 1, 1), .9, .3, mid = False)
@@ -3278,8 +3283,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                 # set snapProc to False so this modal will process it
                 snapProc = False
 
-        if(updateMetaBtns(self, event)):
-            return {'RUNNING_MODAL'}
+        metaBtns = updateMetaBtns(self, event)
 
         if(not snapProc and event.type == 'ESC'):
             if(event.value == 'RELEASE'):
@@ -3386,8 +3390,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         # Refresh also in case of snapper events
         # except when digitsConfirmed (to give user opportunity to draw a straight line)
         # ~ if ((snapProc and not self.snapper.digitsConfirmed) \
-        if (snapProc\
-            or (event.type == 'MOUSEMOVE')):
+        if (metaBtns or snapProc or (event.type == 'MOUSEMOVE')):
 
             # Unlock axes in case of pure mousemove (TODO: Can be better)
             # ~ if(snapProc and not self.snapper.digitsConfirmed): pass
@@ -4043,7 +4046,7 @@ def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
 
     for obj in objs:
         mw = obj.matrix_world
-        if(not isPtIn2dBBox(obj, region, rv3d, coFind, SNAP_DIST_PIXEL)):
+        if(not isPtIn2dBBox(obj, region, rv3d, coFind, ModalBaseFlexiOp.snapDist)):
             continue
 
         for i, spline in enumerate(obj.data.splines):
@@ -4102,7 +4105,7 @@ def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
     searchPtsList = [[getCoordFromLoc(region, rv3d, pt).to_3d() \
         for pt in pts] for pts in searchPtsList]
 
-    srs = search2dFromPtsList(searchPtsList, coFind, searchRange = SNAP_DIST_PIXEL)
+    srs = search2dFromPtsList(searchPtsList, coFind, searchRange = ModalBaseFlexiOp.snapDist)
 
     if(len(srs) == 0):
         return None
@@ -4872,7 +4875,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 ModalFlexiEditBezierOp.resetDisplay()
             return {"RUNNING_MODAL"}
 
-        updateMetaBtns(self, event)
+        if(updateMetaBtns(self, event)):
+            self.refreshDisplaySelCurves(refreshPos = True)
+            return {'RUNNING_MODAL'}
 
         if(self.ctrl and (self.editCurveInfo == None or (self.pressT != None and \
             time.time() - self.pressT) < SNGL_CLK_DURN)):
@@ -5402,7 +5407,6 @@ def updateProps(self, context):
         ModalBaseFlexiOp.lineWidth = prefs.drawLineWidth
 
         ModalBaseFlexiOp.axisLineWidth = prefs.axisLineWidth
-        ModalBaseFlexiOp.snapPtSize = prefs.snapPtSize
         ModalBaseFlexiOp.editSubdivPtSize = prefs.editSubdivPtSize
         ModalBaseFlexiOp.greaseSubdivPtSize = prefs.greaseSubdivPtSize
 
@@ -5430,12 +5434,15 @@ def updateProps(self, context):
         ModalBaseFlexiOp.colGreaseSubdiv = prefs.colGreaseSubdiv
         ModalBaseFlexiOp.colGreaseBezPt = prefs.colGreaseBezPt
 
+        ModalBaseFlexiOp.snapDist = prefs.snapDist
+        ModalBaseFlexiOp.dispSnapInd = prefs.dispSnapInd
+        ModalBaseFlexiOp.snapPtSize = prefs.snapPtSize
+
     except Exception as e:
         print("BezierUtils: Error fetching default sizes in Draw Bezier", e)
         ModalBaseFlexiOp.drawPtSize = 4
         ModalBaseFlexiOp.lineWidth = 1.5
         ModalBaseFlexiOp.axisLineWidth = .25
-        ModalBaseFlexiOp.snapPtSize = 2
         ModalBaseFlexiOp.editSubdivPtSize = 6
         ModalBaseFlexiOp.greaseSubdivPtSize = 4
 
@@ -5464,6 +5471,10 @@ def updateProps(self, context):
 
         ModalBaseFlexiOp.colGreaseSubdiv = (1, .3, 1, 1) # GREASE_SUBDIV_PT_COLOR
         ModalBaseFlexiOp.colGreaseBezPt = (1, .3, 1, 1) # GREASE_ENDPT_TIP_COLOR
+        
+        ModalBaseFlexiOp.snapDist = 20
+        ModalBaseFlexiOp.dispSnapInd = False
+        ModalBaseFlexiOp.snapPtSize = 3
 
     ModalBaseFlexiOp.hdlColMap ={'FREE': ModalBaseFlexiOp.colHdlFree, \
         'VECTOR': ModalBaseFlexiOp.colHdlVector,  \
@@ -5576,9 +5587,25 @@ class BezierUtilsPreferences(AddonPreferences):
     snapPtSize: FloatProperty(
             name = "Snap Point Size",
             description = "Size of snap point indicator",
-            default = 2,
+            default = 3,
             min = 0.1,
             max = 20,
+            update = updateProps
+    )
+
+    snapDist: FloatProperty(
+            name = "Snap Distance",
+            description = "Snapping distance (range) in pixels",
+            default = 20,
+            min = 1,
+            max = 200,
+            update = updateProps
+    )
+
+    dispSnapInd: BoolProperty(
+            name="Snap Indicator", \
+            description='Display indicator when pointer within snapping range', \
+            default = False,
             update = updateProps
     )
 
@@ -5717,6 +5744,7 @@ class BezierUtilsPreferences(AddonPreferences):
     drawColExpanded: BoolProperty(name="Draw Col Expanded State", default = False)
     greaseColExpanded: BoolProperty(name="Grease Col Expanded State", default = False)
     handleColExpanded: BoolProperty(name="Handle Col Expanded State", default = False)
+    snapOptExpanded: BoolProperty(name="Snap Options Expanded State", default = False)
 
     def draw(self, context):
         layout = self.layout
@@ -5724,7 +5752,7 @@ class BezierUtilsPreferences(AddonPreferences):
         col.label(text="Tab Category:")
         col.prop(self, "category", text="")
 
-        layout.row().label(text="UI Preferences:")
+        layout.row().label(text="Other Preferences:")
 
         row = layout.row()
         row.prop(self, "elemDimsExpanded", icon = "TRIA_DOWN" \
@@ -5750,11 +5778,6 @@ class BezierUtilsPreferences(AddonPreferences):
             col = layout.column().split()
             col.label(text='Axis Line Thickness:')
             col.prop(self, "axisLineWidth", text = '')
-            col = layout.column().split()
-            col.label(text='Snap Point Size:')
-            col.prop(self, "snapPtSize", text = '')
-
-        layout.column().separator()
 
         row = layout.row()
         row.prop(self, "drawColExpanded", icon = "TRIA_DOWN" \
@@ -5781,8 +5804,6 @@ class BezierUtilsPreferences(AddonPreferences):
             col.label(text="Subdivision Marker:")
             col.prop(self, "colEditSubdiv", text = '')
 
-        layout.column().separator()
-
         row = layout.row()
         row.prop(self, "greaseColExpanded", icon = "TRIA_DOWN" \
             if self.greaseColExpanded else "TRIA_RIGHT",  icon_only = True, emboss = False)
@@ -5804,8 +5825,6 @@ class BezierUtilsPreferences(AddonPreferences):
             col = layout.column().split()
             col.label(text="Curve Resolution Marker:")
             col.prop(self, "colGreaseSubdiv", text = '')
-
-        layout.column().separator()
 
         row = layout.row()
         row.prop(self, "handleColExpanded", icon = "TRIA_DOWN" \
@@ -5837,6 +5856,23 @@ class BezierUtilsPreferences(AddonPreferences):
             col = layout.column().split()
             col.label(text="Adjacent Bezier Point:")
             col.prop(self, "colAdjBezTip", text = '')
+
+        row = layout.row()
+        row.prop(self, "snapOptExpanded", icon = "TRIA_DOWN" \
+            if self.snapOptExpanded else "TRIA_RIGHT",  icon_only = True, emboss = False)
+        row.label(text = "Snapping Options")#, icon = 'UNLINKED')
+
+        if self.snapOptExpanded:
+            col = layout.column().split()
+            col.label(text='Snap Distance:')
+            col.prop(self, "snapDist", text = '')
+            col = layout.column().split()
+            col.label(text='Snap Indicator:')
+            col.prop(self, "dispSnapInd", text = '')
+            col = layout.column().split()
+            col.label(text='Snap Point Size:')
+            col.prop(self, "snapPtSize", text = '')
+
         col = layout.column()
         col.operator('object.reset_default_props')
 
