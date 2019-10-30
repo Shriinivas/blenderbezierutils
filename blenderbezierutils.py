@@ -5042,7 +5042,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             else:
                 self.capture = False
                 if(self.pressT != None and (tm - self.pressT) < SNGL_CLK_DURN):
-                    if(self.ctrl):
+                    if(self.ctrl and ei.clickInfo['hdlIdx'] == -1):
                         if(self.shift): handleType = 'ALIGNED'
                         elif(self.alt): handleType = 'VECTOR'
                         else: handleType = 'FREE'
