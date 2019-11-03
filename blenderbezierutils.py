@@ -4621,12 +4621,12 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         ModalBaseFlexiOp.refreshDisplayBase(segDispInfos, bptDispInfos, snapper)
 
     # Refresh display with existing curves (nonstatic)
-    def refreshDisplaySelCurves(self, segDispInfos = None, bptDispInfos = None, \
+    def refreshDisplaySelCurves(self, hltSegDispInfos = None, hltBptDispInfos = None, \
         locOnCurve = None, refreshPos = False):
 
         if(self.rmInfo == None): return # Possible in updateAfterGeomChange
-        if(segDispInfos == None): segDispInfos = []
-        if(bptDispInfos == None): bptDispInfos = []
+        segDispInfos = []
+        bptDispInfos = []
         # ~ curveInfos = self.selectCurveInfos.copy()
         # ~ if(self.editCurveInfo != None):
             # ~ curveInfos.add(self.editCurveInfo)
@@ -4639,6 +4639,10 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 newPos = newPos)
             segDispInfos += info1
             bptDispInfos += info2
+
+        # Highlighted at the top 
+        if(hltSegDispInfos != None): segDispInfos += hltSegDispInfos
+        if(hltBptDispInfos != None): bptDispInfos += hltBptDispInfos
 
         ModalFlexiEditBezierOp.refreshDisplay(segDispInfos, bptDispInfos, \
             locOnCurve, self.snapper)
