@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 68),
+    "version": (0, 9, 70),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -242,13 +242,14 @@ def reverseCurve(curve):
             ns.bezier_points[i].handle_right_type = p.handle_left_type
     bpy.data.curves.remove(cp)
 
-# Insert spline at location splineIdx (duplicated from existing spline at that location)
-# And remove points with indices in removePtIdxs from new spline
-def insertSpline(obj, splineIdx, removePtIdxs):
-    srcSpline = obj.data.splines[splineIdx]
-    createSpline(obj.data, srcSpline, False, False, removePtIdxs) # Appended at end
+# Insert spline at location insertIdx, duplicated from existing spline at
+# location srcSplineIdx and remove points with indices in removePtIdxs from new spline
+def insertSpline(obj, srcSplineIdx, insertIdx, removePtIdxs):
+    srcSpline = obj.data.splines[srcSplineIdx]
+    # Appended at end
+    newSpline = createSpline(obj.data, srcSpline, False, False, removePtIdxs)
     splineCnt = len(obj.data.splines)
-    nextIdx = splineIdx
+    nextIdx = insertIdx
     for idx in range(nextIdx, splineCnt - 1):
         srcSpline = obj.data.splines[nextIdx]
         createSpline(obj.data, srcSpline, False, False)
@@ -266,8 +267,49 @@ def removeBezierPts(obj, splineIdx, removePtIdxs):
             safeRemoveObj(obj)
         return
 
-    insertSpline(obj, splineIdx, removePtIdxs)
+    insertSpline(obj, splineIdx, splineIdx, removePtIdxs)
     obj.data.splines.remove(obj.data.splines[splineIdx + 1])
+
+# Returns a tuple with first value indicating change in spline index (-1, 0, 1)
+# and second indicating shift in seg index (negative) due to removal
+def removeBezierSeg(obj, splineIdx, segIdx):
+    nextIdx = getAdjIdx(obj, splineIdx, segIdx)
+    if(nextIdx == None): return
+    spline = obj.data.splines[splineIdx]
+    bpts = spline.bezier_points
+    ptCnt = len(bpts)
+    lastSegIdx = getLastSegIdx(obj, splineIdx)
+    splineIdxIncr = 0
+    segIdxIncr = 0
+    if(ptCnt <= 2):
+        removeBezierPts(obj, splineIdx, {segIdx, nextIdx})
+        # Spline removed by above call
+        splineIdxIncr = -1
+    else:
+        bpt = obj.data.splines[splineIdx].bezier_points[segIdx]
+        bpt.handle_right_type = 'FREE'
+        bpt.handle_left_type = 'FREE'
+        nextIdx = getAdjIdx(obj, splineIdx, segIdx)
+        bpt = obj.data.splines[splineIdx].bezier_points[nextIdx]
+        bpt.handle_right_type = 'FREE'
+        bpt.handle_left_type = 'FREE'
+        if(spline.use_cyclic_u):
+            spline.use_cyclic_u = False
+            if(segIdx != lastSegIdx):
+                moveSplineStart(obj, splineIdx, getAdjIdx(obj, splineIdx, segIdx))
+                segIdxIncr = - (segIdx + 1)
+        else:
+            if(segIdx == lastSegIdx):
+                removeBezierPts(obj, splineIdx, {lastSegIdx + 1})
+            elif(segIdx == 0):
+                removeBezierPts(obj, splineIdx, {0})
+                segIdxIncr = -1
+            else:
+                insertSpline(obj, splineIdx, splineIdx, set(range(segIdx + 1, ptCnt)))
+                removeBezierPts(obj, splineIdx + 1, range(segIdx + 1))
+                splineIdxIncr = 1
+                segIdxIncr = - (segIdx + 1)
+    return splineIdxIncr, segIdxIncr
 
 def insertBezierPts(obj, splineIdx, startIdx, cos, handleType):
 
@@ -4344,6 +4386,25 @@ class SelectCurveInfo:
                     else:
                         bpt.handle_right = bpt.co + co
 
+    # Remove all selected segments
+    # Returns map with spline index and seg index change after every seg removal
+    def removeSegs(self):
+        segSels = [p for p in self.ptSels if -1 in self.ptSels[p]]
+        cumulSegIdxIncr = 0
+        changedSplineIdx = self.splineIdx
+        segIdxIncr = 0
+        changedSelMap = {}
+
+        for segIdx in sorted(segSels):
+            changedSegIdx = segIdx + cumulSegIdxIncr
+            splineIdxIncr, segIdxIncr = removeBezierSeg(self.obj, \
+                changedSplineIdx, changedSegIdx)
+            changedSplineIdx += splineIdxIncr
+            cumulSegIdxIncr += segIdxIncr
+            changedSelMap[segIdx] = [splineIdxIncr, segIdxIncr]
+        return changedSelMap
+
+    # TODO: Separate functions for node and handles
     def removeNode(self):
         toRemove = set() # Bezier points to remove from object
         toRemoveSel = set() # Selection entry to remove from ptSels
@@ -4640,7 +4701,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             segDispInfos += info1
             bptDispInfos += info2
 
-        # Highlighted at the top 
+        # Highlighted at the top
         if(hltSegDispInfos != None): segDispInfos += hltSegDispInfos
         if(hltBptDispInfos != None): bptDispInfos += hltBptDispInfos
 
@@ -4687,6 +4748,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             if(bpy.data.objects.get(ci.objName) != None):
                 ci.obj = bpy.data.objects.get(ci.objName) #refresh anyway
                 splines = ci.obj.data.splines
+                if(ci.splineIdx >= len(ci.obj.data.splines)):
+                    ciRemoveList.append(ci)
+                    continue
                 spline = splines[ci.splineIdx]
                 bpts = spline.bezier_points
                 bptsCnt = len(bpts)
@@ -4838,6 +4902,132 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 return ci
         return None
 
+    # Delete selected segments and synchronize remaining selections
+    # TODO: Way too complicated, maybe there exists a much simpler way to do this
+    def delSelSegs(self):
+        curveInfoList = sorted(self.selectCurveInfos, \
+            key = lambda x: (x.objName, x.splineIdx))
+
+        # Process one spline at a time
+        for cIdx, c in enumerate(curveInfoList):
+            c.resetHltInfo()
+
+            spline = c.obj.data.splines[c.splineIdx]
+            wasCyclic = spline.use_cyclic_u
+            oldPtCnt = len(spline.bezier_points)
+
+            changedSelMap = c.removeSegs()
+
+            if(len(changedSelMap) == 0): continue
+
+            # Shift all the splineIdxs after the changed one by spline incr count
+            totalSplineIdxIncr = sum(x[0] for x in changedSelMap.values())
+
+            # Order doesn't matter (different curveInfo)
+            for i in range(cIdx + 1, len(curveInfoList)):
+                if(curveInfoList[i].objName != c.objName):
+                    break
+                curveInfoList[i].splineIdx += totalSplineIdxIncr
+
+            # TODO: Remove the try after sufficient testing (or better replacement)
+            # Exception means no selected points will be deleted
+            try:
+                # Copy old selections as they will change
+                oIdxs = sorted(c.ptSels.keys())
+                ptSelsCopy = c.ptSels.copy()
+                newSplineIdx = c.splineIdx
+
+                c.resetPtSel()
+                currCurveInfo = c
+
+                # Reflects new selection after every seg removal
+                modifiedSegIdxs = {idx:idx for idx in oIdxs}
+
+                # First get the segment selections out of the way
+                for i, segIdx in enumerate(sorted(changedSelMap.keys())):
+                    ptSelsCopy[segIdx].remove(-1)
+                    if(len(ptSelsCopy[segIdx]) == 0):
+                        ptSelsCopy.pop(segIdx)
+
+                # Each of the 'if' blocks in the loop iterate over all the selections
+                # and update them iteratively for each seg removal from spline
+                # The updated selected seg idx for each iteration is in modifiedSegIdxs
+
+                # segIdx and oIdx don't change throughout
+                # they always refer to the selections that were there before removal
+                for i, segIdx in enumerate(sorted(changedSelMap.keys())):
+                    splineIdxIncr = changedSelMap[segIdx][0]
+                    segIdxIncr = changedSelMap[segIdx][1]
+
+                    # This will be executed only once (if at all), at first iteration
+                    if(wasCyclic and i == 0):
+                        for j, oIdx in enumerate(oIdxs):
+                            # First iteration, so no need to refer to modifiedSegIdxs
+                            newSegIdx = oIdx + segIdxIncr
+                            if(newSegIdx < 0): newSegIdx += oldPtCnt
+                            modifiedSegIdxs[oIdx] = newSegIdx
+                            if(ptSelsCopy.get(oIdx) != None):
+                                currCurveInfo.ptSels[newSegIdx] = \
+                                    ptSelsCopy[oIdx].copy()
+
+                    # 'removed' segment at one of the either ends
+                    elif(splineIdxIncr == 0):
+                        ptCnt = len(c.obj.data.splines[newSplineIdx].bezier_points)
+                        for j, oIdx in enumerate(oIdxs):
+                            prevIdx = modifiedSegIdxs[oIdx]
+                            # segIdxIncr: only two values possible: 0, -1
+                            newSegIdx = prevIdx + segIdxIncr
+                            # ~ if(currCurveInfo.ptSels.get(prevIdx) != None):
+                                # ~ currCurveInfo.ptSels.pop(prevIdx)
+                            if(ptSelsCopy.get(oIdx) != None and \
+                                newSegIdx >=0 and newSegIdx < ptCnt):
+                                currCurveInfo.ptSels[newSegIdx] = ptSelsCopy[oIdx].copy()
+                            modifiedSegIdxs[oIdx] = newSegIdx
+
+                    # Most likely condition
+                    elif(splineIdxIncr > 0):
+                        splineCnt = len(c.obj.data.splines)
+                        prevCurveInfo = currCurveInfo
+                        newSplineIdx += 1
+                        # No overwriting since the higher splineIdxs already moved above
+                        # But it's possible this spline was removed in subsequent 
+                        # iterations by removeSegs, so check...
+                        if(newSplineIdx < splineCnt):
+                            currCurveInfo = SelectCurveInfo(c.obj, newSplineIdx)
+                            self.selectCurveInfos.add(currCurveInfo)
+                        # idxs and prevCurve have to be updated so continue
+                        else: 
+                            currCurveInfo = None # Fail fast
+
+                        for oIdx in oIdxs:
+                            prevIdx = modifiedSegIdxs[oIdx]
+                            # If prevIdx itself is negative, this is previous to previous
+                            # So won't change
+                            if(prevIdx < 0): continue
+                            newSegIdx = prevIdx + segIdxIncr
+                            # newSegIdx negative... first part of the split spline
+                            if(newSegIdx < 0 and ptSelsCopy.get(oIdx) != None):
+                                prevCurveInfo.ptSels[prevIdx] = ptSelsCopy[oIdx].copy()
+                            # newSegIdx positive... second part of the split spline
+                            elif(ptSelsCopy.get(oIdx) != None and newSegIdx >=0):
+                                if(newSplineIdx < splineCnt):
+                                    currCurveInfo.ptSels[newSegIdx] = \
+                                        ptSelsCopy[oIdx].copy()
+                                if(prevCurveInfo.ptSels.get(prevIdx) != None):
+                                    prevCurveInfo.ptSels.pop(prevIdx)
+                            modifiedSegIdxs[oIdx] = newSegIdx
+
+                    elif(splineIdxIncr < 0):
+                        # This is not the same as c 
+                        # (could be a new spline added in between)
+                        toRemList = [x for x in self.selectCurveInfos \
+                            if x.splineIdx == newSplineIdx]
+                        if(len(toRemList) > 0):
+                            self.selectCurveInfos.remove(toRemList[0])
+
+            except Exception as e:
+                c.resetPtSel() 
+
     def resetMetaBtns(self):
         self.ctrl = False
         self.shift = False
@@ -4951,6 +5141,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         if(event.type == 'DEL'):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
+                    self.delSelSegs()
                     for c in self.selectCurveInfos:
                         c.resetHltInfo()
                         c.removeNode() #selected node
@@ -5083,8 +5274,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             return {"RUNNING_MODAL"}
 
         elif(snapProc or event.type == 'MOUSEMOVE'):
-            segDispInfos = []
-            bptDispInfos = []
+            segDispInfos = None
+            bptDispInfos = None
             ei = self.editCurveInfo
             locOnCurve = None # For debug
 
@@ -5475,7 +5666,7 @@ def updateProps(self, context):
 
         ModalBaseFlexiOp.colGreaseSubdiv = (1, .3, 1, 1) # GREASE_SUBDIV_PT_COLOR
         ModalBaseFlexiOp.colGreaseBezPt = (1, .3, 1, 1) # GREASE_ENDPT_TIP_COLOR
-        
+
         ModalBaseFlexiOp.snapDist = 20
         ModalBaseFlexiOp.dispSnapInd = False
         ModalBaseFlexiOp.snapPtSize = 3
