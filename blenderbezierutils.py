@@ -3114,13 +3114,13 @@ class ModalBaseFlexiOp(Operator):
         return self.subInvoke(context, event)
 
     def modal(self, context, event):
-        if(context.space_data == None):
-            return {'PASS_THROUGH'}
+        # ~ if(context.space_data == None):
+            # ~ return {'PASS_THROUGH'}
 
-        if(not is3DVireport(context)):
-            self.cancelOp(context)
-            resetToolbarTool()
-            return {'CANCELLED'}
+        # ~ if(not is3DVireport(context)):
+            # ~ self.cancelOp(context)
+            # ~ resetToolbarTool()
+            # ~ return {'CANCELLED'}
 
         if(event.type == 'WINDOW_DEACTIVATE' and event.value == 'PRESS'):
             self.resetMetaBtns() # Subclass
