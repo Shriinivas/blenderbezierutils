@@ -605,7 +605,7 @@ def getSelFaceLoc(region, rv3d, xy, maxFaceCnt):
 
 # ~ def getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc):
     # ~ p1 = (0, 0)
-    # ~ p2 = (0, ModalBaseFlexiOp.snapDist)
+    # ~ p2 = (0, FTConst.snapDist)
     # ~ minEdgeDist =
         # ~ (region_2d_to_location_3d(region, rv3d, p1, vec) -
             # ~ region_2d_to_location_3d(region, rv3d, p2, vec)).length
@@ -2051,12 +2051,12 @@ class RegionMouseXYInfo:
 def getSubdivBatches(shader, subdivCos, showSubdivPts):
         ptSubDivCos = [] if(not showSubdivPts) else subdivCos
         ptBatch = batch_for_shader(ModalDrawBezierOp.shader, \
-            "POINTS", {"pos": ptSubDivCos, "color": [ModalBaseFlexiOp.colGreaseSubdiv \
+            "POINTS", {"pos": ptSubDivCos, "color": [FTConst.colGreaseSubdiv \
                 for i in range(0, len(ptSubDivCos))]})
 
         lineCos = getLinesFromPts(subdivCos)
         lineBatch = batch_for_shader(ModalDrawBezierOp.shader, \
-            "LINES", {"pos": lineCos, "color": [ModalBaseFlexiOp.colGreaseNonHltSeg \
+            "LINES", {"pos": lineCos, "color": [FTConst.colGreaseNonHltSeg \
                 for i in range(0, len(lineCos))]})
 
         return ptBatch, lineBatch
@@ -2129,7 +2129,101 @@ def updateMetaBtns(caller, event, keymap = None):
 
 unitMap = {'FEET': "'", 'METERS':'m'}
 
-class SnapDigits():
+# Flexi Tool Constants 
+class FTConst:
+    refreshDisp = True
+
+    def updateProps(dummy, context):
+        try:
+            prefs = context.preferences.addons[__name__].preferences
+            BezierUtilsPanel.bl_category = prefs.category
+
+            FTConst.drawPtSize = prefs.drawPtSize
+            FTConst.lineWidth = prefs.drawLineWidth
+
+            FTConst.axisLineWidth = prefs.axisLineWidth
+            FTConst.editSubdivPtSize = prefs.editSubdivPtSize
+            FTConst.greaseSubdivPtSize = prefs.greaseSubdivPtSize
+
+            FTConst.colDrawSelSeg = prefs.colDrawSelSeg
+            FTConst.colDrawNonHltSeg = prefs.colDrawNonHltSeg
+            FTConst.colDrawHltSeg = prefs.colDrawHltSeg
+            FTConst.colDrawMarker = prefs.colDrawMarker
+
+            FTConst.colGreaseSelSeg = prefs.colGreaseSelSeg
+            FTConst.colGreaseNonHltSeg = prefs.colGreaseNonHltSeg
+            FTConst.colGreaseMarker = prefs.colGreaseMarker
+
+            FTConst.colHdlFree = prefs.colHdlFree
+            FTConst.colHdlVector = prefs.colHdlVector
+            FTConst.colHdlAligned = prefs.colHdlAligned
+            FTConst.colHdlAuto = prefs.colHdlAuto
+
+            FTConst.colSelTip = prefs.colSelTip
+            FTConst.colHltTip = prefs.colHltTip
+            FTConst.colBezPt = prefs.colBezPt
+            FTConst.colHdlPtTip = prefs.colHdlPtTip
+            FTConst.colAdjBezTip = prefs.colAdjBezTip
+
+            FTConst.colEditSubdiv = prefs.colEditSubdiv
+            FTConst.colGreaseSubdiv = prefs.colGreaseSubdiv
+            FTConst.colGreaseBezPt = prefs.colGreaseBezPt
+
+            FTConst.snapDist = prefs.snapDist
+            FTConst.dispSnapInd = prefs.dispSnapInd
+            FTConst.snapPtSize = prefs.snapPtSize
+
+        except Exception as e:
+            print("BezierUtils: Error fetching default sizes in Draw Bezier", e)
+            FTConst.initDefault()
+
+        ModalBaseFlexiOp.hdlColMap ={'FREE': FTConst.colHdlFree, \
+            'VECTOR': FTConst.colHdlVector,  \
+                'ALIGNED': FTConst.colHdlAligned, \
+                    'AUTO': FTConst.colHdlAuto}
+
+        if(FTConst.refreshDisp):
+            try: ModalBaseFlexiOp.opObj.refreshDisplaySelCurves()
+            except: pass
+
+    def initDefault():
+        FTConst.drawPtSize = 4
+        FTConst.lineWidth = 1.5
+        FTConst.axisLineWidth = .25
+        FTConst.editSubdivPtSize = 6
+        FTConst.greaseSubdivPtSize = 4
+
+        FTConst.colDrawSelSeg = (.6, .8, 1, 1)
+        FTConst.colDrawNonHltSeg = (.1, .4, .6, 1)
+        FTConst.colDrawHltSeg = (.2, .6, .9, 1)
+
+        FTConst.colGreaseSelSeg = (0.2, .8, 0.2, 1)
+        FTConst.colGreaseNonHltSeg = (0.2, .6, 0.2, 1)
+
+        FTConst.colHdlFree = (.6, .05, .05, 1)
+        FTConst.colHdlVector = (.4, .5, .2, 1)
+        FTConst.colHdlAligned = (1, .3, .3, 1)
+        FTConst.colHdlAuto = (.8, .5, .2, 1)
+
+        FTConst.colDrawMarker = (.6, .8, 1, 1)
+        FTConst.colGreaseMarker = (0.2, .8, 0.2, 1)
+
+        FTConst.colSelTip = (.2, .7, .3, 1)
+        FTConst.colHltTip = (.2, 1, .9, 1)
+        FTConst.colBezPt = (1, 1, 0, 1)
+        FTConst.colHdlPtTip = (.7, .7, 0, 1)
+        FTConst.colAdjBezTip = (.1, .1, .1, 1)
+
+        FTConst.colEditSubdiv = (.3, 0, 0, 1)
+
+        FTConst.colGreaseSubdiv = (1, .3, 1, 1)
+        FTConst.colGreaseBezPt = (1, .3, 1, 1)
+
+        FTConst.snapDist = 20
+        FTConst.dispSnapInd = False
+        FTConst.snapPtSize = 3
+
+class SnapDigits:
     digitMap = {'ONE':'1', 'TWO':'2', 'THREE':'3', 'FOUR':'4', 'FIVE':'5', \
                 'SIX':'6', 'SEVEN':'7', 'EIGHT':'8', 'NINE':'9', 'ZERO':'0', 'PERIOD':'.'}
 
@@ -2713,7 +2807,7 @@ class Snapper():
         freeAxesN = self.getFreeAxesNormalized()
         freeAxesG = self.getFreeAxesGlobal()
 
-        if(ModalBaseFlexiOp.dispSnapInd or self.objSnap):
+        if(FTConst.dispSnapInd or self.objSnap):
             #TODO: Called very frequently (store the tree [without duplicating data])
             snapLocs = self.getAllSnapLocs((snapToAxisLine and \
                 'AXIS' in {transType, origType})) + [orig]
@@ -2724,7 +2818,7 @@ class Snapper():
             kd.balance()
 
             coFind = Vector(xy).to_3d()
-            searchResult = kd.find_range(coFind, ModalBaseFlexiOp.snapDist)
+            searchResult = kd.find_range(coFind, FTConst.snapDist)
 
             if(len(searchResult) != 0):
                 co, idx, dist = min(searchResult, key = lambda x: x[2])
@@ -2962,7 +3056,7 @@ class Snapper():
             ptCo = self.customAxis.getSnapPts()
         else: ptCo = []
 
-        if(ModalBaseFlexiOp.dispSnapInd and self.snapCo != None):
+        if(FTConst.dispSnapInd and self.snapCo != None):
             ptCo.append(self.snapCo)
 
         # Axis Line
@@ -3025,16 +3119,16 @@ class ModalBaseFlexiOp(Operator):
     def drawHandlerBase():
         if(ModalBaseFlexiOp.shader != None):
 
-            bgl.glLineWidth(ModalBaseFlexiOp.axisLineWidth)
-            bgl.glPointSize(ModalBaseFlexiOp.snapPtSize)
+            bgl.glLineWidth(FTConst.axisLineWidth)
+            bgl.glPointSize(FTConst.snapPtSize)
             for batch in ModalBaseFlexiOp.snapperBatches:
                 batch.draw(ModalBaseFlexiOp.shader)
 
-            bgl.glLineWidth(ModalBaseFlexiOp.lineWidth)
+            bgl.glLineWidth(FTConst.lineWidth)
             if(ModalBaseFlexiOp.segBatch != None):
                 ModalBaseFlexiOp.segBatch.draw(ModalBaseFlexiOp.shader)
 
-            bgl.glPointSize(ModalBaseFlexiOp.drawPtSize)
+            bgl.glPointSize(FTConst.drawPtSize)
             if(ModalDrawBezierOp.tipBatch != None):
                 ModalDrawBezierOp.tipBatch.draw(ModalBaseFlexiOp.shader)
 
@@ -3109,7 +3203,7 @@ class ModalBaseFlexiOp(Operator):
 
         ModalBaseFlexiOp.ColGreaseHltSeg = (.3, .3, .3, 1) # Not used
 
-        updateProps(None, context)
+        FTConst.updateProps(None, context)
 
         return self.subInvoke(context, event)
 
@@ -3177,7 +3271,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                 ModalDrawBezierOp.markerBatch.draw(ModalBaseFlexiOp.shader)
 
             # TODO: Move this to grease draw
-            bgl.glPointSize(ModalBaseFlexiOp.greaseSubdivPtSize)
+            bgl.glPointSize(FTConst.greaseSubdivPtSize)
             if(ModalDrawBezierOp.subdivPtBatch != None):
                 ModalDrawBezierOp.subdivPtBatch.draw(ModalBaseFlexiOp.shader)
 
@@ -3564,11 +3658,11 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         return True
 
     def getColorMap(self):
-        return {'SEL_SEG_COLOR': ModalBaseFlexiOp.colDrawSelSeg,
-        'NONADJ_SEG_COLOR': ModalBaseFlexiOp.colDrawNonHltSeg,
-        'TIP_COLOR': ModalBaseFlexiOp.colHdlPtTip,
-        'ENDPT_TIP_COLOR': ModalBaseFlexiOp.colBezPt,
-        'MARKER_COLOR': ModalBaseFlexiOp.colDrawMarker}
+        return {'SEL_SEG_COLOR': FTConst.colDrawSelSeg,
+        'NONADJ_SEG_COLOR': FTConst.colDrawNonHltSeg,
+        'TIP_COLOR': FTConst.colHdlPtTip,
+        'ENDPT_TIP_COLOR': FTConst.colBezPt,
+        'MARKER_COLOR': FTConst.colDrawMarker}
 
     def preInvoke(self, context, event):
 
@@ -3838,11 +3932,11 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         return True
 
     def getColorMap(self):
-        return {'SEL_SEG_COLOR': ModalBaseFlexiOp.colGreaseSelSeg,
+        return {'SEL_SEG_COLOR': FTConst.colGreaseSelSeg,
         'NONADJ_SEG_COLOR': ModalBaseFlexiOp.ColGreaseHltSeg, #Not used
-        'TIP_COLOR': ModalBaseFlexiOp.colHdlPtTip,
-        'ENDPT_TIP_COLOR': ModalBaseFlexiOp.colGreaseBezPt,
-        'MARKER_COLOR': ModalBaseFlexiOp.colGreaseMarker, }
+        'TIP_COLOR': FTConst.colHdlPtTip,
+        'ENDPT_TIP_COLOR': FTConst.colGreaseBezPt,
+        'MARKER_COLOR': FTConst.colGreaseMarker, }
 
     def preInvoke(self, context, event):
         # If the operator is invoked from context menu, enable the tool on toolbar
@@ -4088,7 +4182,7 @@ def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
 
     for obj in objs:
         mw = obj.matrix_world
-        if(not isPtIn2dBBox(obj, region, rv3d, coFind, ModalBaseFlexiOp.snapDist)):
+        if(not isPtIn2dBBox(obj, region, rv3d, coFind, FTConst.snapDist)):
             continue
 
         for i, spline in enumerate(obj.data.splines):
@@ -4147,7 +4241,7 @@ def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
     searchPtsList = [[getCoordFromLoc(region, rv3d, pt).to_3d() \
         for pt in pts] for pts in searchPtsList]
 
-    srs = search2dFromPtsList(searchPtsList, coFind, searchRange = ModalBaseFlexiOp.snapDist)
+    srs = search2dFromPtsList(searchPtsList, coFind, searchRange = FTConst.snapDist)
 
     if(len(srs) == 0):
         return None
@@ -4457,11 +4551,11 @@ class SelectCurveInfo:
     def getDisplayInfos(self, hideHdls = False, newPos = None):
 
         # Making long short
-        cHltTip = ModalBaseFlexiOp.colHltTip
-        cBezPt = ModalBaseFlexiOp.colBezPt
-        cHdlPt = ModalBaseFlexiOp.colHdlPtTip
-        cAdjBezTip = ModalBaseFlexiOp.colAdjBezTip
-        cNonHltSeg = ModalBaseFlexiOp.colDrawNonHltSeg
+        cHltTip = FTConst.colHltTip
+        cBezPt = FTConst.colBezPt
+        cHdlPt = FTConst.colHdlPtTip
+        cAdjBezTip = FTConst.colAdjBezTip
+        cNonHltSeg = FTConst.colDrawNonHltSeg
 
         segDispInfos = []
         bptDispInfos = []
@@ -4490,7 +4584,7 @@ class SelectCurveInfo:
         # selected segments take priority over highlighted
         if(hltType != None and hltType in {'SegLoc', 'CurveLoc'}):
             ptIdx = hltInfo['ptIdx']
-            segDispInfos[ptIdx].segColor = ModalBaseFlexiOp.colDrawHltSeg
+            segDispInfos[ptIdx].segColor = FTConst.colDrawHltSeg
             bptDispInfos[ptIdx].tipColors[1] = cBezPt
             nextIdx = self.getAdjIdx(ptIdx)
             bptDispInfos[nextIdx].tipColors[1] = cBezPt
@@ -4526,10 +4620,10 @@ class SelectCurveInfo:
                             self.subdivCnt)[1:-1]
 
                     selSegDispInfo = EditSegDisplayInfo(segPts, \
-                        ModalBaseFlexiOp.colDrawSelSeg, vertCos)
+                        FTConst.colDrawSelSeg, vertCos)
                     segDispInfos[ptIdx] = selSegDispInfo
                 else:
-                    bptDispInfos[ptIdx].tipColors[hdlIdx] = ModalBaseFlexiOp.colSelTip
+                    bptDispInfos[ptIdx].tipColors[hdlIdx] = FTConst.colSelTip
 
         # Process highlighted points after selected ones because...
         # highlighted points take priority over selected
@@ -4659,7 +4753,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
     def drawHandler():
         if(ModalBaseFlexiOp.shader != None):
             ModalBaseFlexiOp.drawHandlerBase()
-            bgl.glPointSize(ModalBaseFlexiOp.editSubdivPtSize)
+            bgl.glPointSize(FTConst.editSubdivPtSize)
             if(ModalFlexiEditBezierOp.ptBatch != None):
                 ModalFlexiEditBezierOp.ptBatch.draw(ModalBaseFlexiOp.shader)
 
@@ -4676,7 +4770,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         # ~ if(locOnCurve != None): ptCos.append(locOnCurve) # For debugging
 
         ModalFlexiEditBezierOp.ptBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
-            "POINTS", {"pos": ptCos, "color": [ModalBaseFlexiOp.colEditSubdiv \
+            "POINTS", {"pos": ptCos, "color": [FTConst.colEditSubdiv \
                 for i in range(0, len(ptCos))]})
 
         ModalBaseFlexiOp.refreshDisplayBase(segDispInfos, bptDispInfos, snapper)
@@ -5594,95 +5688,6 @@ def updatePanel(self, context):
     except Exception as e:
         print("BezierUtils: Updating Panel locations has failed", e)
 
-def updateProps(self, context):
-    try:
-        prefs = context.preferences.addons[__name__].preferences
-        BezierUtilsPanel.bl_category = prefs.category
-        ModalBaseFlexiOp.drawPtSize = prefs.drawPtSize
-        ModalBaseFlexiOp.lineWidth = prefs.drawLineWidth
-
-        ModalBaseFlexiOp.axisLineWidth = prefs.axisLineWidth
-        ModalBaseFlexiOp.editSubdivPtSize = prefs.editSubdivPtSize
-        ModalBaseFlexiOp.greaseSubdivPtSize = prefs.greaseSubdivPtSize
-
-        ModalBaseFlexiOp.colDrawSelSeg = prefs.colDrawSelSeg
-        ModalBaseFlexiOp.colDrawNonHltSeg = prefs.colDrawNonHltSeg
-        ModalBaseFlexiOp.colDrawHltSeg = prefs.colDrawHltSeg
-        ModalBaseFlexiOp.colDrawMarker = prefs.colDrawMarker
-
-        ModalBaseFlexiOp.colGreaseSelSeg = prefs.colGreaseSelSeg
-        ModalBaseFlexiOp.colGreaseNonHltSeg = prefs.colGreaseNonHltSeg
-        ModalBaseFlexiOp.colGreaseMarker = prefs.colGreaseMarker
-
-        ModalBaseFlexiOp.colHdlFree = prefs.colHdlFree
-        ModalBaseFlexiOp.colHdlVector = prefs.colHdlVector
-        ModalBaseFlexiOp.colHdlAligned = prefs.colHdlAligned
-        ModalBaseFlexiOp.colHdlAuto = prefs.colHdlAuto
-
-        ModalBaseFlexiOp.colSelTip = prefs.colSelTip
-        ModalBaseFlexiOp.colHltTip = prefs.colHltTip
-        ModalBaseFlexiOp.colBezPt = prefs.colBezPt
-        ModalBaseFlexiOp.colHdlPtTip = prefs.colHdlPtTip
-        ModalBaseFlexiOp.colAdjBezTip = prefs.colAdjBezTip
-
-        ModalBaseFlexiOp.colEditSubdiv = prefs.colEditSubdiv
-        ModalBaseFlexiOp.colGreaseSubdiv = prefs.colGreaseSubdiv
-        ModalBaseFlexiOp.colGreaseBezPt = prefs.colGreaseBezPt
-
-        ModalBaseFlexiOp.snapDist = prefs.snapDist
-        ModalBaseFlexiOp.dispSnapInd = prefs.dispSnapInd
-        ModalBaseFlexiOp.snapPtSize = prefs.snapPtSize
-
-    except Exception as e:
-        print("BezierUtils: Error fetching default sizes in Draw Bezier", e)
-        ModalBaseFlexiOp.drawPtSize = 4
-        ModalBaseFlexiOp.lineWidth = 1.5
-        ModalBaseFlexiOp.axisLineWidth = .25
-        ModalBaseFlexiOp.editSubdivPtSize = 6
-        ModalBaseFlexiOp.greaseSubdivPtSize = 4
-
-        ModalBaseFlexiOp.colDrawSelSeg = (.6, .8, 1, 1) # DRAW_SEL_SEG_COLOR
-        ModalBaseFlexiOp.colDrawNonHltSeg = (.1, .4, .6, 1) # DRAW_ADJ_SEG_COLOR
-        ModalBaseFlexiOp.colDrawHltSeg = (.2, .6, .9, 1) # DRAW_NONADJ_SEG_COLOR
-
-        ModalBaseFlexiOp.colGreaseSelSeg = (0.2, .8, 0.2, 1) # GREASE_SEL_SEG_COLOR
-        ModalBaseFlexiOp.colGreaseNonHltSeg = (0.2, .6, 0.2, 1) # GREASE_ADJ_SEG_COLOR
-
-        ModalBaseFlexiOp.colHdlFree = (.6, .05, .05, 1) # HANDLE_COLOR_FREE
-        ModalBaseFlexiOp.colHdlVector = (.4, .5, .2, 1) # HANDLE_COLOR_VECTOR
-        ModalBaseFlexiOp.colHdlAligned = (1, .3, .3, 1) # HANDLE_COLOR_ALIGNED
-        ModalBaseFlexiOp.colHdlAuto = (.8, .5, .2, 1) # HANDLE_COLOR_AUTO
-
-        ModalBaseFlexiOp.colDrawMarker = (.6, .8, 1, 1) # DRAW_MARKER_COLOR
-        ModalBaseFlexiOp.colGreaseMarker = (0.2, .8, 0.2, 1) # GREASE_MARKER_COLOR
-
-        ModalBaseFlexiOp.colSelTip = (.2, .7, .3, 1) # SEL_TIP_COLOR
-        ModalBaseFlexiOp.colHltTip = (.2, 1, .9, 1) # HLT_TIP_COLOR
-        ModalBaseFlexiOp.colBezPt = (1, 1, 0, 1) # ENDPT_TIP_COLOR
-        ModalBaseFlexiOp.colHdlPtTip = (.7, .7, 0, 1) # TIP_COLOR
-        ModalBaseFlexiOp.colAdjBezTip = (.1, .1, .1, 1) # ADJ_ENDPT_TIP_COLOR
-
-        ModalBaseFlexiOp.colEditSubdiv = (.3, 0, 0, 1) # EDIT_SUBDIV_PT_COLOR
-
-        ModalBaseFlexiOp.colGreaseSubdiv = (1, .3, 1, 1) # GREASE_SUBDIV_PT_COLOR
-        ModalBaseFlexiOp.colGreaseBezPt = (1, .3, 1, 1) # GREASE_ENDPT_TIP_COLOR
-
-        ModalBaseFlexiOp.snapDist = 20
-        ModalBaseFlexiOp.dispSnapInd = False
-        ModalBaseFlexiOp.snapPtSize = 3
-
-    ModalBaseFlexiOp.hdlColMap ={'FREE': ModalBaseFlexiOp.colHdlFree, \
-        'VECTOR': ModalBaseFlexiOp.colHdlVector,  \
-            'ALIGNED': ModalBaseFlexiOp.colHdlAligned, \
-                'AUTO': ModalBaseFlexiOp.colHdlAuto}
-
-    if(updateProps.refreshDisp):
-        try: ModalBaseFlexiOp.opObj.refreshDisplaySelCurves()
-        except: pass
-
-updateProps.refreshDisp = True
-
-
 class ResetDefaultPropsOp(bpy.types.Operator):
     bl_idname = "object.reset_default_props"
     bl_label = "Reset"
@@ -5693,7 +5698,7 @@ class ResetDefaultPropsOp(bpy.types.Operator):
         panel = BezierUtilsPanel
         prefs = context.preferences.addons[__name__].preferences
         props = prefs.bl_rna.properties
-        updateProps.refreshDisp = False
+        FTConst.refreshDisp = False
         for prop in props:
             try:
                 if(not hasattr(prop, "default")): continue
@@ -5710,8 +5715,8 @@ class ResetDefaultPropsOp(bpy.types.Operator):
                     exec(execStr)
             except Exception as e:
                 print(e)
-        updateProps.refreshDisp = True
-        updateProps(None, context)
+        FTConst.refreshDisp = True
+        FTConst.updateProps(None, context)
         return {'FINISHED'}
 
 
@@ -5731,7 +5736,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 1.5,
             min = 0.1,
             max = 20,
-            update = updateProps
+            update = FTConst.updateProps
     )
 
     drawPtSize: FloatProperty(
@@ -5740,7 +5745,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 4,
             min = 0.1,
             max = 20,
-            update = updateProps
+            update = FTConst.updateProps
     )
 
     editSubdivPtSize: FloatProperty(
@@ -5749,7 +5754,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 6,
             min = 0.1,
             max = 20,
-            update = updateProps
+            update = FTConst.updateProps
     )
 
     greaseSubdivPtSize: FloatProperty(
@@ -5758,7 +5763,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 4,
             min = 0.1,
             max = 20,
-            update = updateProps
+            update = FTConst.updateProps
     )
 
     markerSize: FloatProperty(
@@ -5767,7 +5772,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 6,
             min = 0.1,
             max = 20,
-            update = updateProps
+            update = FTConst.updateProps
     )
 
     axisLineWidth: FloatProperty(
@@ -5776,7 +5781,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 0.25,
             min = 0.1,
             max = 20,
-            update = updateProps
+            update = FTConst.updateProps
     )
 
     snapPtSize: FloatProperty(
@@ -5785,7 +5790,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 3,
             min = 0.1,
             max = 20,
-            update = updateProps
+            update = FTConst.updateProps
     )
 
     snapDist: FloatProperty(
@@ -5794,145 +5799,145 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 20,
             min = 1,
             max = 200,
-            update = updateProps
+            update = FTConst.updateProps
     )
 
     dispSnapInd: BoolProperty(
             name="Snap Indicator", \
             description='Display indicator when pointer within snapping range', \
             default = False,
-            update = updateProps
+            update = FTConst.updateProps
     )
 
     colDrawSelSeg: bpy.props.FloatVectorProperty(
         name="Selected Draw / Edit  Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default=(.6, .8, 1, 1), \
                 description = 'Color of the segment being drawn / edited',
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colDrawNonHltSeg: bpy.props.FloatVectorProperty(
         name="Adjacent Draw / Edit Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default=(.1, .4, .6, 1), \
                 description = 'Color of the segment adjacent to the' + \
-                    'one being drawn / edited', update = updateProps
+                    'one being drawn / edited', update = FTConst.updateProps
     )
 
     colDrawHltSeg: bpy.props.FloatVectorProperty(
         name="Highlighted Edit Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default=(.2, .6, .9, 1), \
                 description = 'Color of the segment under mouse curser in Flexi Edit', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colDrawMarker: bpy.props.FloatVectorProperty(
         name="Marker", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default=(.6, .8, 1, 1), \
-                description = 'Color of the marker', update = updateProps
+                description = 'Color of the marker', update = FTConst.updateProps
     )
 
     colGreaseSelSeg: bpy.props.FloatVectorProperty(
         name="Selected Grease Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default=(0.2, .8, 0.2, 1), \
                 description = 'Color of the segment being drawn', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colGreaseNonHltSeg: bpy.props.FloatVectorProperty(
         name="Adjacent Grease Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default = (0.2, .6, 0.2, 1), \
                 description = 'Color of the segment adjacent to the one being drawn', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colGreaseMarker: bpy.props.FloatVectorProperty(
         name="Marker", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default = (0.2, .8, 0.2, 1), \
-                description = 'Color of the marker', update = updateProps
+                description = 'Color of the marker', update = FTConst.updateProps
     )
 
     colHdlFree: bpy.props.FloatVectorProperty(
         name="Free Handle", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default=(.6, .05, .05, 1), \
                 description = 'Free handle color in all Flexi Tools', \
-                        update = updateProps
+                        update = FTConst.updateProps
     )
 
     colHdlVector: bpy.props.FloatVectorProperty(
         name="Vector Handle", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default=(.4, .5, .2, 1), \
                 description = 'Vector handle color in all Flexi Tools', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colHdlAligned: bpy.props.FloatVectorProperty(
         name="Aligned Handle", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default=(1, .3, .3, 1), \
                 description = 'Aligned handle color in all Flexi Tools', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colHdlAuto: bpy.props.FloatVectorProperty(
         name="Auto Handle", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default=(.8, .5, .2, 1), \
                 description = 'Auto handle color in all Flexi Tools', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colSelTip: bpy.props.FloatVectorProperty(
         name="Selected Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default = (.2, .7, .3, 1), \
                 description = 'Color of the selected Bezier or handle point', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colHltTip: bpy.props.FloatVectorProperty(
         name="Highlighted Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default = (.2, 1, .9, 1), \
                 description = 'Color of Bezier or handle point under mouse pointer', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colBezPt: bpy.props.FloatVectorProperty(
         name="Bezier Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default = (1, 1, 0, 1), \
                 description = 'Color of nonselected Bezier point', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colHdlPtTip: bpy.props.FloatVectorProperty(
         name="Handle Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default = (.7, .7, 0, 1), \
                 description = 'Color of nonselected handle point', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colAdjBezTip: bpy.props.FloatVectorProperty(
         name="Adjacent Bezier Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default = (.1, .1, .1, 1), \
                 description = 'Color of Bezier points of adjacent segments', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colEditSubdiv: bpy.props.FloatVectorProperty(
         name="Uniform Subdiv Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default = (.3, 0, 0, 1), \
                 description = 'Color of point marking subdivisions', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colGreaseSubdiv: bpy.props.FloatVectorProperty(
         name="Resolution Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default = (1, .3, 1, 1), \
                 description = 'Color of point marking curve resolution', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     colGreaseBezPt: bpy.props.FloatVectorProperty(
         name="Bezier Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
             default = (1, .3, 1, 1), \
                 description = 'Color of Bezier point', \
-                    update = updateProps
+                    update = FTConst.updateProps
     )
 
     elemDimsExpanded: BoolProperty(name="Draw Elem Expanded State", default = False)
@@ -5946,8 +5951,6 @@ class BezierUtilsPreferences(AddonPreferences):
         col = layout.column().split()
         col.label(text="Tab Category:")
         col.prop(self, "category", text="")
-
-        layout.row().label(text="Other Preferences:")
 
         row = layout.row()
         row.prop(self, "elemDimsExpanded", icon = "TRIA_DOWN" \
