@@ -3132,6 +3132,10 @@ class ModalBaseFlexiOp(Operator):
             if(ModalDrawBezierOp.tipBatch != None):
                 ModalDrawBezierOp.tipBatch.draw(ModalBaseFlexiOp.shader)
 
+    def tagRedraw():
+        areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
+        for a in areas:
+            a.tag_redraw()
 
     def resetDisplayBase():
         ModalBaseFlexiOp.segBatch = getResetBatch(ModalBaseFlexiOp.shader, "LINES")
@@ -3139,10 +3143,7 @@ class ModalBaseFlexiOp(Operator):
         ModalBaseFlexiOp.snapperBatches = \
             [getResetBatch(ModalBaseFlexiOp.shader, "LINES"), \
                 getResetBatch(ModalBaseFlexiOp.shader, "POINTS")]
-
-        areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
-        for a in areas:
-            a.tag_redraw()
+        ModalBaseFlexiOp.tagRedraw()
 
     def refreshDisplayBase(segDispInfos, bptDispInfos, snapper):
         areaRegionInfo = getAllAreaRegions()
@@ -3157,9 +3158,7 @@ class ModalBaseFlexiOp(Operator):
         else:
             ModalBaseFlexiOp.snapperBatches = []
 
-        areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
-        for a in areas:
-            a.tag_redraw()
+        ModalBaseFlexiOp.tagRedraw()
 
     @persistent
     def loadPostHandler(dummy):
@@ -3291,14 +3290,14 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         ModalBaseFlexiOp.resetDisplayBase()
 
     def refreshDisplay(segDispInfos, bptDispInfos, subdivCos = [], \
-        showSubdivPts = True, markerLoc = [], colMarker = None, snapper = None):
+        showSubdivPts = True, snapper = None):
 
         ModalDrawBezierOp.subdivPtBatch, ModalDrawBezierOp.subdivLineBatch = \
             getSubdivBatches(ModalBaseFlexiOp.shader, subdivCos, showSubdivPts)
 
+        # Hide marker
         ModalDrawBezierOp.markerBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
-            "POINTS", {"pos": markerLoc, \
-                "color": [colMarker for i in range(len(markerLoc))]})
+            "POINTS", {"pos": [], "color": []})
 
         ModalBaseFlexiOp.refreshDisplayBase(segDispInfos, bptDispInfos, snapper)
 
@@ -3561,15 +3560,29 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
         return {'PASS_THROUGH'} if not snapProc else {'RUNNING_MODAL'}
 
+    def refreshMarkerPos(self, rmInfo):
+        colMap = self.getColorMap()
+        colMarker = colMap['MARKER_COLOR']
+        markerLoc = self.snapper.get3dLocSnap(rmInfo)
+
+        ModalDrawBezierOp.resetDisplay()
+        ModalDrawBezierOp.markerBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
+            "POINTS", {"pos": [markerLoc], "color": [colMarker]})
+
+        ModalBaseFlexiOp.tagRedraw()
+
     def redrawBezier(self, rmInfo, subdivCos = [], segIdxRange = None, \
         showSubdivPts = True):
+
+        if(len(self.curvePts) == 0):
+            self.refreshMarkerPos(rmInfo)
+            return
 
         colMap = self.getColorMap()
         colSelSeg = colMap['SEL_SEG_COLOR']
         colNonAdjSeg = colMap['NONADJ_SEG_COLOR']
         colTip = colMap['TIP_COLOR']
         colEndTip = colMap['ENDPT_TIP_COLOR']
-        colMarker = colMap['MARKER_COLOR']
 
         segColor = colSelSeg
         tipColors = [colTip, colEndTip, colTip, colTip, colEndTip, colTip]
@@ -3582,15 +3595,11 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
         curvePts = self.curvePts
 
-        if(not self.capture or len(self.curvePts) <= 1):
+        # First handle (straight line), if user drags first pt
+        if(self.capture and len(self.curvePts) == 1):
             loc = self.snapper.get3dLocSnap(rmInfo)
-            if(self.capture): #curvePts len must be 1
-                # First handle (straight line), if user drags first pt
-                curvePts = curvePts + [[curvePts[0][0], curvePts[0][1], loc]]
-                handleNos = [1] # display only right handle
-
-            # Marker (dot), if drawing not started
-            elif(len(curvePts) == 0): markerLoc = [loc]
+            curvePts = curvePts + [[curvePts[0][0], curvePts[0][1], loc]]
+            handleNos = [1] # display only right handle
 
         tipColors = [colTip, colEndTip, colTip]
         segDispInfos = []
@@ -3610,8 +3619,8 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
             segDispInfos.append(SegDisplayInfo(segPts, segColor))
 
-        ModalDrawBezierOp.refreshDisplay(segDispInfos, bptDispInfos, subdivCos, showSubdivPts, \
-            markerLoc, colMarker, self.snapper)
+        ModalDrawBezierOp.refreshDisplay(segDispInfos, bptDispInfos, subdivCos, \
+            showSubdivPts, self.snapper)
 
     #Reference point for restrict angle or lock axis
     def getRefLine(self):
