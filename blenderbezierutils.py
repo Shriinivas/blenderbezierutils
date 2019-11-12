@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 70),
+    "version": (0, 9, 71),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -35,7 +35,11 @@ bl_info = {
 }
 
 DEF_ERR_MARGIN = 0.0001
-LARGE_NO = 9e+9
+
+# Markers for invalid data
+LARGE_NO = 9e+9 # Both float and int
+LARGE_VECT = Vector((LARGE_NO, LARGE_NO, LARGE_NO))
+INVAL = '~'
 
 ###################### Common functions ######################
 
@@ -605,7 +609,7 @@ def getSelFaceLoc(region, rv3d, xy, maxFaceCnt):
 
 # ~ def getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc):
     # ~ p1 = (0, 0)
-    # ~ p2 = (0, FTConst.snapDist)
+    # ~ p2 = (0, FTProps.snapDist)
     # ~ minEdgeDist =
         # ~ (region_2d_to_location_3d(region, rv3d, p1, vec) -
             # ~ region_2d_to_location_3d(region, rv3d, p2, vec)).length
@@ -1724,7 +1728,7 @@ class BezierUtilsPanel(Panel):
         if(add and BezierUtilsPanel.drawHandlerRef == None):
             try:
                 BezierUtilsPanel.lineWidth = \
-                    bpy.context.preferences.addons[__name__].preferences.drawLineWidth
+                    bpy.context.preferences.addons[__name__].preferences.lineWidth
             except Exception as e:
                 # ~ print("BezierUtils: Error fetching line width in ColorCurves: ", e)
                 BezierUtilsPanel.lineWidth = 1.5
@@ -2051,12 +2055,12 @@ class RegionMouseXYInfo:
 def getSubdivBatches(shader, subdivCos, showSubdivPts):
         ptSubDivCos = [] if(not showSubdivPts) else subdivCos
         ptBatch = batch_for_shader(ModalDrawBezierOp.shader, \
-            "POINTS", {"pos": ptSubDivCos, "color": [FTConst.colGreaseSubdiv \
+            "POINTS", {"pos": ptSubDivCos, "color": [FTProps.colGreaseSubdiv \
                 for i in range(0, len(ptSubDivCos))]})
 
         lineCos = getLinesFromPts(subdivCos)
         lineBatch = batch_for_shader(ModalDrawBezierOp.shader, \
-            "LINES", {"pos": lineCos, "color": [FTConst.colGreaseNonHltSeg \
+            "LINES", {"pos": lineCos, "color": [FTProps.colGreaseNonHltSeg \
                 for i in range(0, len(lineCos))]})
 
         return ptBatch, lineBatch
@@ -2119,8 +2123,10 @@ def updateMetaBtns(caller, event, keymap = None):
             'LEFT_CTRL':'ctrl', 'RIGHT_CTRL':'ctrl',
             'LEFT_ALT': 'alt', 'RIGHT_ALT': 'alt'}
 
-    if(keymap.get(event.type) != None):
-        expr = 'caller.' + keymap[event.type] + ' = '
+    var = keymap.get(event.type)
+
+    if(var != None):
+        expr = 'caller.' + var + ' = '
         if(event.value == 'PRESS'): exec(expr +'True')
         if(event.value == 'RELEASE'): exec(expr +'False')
         return True
@@ -2129,99 +2135,418 @@ def updateMetaBtns(caller, event, keymap = None):
 
 unitMap = {'FEET': "'", 'METERS':'m'}
 
-# Flexi Tool Constants 
-class FTConst:
-    refreshDisp = True
+class FTHotKeyData:
+    def __init__(self, id, key, label, description):
+        self.id = id
+        self.key = key
+        self.label = label
+        self.description = description
+        self.default = key
+
+class FTHotKeys:
+
+    ##################### Key IDs #####################
+    # Draw
+    hkGrabRepos = 'hkGrabRepos'
+    hkUndoLastSeg = 'hkUndoLastSeg'
+
+    drawHotkeys = []
+
+    drawHotkeys.append(FTHotKeyData(hkGrabRepos, 'G', 'Grab Bezier Point', \
+            'Hotkey to grab Bezier point while drawing'))
+    drawHotkeys.append(FTHotKeyData(hkUndoLastSeg, 'BACK_SPACE', 'Undo Last Segment', \
+            'Hotkey to undo drawing of last segment'))
+
+    # Edit
+    hkUniSubdiv = 'hkUniSubdiv'
+    hkAlignHdl = 'hkAlignHdl'
+    hkDelPtSeg = 'hkDelPtSeg'
+    hkToggleHdl = 'hkToggleHdl'
+    hkSelAll = 'hkSelAll'
+    hkDeselAll = 'hkDeselAll'
+
+    editHotkeys = []
+    editHotkeys.append(FTHotKeyData(hkUniSubdiv, 'W', 'Segment Uniform Subdivide', \
+            'Hotkey to initiate Segment Uniform Subdiv op'))
+    editHotkeys.append(FTHotKeyData(hkAlignHdl, 'K', 'Align Handle', \
+            'Hotkey to align one handle with the other'))
+    editHotkeys.append(FTHotKeyData(hkDelPtSeg, 'DEL', 'Delete Point / Seg', \
+            'Delete selected Point / Segment, align selected handle with other point'))
+    editHotkeys.append(FTHotKeyData(hkToggleHdl, 'H', 'Hide / Unhide Handles', \
+            'Toggle handle visibility'))
+    editHotkeys.append(FTHotKeyData(hkSelAll, 'A', 'Select All Segs', \
+            'Select all segments'))
+    editHotkeys.append(FTHotKeyData(hkDeselAll, 'Alt+A', 'De-select All Segs', \
+            'De-select all segments'))
+
+    # Common
+    hkTweakPos = 'hkTweakPos'
+    hkToggleDrwEd = 'hkToggleDrwEd'
+    hkReorient = 'hkReorient'
+    commonHotkeys = []
+    commonHotkeys.append(FTHotKeyData(hkTweakPos, 'P', 'Tweak Position', \
+            'Tweak position or enter polar coordinates of the draw / edit point'))
+    commonHotkeys.append(FTHotKeyData(hkToggleDrwEd, 'E', 'Toggle Draw / Edit', \
+            'Toggle between Draw & Edit Flexi Tools'))
+    commonHotkeys.append(FTHotKeyData(hkReorient, 'U', \
+        'Origin to Active Face', \
+            'Move origin / orientation to face under mouse cursor \" + \
+                "if the origin / orientation is object face'))
+
+    # Snapping
+    hkSnapVert = 'hkSnapVert'
+    hkSnapGrid = 'hkSnapGrid'
+    hkSnapAngle = 'hkSnapAngle'
+
+    # Snapping (Suffix important)
+    hkSnapVertMeta = 'hkSnapVertMeta'
+    hkSnapGridMeta = 'hkSnapGridMeta'
+    hkSnapAngleMeta = 'hkSnapAngleMeta'
+
+    snapHotkeys = [] # Order important
+    snapHotkeys.append(FTHotKeyData(hkSnapVert, 'F5', 'Keyboard Key', 'Press key'))
+    snapHotkeys.append(FTHotKeyData(hkSnapGrid, 'F6', 'Keyboard Key', 'Press key'))
+    snapHotkeys.append(FTHotKeyData(hkSnapAngle, 'F7', 'Keyboard Key', 'Press key'))
+
+    snapHotkeysMeta = [] # Order should be same as snapHotkeys
+    # These keys are not event.type (they can have an entry 'KEY')
+    snapHotkeysMeta.append(FTHotKeyData(hkSnapVertMeta, 'ALT', 'Snap to Vert / Face', \
+        'Key pressed with mouse click for snapping to Vertex or Face'))
+    snapHotkeysMeta.append(FTHotKeyData(hkSnapGridMeta, 'CTRL', 'Snap to Grid', \
+        'Key pressed with mouse click for snapping to Grid'))
+    snapHotkeysMeta.append(FTHotKeyData(hkSnapAngleMeta, 'SHIFT', 'Snap to Angle', \
+        'Key pressed with mouse click for snapping to Angle Increment'))
+
+    idDataMap = {}
+    keyDataMap = {}
+
+    # Metakeys not part of the map
+    idDataMap = {h.id: h for h in \
+        [k for k in (drawHotkeys + editHotkeys + commonHotkeys + snapHotkeys)]}
+    keyDataMap = {h.key: h for h in \
+        [k for k in (drawHotkeys + editHotkeys + commonHotkeys + snapHotkeys)]}
+
+    exclKeys = {'RET', 'SPACE', 'ESC', 'X', 'Y', 'Z', \
+        'ACCENT_GRAVE', 'COMMA', 'PERIOD', 'F2', 'F3'}
+
+    metas = ['Alt', 'Ctrl', 'Shift']
+
+    def getSnapHotKeys(kId):
+        metaId = kId + 'Meta'
+        keydatas = [k for k in FTHotKeys.snapHotkeysMeta if k.id == metaId]
+        if(len(keydatas) > 0):
+            keydata = keydatas[0]
+            if(keydata.key != 'KEY'):
+                return ['LEFT_' + keydata.key, 'RIGHT_' + keydata.key]
+        keydata = FTHotKeys.idDataMap.get(kId)
+        return [keydata.key]
+
+    def isHotKey(id, key, metas):
+        keyVal = ''
+        for i, meta in enumerate(metas):
+            if(meta): keyVal += FTHotKeys.metas[i] + '+'
+
+        keyVal += key
+        return FTHotKeys.idDataMap[id].key == keyVal
+
+    # The regular part of the snap keys is validated against assigned key without meta
+    # So that if e.g. Ctrl+B is already assigned, B is not available as reg part
+    def isAssignedWithoutMeta(kId, key):
+        return any([k.endswith(key) for k in FTHotKeys.keyDataMap.keys() \
+            if FTHotKeys.keyDataMap[k].id != kId])
+
+    def isAssigned(kId, key):
+        keydata = FTHotKeys.keyDataMap.get(key)
+        return (keydata != None and keydata.id != kId)
+
+    updating = False
+
+    # Validation for single key text field (format: meta key + regular key)
+    # UI Format: Key and 3 toggle buttons for meta
+    # TODO: Separate update for each id?
+    def updateHotkeys(dummy, context):
+        FTHotKeys.updateHKPropPrefs(context)
+
+    # TODO: This method combines two rather different functionality based on reset flag
+    def updateHKPropPrefs(context, reset = False):
+        if(FTHotKeys.updating): return
+
+        FTHotKeys.updating = True
+        prefs = context.preferences.addons[__name__].preferences
+        hmap = FTHotKeys.idDataMap
+        # Checking entire map even if one key changed (TODO)
+        for kId in hmap:
+            if(reset): hmap[kId].key = hmap[kId].default
+            # User pressed key
+            prefKey = getattr(prefs, kId)
+            combKey = ''
+            for meta in FTHotKeys.metas:
+                if(hasattr(prefs, kId + meta) and \
+                    getattr(prefs, kId + meta) == True):
+                    combKey += meta + '+'
+            # key in map has format - meta1 + met2 ... + (event.type)
+            prefKey = combKey + prefKey
+            if(hmap[kId].key == prefKey): continue
+            valid = (prefKey != INVAL and not reset)
+            if(valid):
+                if(kId in [k.id for k in FTHotKeys.snapHotkeys]):
+                    valid = not FTHotKeys.isAssignedWithoutMeta(kId, prefKey)
+                else:
+                    valid = not FTHotKeys.isAssigned(kId, prefKey)
+            # Revert to key from map if invalid
+            if(not valid):
+                comps = hmap[kId].key.split('+')
+                setattr(prefs, kId, comps[-1])
+                for meta in FTHotKeys.metas:
+                    setattr(prefs, kId + meta, meta in comps[:-1])
+            else:
+                hmap[kId].key = prefKey
+
+        if(reset):
+            for i, metakeyData in enumerate(FTHotKeys.snapHotkeysMeta):
+                metakeyData.key = metakeyData.default
+                metaKeyId = metakeyData.id
+                setattr(prefs, metaKeyId, metakeyData.key)
+
+        FTHotKeys.updating = False
+        ModalBaseFlexiOp.propsChanged()
+
+    def getAvailKey(prefs):
+        availKey = None
+        oldKeys = set([m.upper() for m in FTHotKeys.metas])
+        newKeys = set([getattr(prefs, kd.id) \
+            for kd in FTHotKeys.snapHotkeysMeta])
+        for availKey in (oldKeys - newKeys): break # Only one entry
+        return availKey
+
+    # Validation for snap keys (format: EITHER meta key OR regular key)
+    # (regular part validated by updateHotkeys)
+    # UI Format: Drop-down with entries Ctrl, Alt, Shift, Keyboard and ...
+    # a separate single key field activated with selection of 'Keyboard' in the dropdown
+    def updateSnapMetaKeys(dummy, context):
+        if(FTHotKeys.updating): return
+
+        FTHotKeys.updating = True
+        prefs = context.preferences.addons[__name__].preferences
+        changedKeyIdx = -1
+        prefKeyMeta = None
+
+        for i, metakeyData in enumerate(FTHotKeys.snapHotkeysMeta):
+            metaKeyId = metakeyData.id
+            prefKeyMeta = getattr(prefs, metaKeyId)
+
+            if(prefKeyMeta != metakeyData.key): # Changed entry
+                changedKeyIdx = i
+                break
+
+        if(changedKeyIdx != -1):
+            metaKeyId = metakeyData.id # loop broke at metakeyData
+            metakeyData.key = prefKeyMeta
+            if(prefKeyMeta == 'KEY'):
+                regKeyId = metaKeyId[0:metaKeyId.index('Meta')]
+                regKeyData = FTHotKeys.idDataMap[regKeyId]
+                prefKeyReg = getattr(prefs, regKeyId)
+                # Invalid regular key->assign available meta key to the dropdown entry
+                if(prefKeyReg == INVAL or \
+                    FTHotKeys.isAssignedWithoutMeta(regKeyId, prefKeyReg)):
+                    setattr(prefs, regKeyId, regKeyData.key)
+                else:
+                    regKeyData.key = prefKeyReg
+            else:
+                # Change the other drop-down with the same key
+                availKey = FTHotKeys.getAvailKey(prefs)
+                for i, kd in enumerate(FTHotKeys.snapHotkeysMeta):
+                    if(kd.key == prefKeyMeta and i != changedKeyIdx):
+                        kd.key = availKey
+                        setattr(prefs, kd.id, availKey)
+                        break
+
+        FTHotKeys.updating = False
+        ModalBaseFlexiOp.propsChanged()
+
+    def keyCodeMap():
+        kcMap = {}
+        digits = ['ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', \
+                    'SIX', 'SEVEN', 'EIGHT', 'NINE']#, 'PERIOD']
+        numpadDigits = ['NUMPAD_' + d for d in digits]
+        # ~ 199: 'NUMPAD_PERIOD'
+
+        for i in range(26):
+            kcMap[i + 97] = chr(ord('A') + i)
+        # Digits not available, used for keyboard input
+        # ~ for i in range(10):
+            # ~ kcMap[i + 48] = digits[i]
+        for i in range(10):
+            kcMap[i + 150] = numpadDigits[i]
+        for i in range(12):
+            kcMap[i + 300] = 'F' + str(i + 1)
+
+        kcMap[161] = 'NUMPAD_SLASH'
+        kcMap[160] = 'NUMPAD_ASTERIX'
+        kcMap[162] = 'NUMPAD_MINUS'
+        kcMap[163] = 'NUMPAD_ENTER'
+        kcMap[164] = 'NUMPAD_PLUS'
+        kcMap[165] = 'PAUSE'
+        kcMap[166] = 'INSERT'
+        kcMap[167] = 'HOME'
+        kcMap[168] = 'PAGE_UP'
+        kcMap[169] = 'PAGE_DOWN'
+        kcMap[170] = 'END'
+        kcMap[199] = 'NUMPAD_PERIOD'
+        kcMap[219] = 'TAB'
+        kcMap[220] = 'RET'
+        kcMap[221] = 'SPACE'
+        kcMap[223] = 'BACK_SPACE'
+        kcMap[224] = 'DEL'
+        kcMap[225] = 'SEMI_COLON'
+        kcMap[226] = 'PERIOD'
+        kcMap[227] = 'COMMA'
+        kcMap[228] = "QUOTE"
+        kcMap[229] = 'ACCENT_GRAVE'
+        # ~ kcMap[230] = 'MINUS' # Reserved for keyboard input
+        kcMap[232] = 'SLASH'
+        kcMap[233] = 'BACK_SLASH'
+        kcMap[234] = 'EQUAL'
+        kcMap[235] = 'LEFT_BRACKET'
+        kcMap[236] = 'RIGHT_BRACKET'
+
+        return kcMap
+
+    # Drop down item tuples with 400 entries
+    # INVAL in all 3 fields for unavailable keycodes
+    def getKeyMapTuples(dummy1 = None, dummy2 = None):
+        kcMap = FTHotKeys.keyCodeMap()
+        tuples = []
+
+        for i in range(0, 400):
+            if(kcMap.get(i) != None and kcMap[i] not in FTHotKeys.exclKeys):
+                char = kcMap[i]
+            else:
+                char = INVAL
+            tuples.append((char, char, char))
+        return tuples
+
+    # TODO: Very big drop-down for every hotkey (because of default)
+    def getKeyMapTupleStr():
+        return ''.join(["('" + t[0] + "','" + t[1] + "','" + t[2] +"')," \
+            for t in FTHotKeys.getKeyMapTuples()])
+
+    def getHKFieldStr(keydata, addMeta):
+        propName = keydata.id
+        text = keydata.label
+        description = keydata.description
+        updateFn = 'FTHotKeys.updateHotkeys'
+        default = keydata.default
+        keys = default.split('+')
+        key = keys[-1]
+                # ~ "items = (('A', 'A','A'),('B', 'B', 'B')), " + \
+        retVal = propName + ": EnumProperty(name = '" + text + "', " + \
+                "items = (" + FTHotKeys.getKeyMapTupleStr() + "), " + \
+                (("default = '"+ key + "', ") if default != INVAL else '') + \
+                "update = " + updateFn + ", " + \
+                "description = '"+ description +"') \n"
+        if(addMeta):
+            for meta in FTHotKeys.metas:
+                retVal += propName + meta + ": BoolProperty(name='"+ meta +"', " + \
+                        "description='"+ meta +" Key', " + \
+                        "update = " + updateFn + ", " + \
+                        "default = "+ ('True' if meta in keys[:-1] else 'False') +") \n"
+        return retVal
+
+    def getMetaHKFieldStr(keydataMeta):
+        propName = keydataMeta.id
+        text = keydataMeta.label
+        description = keydataMeta.description
+        updateFn = 'FTHotKeys.updateSnapMetaKeys'
+        default = keydataMeta.default
+
+        itemsStr = "('CTRL', 'Ctrl', 'Ctrl'), ('ALT', 'Alt', 'Alt'), \
+                ('SHIFT', 'Shift', 'Shift'), ('KEY', 'Keyboard', 'Other keyboard key')"
+        retVal = propName + ": EnumProperty(name = '" + text + "', " + \
+                "items = (" + itemsStr + "), " + \
+                "default = '"+ default + "', " + \
+                "update = " + updateFn + ", " + \
+                "description = '"+ description +"') \n"
+        return retVal
+
+# Flexi Tool Constants
+class FTProps:
+    propUpdating = False
 
     def updateProps(dummy, context):
+        FTProps.updatePropsPrefs(context)
+
+    def updatePropsPrefs(context, resetPrefs = False):
+        if(FTProps.propUpdating): return
+        FTProps.propUpdating = True
         try:
             prefs = context.preferences.addons[__name__].preferences
-            BezierUtilsPanel.bl_category = prefs.category
 
-            FTConst.drawPtSize = prefs.drawPtSize
-            FTConst.lineWidth = prefs.drawLineWidth
+            props = ['drawPtSize', 'lineWidth', 'axisLineWidth', 'editSubdivPtSize', \
+            'greaseSubdivPtSize', 'colDrawSelSeg', 'colDrawNonHltSeg', 'colDrawHltSeg', \
+            'colDrawMarker', 'colGreaseSelSeg', 'colGreaseNonHltSeg', 'colGreaseMarker', \
+            'colHdlFree', 'colHdlVector', 'colHdlAligned', 'colHdlAuto', 'colSelTip', \
+            'colHltTip', 'colBezPt', 'colHdlPtTip', 'colAdjBezTip', 'colEditSubdiv', \
+            'colGreaseSubdiv', 'colGreaseBezPt', 'snapDist', 'dispSnapInd', 'snapPtSize']
 
-            FTConst.axisLineWidth = prefs.axisLineWidth
-            FTConst.editSubdivPtSize = prefs.editSubdivPtSize
-            FTConst.greaseSubdivPtSize = prefs.greaseSubdivPtSize
-
-            FTConst.colDrawSelSeg = prefs.colDrawSelSeg
-            FTConst.colDrawNonHltSeg = prefs.colDrawNonHltSeg
-            FTConst.colDrawHltSeg = prefs.colDrawHltSeg
-            FTConst.colDrawMarker = prefs.colDrawMarker
-
-            FTConst.colGreaseSelSeg = prefs.colGreaseSelSeg
-            FTConst.colGreaseNonHltSeg = prefs.colGreaseNonHltSeg
-            FTConst.colGreaseMarker = prefs.colGreaseMarker
-
-            FTConst.colHdlFree = prefs.colHdlFree
-            FTConst.colHdlVector = prefs.colHdlVector
-            FTConst.colHdlAligned = prefs.colHdlAligned
-            FTConst.colHdlAuto = prefs.colHdlAuto
-
-            FTConst.colSelTip = prefs.colSelTip
-            FTConst.colHltTip = prefs.colHltTip
-            FTConst.colBezPt = prefs.colBezPt
-            FTConst.colHdlPtTip = prefs.colHdlPtTip
-            FTConst.colAdjBezTip = prefs.colAdjBezTip
-
-            FTConst.colEditSubdiv = prefs.colEditSubdiv
-            FTConst.colGreaseSubdiv = prefs.colGreaseSubdiv
-            FTConst.colGreaseBezPt = prefs.colGreaseBezPt
-
-            FTConst.snapDist = prefs.snapDist
-            FTConst.dispSnapInd = prefs.dispSnapInd
-            FTConst.snapPtSize = prefs.snapPtSize
+            if(resetPrefs):
+                FTProps.initDefault()
+                for prop in props:
+                    exec('prefs.' + prop +' = FTProps.' + prop)
+                    # ~ setattr(prefs, prop, getattr(FTProps, prop))
+            else:
+                for prop in props:
+                    exec('FTProps.' + prop +' = prefs.' + prop)
+                    # ~ setattr(FTProps, prop, getattr(prefs, prop))
 
         except Exception as e:
             print("BezierUtils: Error fetching default sizes in Draw Bezier", e)
-            FTConst.initDefault()
+            FTProps.initDefault()
 
-        ModalBaseFlexiOp.hdlColMap ={'FREE': FTConst.colHdlFree, \
-            'VECTOR': FTConst.colHdlVector,  \
-                'ALIGNED': FTConst.colHdlAligned, \
-                    'AUTO': FTConst.colHdlAuto}
+        ModalBaseFlexiOp.propsChanged()
 
-        if(FTConst.refreshDisp):
-            try: ModalBaseFlexiOp.opObj.refreshDisplaySelCurves()
-            except: pass
+        try: ModalBaseFlexiOp.opObj.refreshDisplaySelCurves()
+        except: pass
+
+        FTProps.propUpdating = False
 
     def initDefault():
-        FTConst.drawPtSize = 4
-        FTConst.lineWidth = 1.5
-        FTConst.axisLineWidth = .25
-        FTConst.editSubdivPtSize = 6
-        FTConst.greaseSubdivPtSize = 4
+        FTProps.drawPtSize = 4
+        FTProps.lineWidth = 1.5
+        FTProps.axisLineWidth = .25
+        FTProps.editSubdivPtSize = 6
+        FTProps.greaseSubdivPtSize = 4
 
-        FTConst.colDrawSelSeg = (.6, .8, 1, 1)
-        FTConst.colDrawNonHltSeg = (.1, .4, .6, 1)
-        FTConst.colDrawHltSeg = (.2, .6, .9, 1)
+        FTProps.colDrawSelSeg = (.6, .8, 1, 1)
+        FTProps.colDrawNonHltSeg = (.1, .4, .6, 1)
+        FTProps.colDrawHltSeg = (.2, .6, .9, 1)
 
-        FTConst.colGreaseSelSeg = (0.2, .8, 0.2, 1)
-        FTConst.colGreaseNonHltSeg = (0.2, .6, 0.2, 1)
+        FTProps.colGreaseSelSeg = (0.2, .8, 0.2, 1)
+        FTProps.colGreaseNonHltSeg = (0.2, .6, 0.2, 1)
 
-        FTConst.colHdlFree = (.6, .05, .05, 1)
-        FTConst.colHdlVector = (.4, .5, .2, 1)
-        FTConst.colHdlAligned = (1, .3, .3, 1)
-        FTConst.colHdlAuto = (.8, .5, .2, 1)
+        FTProps.colHdlFree = (.6, .05, .05, 1)
+        FTProps.colHdlVector = (.4, .5, .2, 1)
+        FTProps.colHdlAligned = (1, .3, .3, 1)
+        FTProps.colHdlAuto = (.8, .5, .2, 1)
 
-        FTConst.colDrawMarker = (.6, .8, 1, 1)
-        FTConst.colGreaseMarker = (0.2, .8, 0.2, 1)
+        FTProps.colDrawMarker = (.6, .8, 1, 1)
+        FTProps.colGreaseMarker = (0.2, .8, 0.2, 1)
 
-        FTConst.colSelTip = (.2, .7, .3, 1)
-        FTConst.colHltTip = (.2, 1, .9, 1)
-        FTConst.colBezPt = (1, 1, 0, 1)
-        FTConst.colHdlPtTip = (.7, .7, 0, 1)
-        FTConst.colAdjBezTip = (.1, .1, .1, 1)
+        FTProps.colSelTip = (.2, .7, .3, 1)
+        FTProps.colHltTip = (.2, 1, .9, 1)
+        FTProps.colBezPt = (1, 1, 0, 1)
+        FTProps.colHdlPtTip = (.7, .7, 0, 1)
+        FTProps.colAdjBezTip = (.1, .1, .1, 1)
 
-        FTConst.colEditSubdiv = (.3, 0, 0, 1)
+        FTProps.colEditSubdiv = (.3, 0, 0, 1)
 
-        FTConst.colGreaseSubdiv = (1, .3, 1, 1)
-        FTConst.colGreaseBezPt = (1, .3, 1, 1)
+        FTProps.colGreaseSubdiv = (1, .3, 1, 1)
+        FTProps.colGreaseBezPt = (1, .3, 1, 1)
 
-        FTConst.snapDist = 20
-        FTConst.dispSnapInd = False
-        FTConst.snapPtSize = 3
+        FTProps.snapDist = 20
+        FTProps.dispSnapInd = False
+        FTProps.snapPtSize = 3
+
 
 class SnapDigits:
     digitMap = {'ONE':'1', 'TWO':'2', 'THREE':'3', 'FOUR':'4', 'FIVE':'5', \
@@ -2239,7 +2564,8 @@ class SnapDigits:
                 valid = False
         return delta, valid
 
-    def __init__(self, getFreeAxes, getEditCoPair):
+    def __init__(self, snapper, getFreeAxes, getEditCoPair):
+        self.snapper = snapper # TODO: Only for accessing meta keys (ctrl, alt etc)
         self.getFreeAxes = getFreeAxes
         self.getEditCoPair = getEditCoPair
         self.initialize()
@@ -2307,7 +2633,9 @@ class SnapDigits:
         self.deltaVec = editCos[1] - editCos[0]
 
     def procEvent(self, context, event):
-        if(event.type == 'P'):
+        # TODO: Metakeys at a central location
+        metakeys = [self.snapper.alt, self.snapper.ctrl, self.snapper.shift]
+        if(FTHotKeys.isHotKey(FTHotKeys.hkTweakPos, event.type, metakeys)):
             editCos = self.getEditCoPair()
             if(len(editCos) == 2):
                 if(event.value == 'RELEASE'):
@@ -2430,9 +2758,9 @@ class CustomAxis:
         #TODO: What's better?
         params = bpy.context.window_manager.bezierToolkitParams
         if(bpy.data.scenes[0].get('btk_co1') == None):
-            bpy.data.scenes[0]['btk_co1'] = [LARGE_NO, LARGE_NO, LARGE_NO]
+            bpy.data.scenes[0]['btk_co1'] = LARGE_VECT
         if(bpy.data.scenes[0].get('btk_co2') == None):
-            bpy.data.scenes[0]['btk_co2'] = [LARGE_NO, LARGE_NO, LARGE_NO]
+            bpy.data.scenes[0]['btk_co2'] = LARGE_VECT
         self.axisPts = [Vector(bpy.data.scenes[0]['btk_co1']), \
             Vector(bpy.data.scenes[0]['btk_co2'])]
         self.snapCnt = params.customAxisSnapCnt
@@ -2481,8 +2809,9 @@ class Snapper():
         self.isEditing = isEditing
         self.angleSnapSteps = Snapper.DEFAULT_ANGLE_SNAP_STEPS
         self.customAxis = CustomAxis()
-        self.snapDigits = SnapDigits(self.getFreeAxesNormalized, self.getEditCoPair)
+        self.snapDigits = SnapDigits(self, self.getFreeAxesNormalized, self.getEditCoPair)
         self.initialize()
+        self.updateSnapKeyMap()
         # ~ bpy.context.space_data.overlay.show_axis_x = False
         # ~ bpy.context.space_data.overlay.show_axis_y = False
 
@@ -2491,10 +2820,9 @@ class Snapper():
         self.ctrl = False # For excluding ctrl Z etc.
         self.alt = False # For future use
 
-        # Duplicate of self.ctrl etc. but better for readability
         self.angleSnap = False
         self.gridSnap = False
-        self.objSnap = False
+        self.vertSnap = False
 
         self.tm = None
         self.orig = None
@@ -2503,6 +2831,16 @@ class Snapper():
         self.lastSnapTypes = set()
 
         self.resetSnap()
+
+    def updateSnapKeyMap(self):
+        self.snapKeyMap = {}
+        kIds = [FTHotKeys.hkSnapVert, FTHotKeys.hkSnapAngle, FTHotKeys.hkSnapGrid]
+        varMap = {FTHotKeys.hkSnapVert: 'vertSnap', \
+            FTHotKeys.hkSnapAngle: 'angleSnap', FTHotKeys.hkSnapGrid: 'gridSnap'}
+        for kId in kIds:
+            keys = FTHotKeys.getSnapHotKeys(kId)
+            for key in keys:
+                self.snapKeyMap[key] = varMap[kId]
 
     def resetSnap(self): # Called even during isEditing
 
@@ -2612,12 +2950,9 @@ class Snapper():
         # update ctrl etc.
         updateMetaBtns(self, event)
 
-        keymap = {'LEFT_SHIFT': 'angleSnap', 'RIGHT_SHIFT': 'angleSnap',
-            'LEFT_CTRL':'gridSnap', 'RIGHT_CTRL':'gridSnap',
-            'LEFT_ALT': 'objSnap', 'RIGHT_ALT': 'objSnap'}
+        retVal = updateMetaBtns(self, event, self.snapKeyMap)
 
-        # will do the same as above call, but update different vars for readability
-        updateMetaBtns(self, event, keymap)
+        if(retVal): return True
 
         if(event.type == 'RIGHTMOUSE'):
             snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
@@ -2644,13 +2979,11 @@ class Snapper():
                 self.customAxis.set(1, loc)
 
             if(event.type == 'ESC'):
-                self.customAxis.set(0, Vector((LARGE_NO, LARGE_NO, LARGE_NO)))
-                self.customAxis.set(1, Vector((LARGE_NO, LARGE_NO, LARGE_NO)))
+                self.customAxis.set(0, LARGE_VECT)
+                self.customAxis.set(1, LARGE_VECT)
                 self.inDrawAxis = False
 
             return True
-
-        retVal = False # Whether the event was 'consumed'
 
         snapDProc = False
         if(len(self.getRefLine()) > 0):
@@ -2659,7 +2992,8 @@ class Snapper():
                 self.digitsConfirmed = False # Always reset if there was any digit entered
                 return True
 
-        if(not self.ctrl and event.type == 'U'):
+        metakeys = [self.alt, self.ctrl, self.shift] # TODO: Move to one place
+        if(FTHotKeys.isHotKey(FTHotKeys.hkReorient, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 self.tm = None # Force reorientation
                 self.orig = None # Force origin shift
@@ -2810,7 +3144,7 @@ class Snapper():
         freeAxesN = self.getFreeAxesNormalized()
         freeAxesG = self.getFreeAxesGlobal()
 
-        if(FTConst.dispSnapInd or self.objSnap):
+        if(FTProps.dispSnapInd or self.vertSnap):
             #TODO: Called very frequently (store the tree [without duplicating data])
             snapLocs = self.getAllSnapLocs((snapToAxisLine and \
                 'AXIS' in {transType, origType})) + [orig]
@@ -2821,13 +3155,13 @@ class Snapper():
             kd.balance()
 
             coFind = Vector(xy).to_3d()
-            searchResult = kd.find_range(coFind, FTConst.snapDist)
+            searchResult = kd.find_range(coFind, FTProps.snapDist)
 
             if(len(searchResult) != 0):
                 co, idx, dist = min(searchResult, key = lambda x: x[2])
                 self.snapCo = snapLocs[idx]
 
-        if(self.objSnap):
+        if(self.vertSnap):
             if(self.snapCo != None):
                 loc = self.snapCo
             else:
@@ -3059,7 +3393,7 @@ class Snapper():
             ptCo = self.customAxis.getSnapPts()
         else: ptCo = []
 
-        if(FTConst.dispSnapInd and self.snapCo != None):
+        if(FTProps.dispSnapInd and self.snapCo != None):
             ptCo.append(self.snapCo)
 
         # Axis Line
@@ -3122,16 +3456,16 @@ class ModalBaseFlexiOp(Operator):
     def drawHandlerBase():
         if(ModalBaseFlexiOp.shader != None):
 
-            bgl.glLineWidth(FTConst.axisLineWidth)
-            bgl.glPointSize(FTConst.snapPtSize)
+            bgl.glLineWidth(FTProps.axisLineWidth)
+            bgl.glPointSize(FTProps.snapPtSize)
             for batch in ModalBaseFlexiOp.snapperBatches:
                 batch.draw(ModalBaseFlexiOp.shader)
 
-            bgl.glLineWidth(FTConst.lineWidth)
+            bgl.glLineWidth(FTProps.lineWidth)
             if(ModalBaseFlexiOp.segBatch != None):
                 ModalBaseFlexiOp.segBatch.draw(ModalBaseFlexiOp.shader)
 
-            bgl.glPointSize(FTConst.drawPtSize)
+            bgl.glPointSize(FTProps.drawPtSize)
             if(ModalDrawBezierOp.tipBatch != None):
                 ModalDrawBezierOp.tipBatch.draw(ModalBaseFlexiOp.shader)
 
@@ -3139,6 +3473,16 @@ class ModalBaseFlexiOp(Operator):
         areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
         for a in areas:
             a.tag_redraw()
+
+    # Called back after add-on preferences are changed
+    def propsChanged():
+        if(ModalBaseFlexiOp.opObj != None and \
+            ModalBaseFlexiOp.opObj.snapper != None):
+            ModalBaseFlexiOp.opObj.snapper.updateSnapKeyMap()
+            ModalBaseFlexiOp.hdlColMap ={'FREE': FTProps.colHdlFree, \
+                        'VECTOR': FTProps.colHdlVector,  \
+                            'ALIGNED': FTProps.colHdlAligned, \
+                                'AUTO': FTProps.colHdlAuto}
 
     def resetDisplayBase():
         ModalBaseFlexiOp.segBatch = getResetBatch(ModalBaseFlexiOp.shader, "LINES")
@@ -3205,7 +3549,9 @@ class ModalBaseFlexiOp(Operator):
 
         ModalBaseFlexiOp.ColGreaseHltSeg = (.3, .3, .3, 1) # Not used
 
-        FTConst.updateProps(None, context)
+        FTProps.updateProps(None, context)
+        FTHotKeys.updateHotkeys(None, context)
+        FTHotKeys.updateSnapMetaKeys(None, context)
 
         return self.subInvoke(context, event)
 
@@ -3217,7 +3563,6 @@ class ModalBaseFlexiOp(Operator):
             # ~ self.cancelOp(context)
             # ~ resetToolbarTool()
             # ~ return {'CANCELLED'}
-
         if(event.type == 'WINDOW_DEACTIVATE' and event.value == 'PRESS'):
             self.resetMetaBtns() # Subclass
             self.snapper.initialize() # TODO: Check if needed
@@ -3250,6 +3595,7 @@ class ModalBaseFlexiOp(Operator):
         ModalBaseFlexiOp.running = False
         bpy.types.VIEW3D_HT_tool_header.draw = ModalBaseFlexiOp.drawFunc
         self.snapper = None
+        ModalBaseFlexiOp.opObj = None
 
     def getSnapLocs(self):
         return self.getSnapLocsImpl()
@@ -3273,7 +3619,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                 ModalDrawBezierOp.markerBatch.draw(ModalBaseFlexiOp.shader)
 
             # TODO: Move this to grease draw
-            bgl.glPointSize(FTConst.greaseSubdivPtSize)
+            bgl.glPointSize(FTProps.greaseSubdivPtSize)
             if(ModalDrawBezierOp.subdivPtBatch != None):
                 ModalDrawBezierOp.subdivPtBatch.draw(ModalBaseFlexiOp.shader)
 
@@ -3397,8 +3743,10 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
     # Common subModal for Flexi Draw and Flexi Grease
     def baseSubModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
+        metaKeys = [self.alt, self.ctrl, self.shift] # Order important
 
-        if(self.capture and event.type == 'G'):
+        if(self.capture and FTHotKeys.isHotKey(FTHotKeys.hkGrabRepos, \
+            event.type, metaKeys)):
             if(event.value == 'RELEASE'):
                 self.grabRepos = not self.grabRepos
             return {"RUNNING_MODAL"}
@@ -3421,11 +3769,11 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                 # set snapProc to False so this modal will process it
                 snapProc = False
 
-        metaBtns = updateMetaBtns(self, event)
+        isMetaKey = updateMetaBtns(self, event)
 
         if(not snapProc and event.type == 'ESC'):
             if(event.value == 'RELEASE'):
-                if(self.grabRepos): 
+                if(self.grabRepos):
                     self.grabRepos = False
                 elif(self.capture and self.isHandleSet()):
                     self.resetHandle('left')
@@ -3439,7 +3787,8 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                 self.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
 
-        if(not snapProc and event.type == 'BACK_SPACE'):
+        if(not snapProc and \
+            FTHotKeys.isHotKey(FTHotKeys.hkUndoLastSeg, event.type, metaKeys)):
             if(event.value == 'RELEASE'):
                 self.snapper.resetSnap()
                 if(not self.capture):
@@ -3536,7 +3885,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         # Refresh also in case of snapper events
         # except when digitsConfirmed (to give user opportunity to draw a straight line)
         # ~ if ((snapProc and not self.snapper.digitsConfirmed) \
-        if (metaBtns or snapProc or (event.type == 'MOUSEMOVE')):
+        if (isMetaKey or snapProc or (event.type == 'MOUSEMOVE')):
 
             # Unlock axes in case of pure mousemove (TODO: Can be better)
             # ~ if(snapProc and not self.snapper.digitsConfirmed): pass
@@ -3679,11 +4028,11 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         return True
 
     def getColorMap(self):
-        return {'SEL_SEG_COLOR': FTConst.colDrawSelSeg,
-        'NONADJ_SEG_COLOR': FTConst.colDrawNonHltSeg,
-        'TIP_COLOR': FTConst.colHdlPtTip,
-        'ENDPT_TIP_COLOR': FTConst.colBezPt,
-        'MARKER_COLOR': FTConst.colDrawMarker}
+        return {'SEL_SEG_COLOR': FTProps.colDrawSelSeg,
+        'NONADJ_SEG_COLOR': FTProps.colDrawNonHltSeg,
+        'TIP_COLOR': FTProps.colHdlPtTip,
+        'ENDPT_TIP_COLOR': FTProps.colBezPt,
+        'MARKER_COLOR': FTProps.colDrawMarker}
 
     def preInvoke(self, context, event):
 
@@ -3699,7 +4048,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
     def subModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
-        if(event.type == 'E'):
+        metaKeys = [self.alt, self.ctrl, self.shift] # TODO: Move to one location
+        if(FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metaKeys)):
             if(event.value == 'RELEASE'):
                 # ~ bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname) (T60766)
                 bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
@@ -3953,11 +4303,11 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         return True
 
     def getColorMap(self):
-        return {'SEL_SEG_COLOR': FTConst.colGreaseSelSeg,
+        return {'SEL_SEG_COLOR': FTProps.colGreaseSelSeg,
         'NONADJ_SEG_COLOR': ModalBaseFlexiOp.ColGreaseHltSeg, #Not used
-        'TIP_COLOR': FTConst.colHdlPtTip,
-        'ENDPT_TIP_COLOR': FTConst.colGreaseBezPt,
-        'MARKER_COLOR': FTConst.colGreaseMarker, }
+        'TIP_COLOR': FTProps.colHdlPtTip,
+        'ENDPT_TIP_COLOR': FTProps.colGreaseBezPt,
+        'MARKER_COLOR': FTProps.colGreaseMarker, }
 
     def preInvoke(self, context, event):
         # If the operator is invoked from context menu, enable the tool on toolbar
@@ -4203,7 +4553,7 @@ def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
 
     for obj in objs:
         mw = obj.matrix_world
-        if(not isPtIn2dBBox(obj, region, rv3d, coFind, FTConst.snapDist)):
+        if(not isPtIn2dBBox(obj, region, rv3d, coFind, FTProps.snapDist)):
             continue
 
         for i, spline in enumerate(obj.data.splines):
@@ -4262,7 +4612,7 @@ def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
     searchPtsList = [[getCoordFromLoc(region, rv3d, pt).to_3d() \
         for pt in pts] for pts in searchPtsList]
 
-    srs = search2dFromPtsList(searchPtsList, coFind, searchRange = FTConst.snapDist)
+    srs = search2dFromPtsList(searchPtsList, coFind, searchRange = FTProps.snapDist)
 
     if(len(srs) == 0):
         return None
@@ -4572,11 +4922,11 @@ class SelectCurveInfo:
     def getDisplayInfos(self, hideHdls = False, newPos = None):
 
         # Making long short
-        cHltTip = FTConst.colHltTip
-        cBezPt = FTConst.colBezPt
-        cHdlPt = FTConst.colHdlPtTip
-        cAdjBezTip = FTConst.colAdjBezTip
-        cNonHltSeg = FTConst.colDrawNonHltSeg
+        cHltTip = FTProps.colHltTip
+        cBezPt = FTProps.colBezPt
+        cHdlPt = FTProps.colHdlPtTip
+        cAdjBezTip = FTProps.colAdjBezTip
+        cNonHltSeg = FTProps.colDrawNonHltSeg
 
         segDispInfos = []
         bptDispInfos = []
@@ -4605,7 +4955,7 @@ class SelectCurveInfo:
         # selected segments take priority over highlighted
         if(hltType != None and hltType in {'SegLoc', 'CurveLoc'}):
             ptIdx = hltInfo['ptIdx']
-            segDispInfos[ptIdx].segColor = FTConst.colDrawHltSeg
+            segDispInfos[ptIdx].segColor = FTProps.colDrawHltSeg
             bptDispInfos[ptIdx].tipColors[1] = cBezPt
             nextIdx = self.getAdjIdx(ptIdx)
             bptDispInfos[nextIdx].tipColors[1] = cBezPt
@@ -4641,10 +4991,10 @@ class SelectCurveInfo:
                             self.subdivCnt)[1:-1]
 
                     selSegDispInfo = EditSegDisplayInfo(segPts, \
-                        FTConst.colDrawSelSeg, vertCos)
+                        FTProps.colDrawSelSeg, vertCos)
                     segDispInfos[ptIdx] = selSegDispInfo
                 else:
-                    bptDispInfos[ptIdx].tipColors[hdlIdx] = FTConst.colSelTip
+                    bptDispInfos[ptIdx].tipColors[hdlIdx] = FTProps.colSelTip
 
         # Process highlighted points after selected ones because...
         # highlighted points take priority over selected
@@ -4774,7 +5124,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
     def drawHandler():
         if(ModalBaseFlexiOp.shader != None):
             ModalBaseFlexiOp.drawHandlerBase()
-            bgl.glPointSize(FTConst.editSubdivPtSize)
+            bgl.glPointSize(FTProps.editSubdivPtSize)
             if(ModalFlexiEditBezierOp.ptBatch != None):
                 ModalFlexiEditBezierOp.ptBatch.draw(ModalBaseFlexiOp.shader)
 
@@ -4791,7 +5141,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         # ~ if(locOnCurve != None): ptCos.append(locOnCurve) # For debugging
 
         ModalFlexiEditBezierOp.ptBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
-            "POINTS", {"pos": ptCos, "color": [FTConst.colEditSubdiv \
+            "POINTS", {"pos": ptCos, "color": [FTProps.colEditSubdiv \
                 for i in range(0, len(ptCos))]})
 
         ModalBaseFlexiOp.refreshDisplayBase(segDispInfos, bptDispInfos, snapper)
@@ -5105,13 +5455,13 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         prevCurveInfo = currCurveInfo
                         newSplineIdx += 1
                         # No overwriting since the higher splineIdxs already moved above
-                        # But it's possible this spline was removed in subsequent 
+                        # But it's possible this spline was removed in subsequent
                         # iterations by removeSegs, so check...
                         if(newSplineIdx < splineCnt):
                             currCurveInfo = SelectCurveInfo(c.obj, newSplineIdx)
                             self.selectCurveInfos.add(currCurveInfo)
                         # idxs and prevCurve have to be updated so continue
-                        else: 
+                        else:
                             currCurveInfo = None # Fail fast
 
                         for oIdx in oIdxs:
@@ -5133,7 +5483,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                             modifiedSegIdxs[oIdx] = newSegIdx
 
                     elif(splineIdxIncr < 0):
-                        # This is not the same as c 
+                        # This is not the same as c
                         # (could be a new spline added in between)
                         toRemList = [x for x in self.selectCurveInfos \
                             if x.splineIdx == newSplineIdx]
@@ -5141,7 +5491,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                             self.selectCurveInfos.remove(toRemList[0])
 
             except Exception as e:
-                c.resetPtSel() 
+                c.resetPtSel()
 
     def resetMetaBtns(self):
         self.ctrl = False
@@ -5170,6 +5520,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
     def subModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
+        # TODO: move metakeys to FlexiBase
+        metaKeys = [self.alt, self.ctrl, self.shift] # Order important
 
         if(snapProc): retVal = {"RUNNING_MODAL"}
         else: retVal = {'PASS_THROUGH'}
@@ -5194,24 +5546,26 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         else:
             bpy.context.window.cursor_set("DEFAULT")
 
-        if(event.type == 'E'):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metaKeys)):
             if(event.value == 'RELEASE'):
                 # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
                 self.reset()
                 bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
             return {"RUNNING_MODAL"}
 
-        if(event.type == 'A'):
-            if(self.shift): return {'PASS_THROUGH'} # Allow add object
+        if(FTHotKeys.isHotKey(FTHotKeys.hkDeselAll, event.type, metaKeys)):
             if(event.value == 'RELEASE'):
-                if(self.alt):
-                    for c in self.selectCurveInfos: c.resetAllSegsSel()
-                else:
-                    for c in self.selectCurveInfos: c.selectAllSegs()
+                for c in self.selectCurveInfos: c.resetAllSegsSel()
                 self.refreshDisplaySelCurves()
             return {"RUNNING_MODAL"}
 
-        if(event.type == 'W'):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkSelAll, event.type, metaKeys)):
+            if(event.value == 'RELEASE'):
+                for c in self.selectCurveInfos: c.selectAllSegs()
+                self.refreshDisplaySelCurves()
+            return {"RUNNING_MODAL"}
+
+        if(FTHotKeys.isHotKey(FTHotKeys.hkUniSubdiv, event.type, metaKeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     self.subdivMode = True
@@ -5246,14 +5600,14 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 self.refreshDisplaySelCurves()
                 return {'RUNNING_MODAL'}
 
-        if(event.type == 'H'):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkToggleHdl, event.type, metaKeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     ModalFlexiEditBezierOp.h = not ModalFlexiEditBezierOp.h
                     self.refreshDisplaySelCurves()
                 return {"RUNNING_MODAL"}
 
-        if(event.type == 'DEL'):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkDelPtSeg, event.type, metaKeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     self.delSelSegs()
@@ -5265,7 +5619,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     bpy.ops.ed.undo_push()
                 return {"RUNNING_MODAL"}
 
-        if(event.type == 'K'):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkAlignHdl, event.type, metaKeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     for c in self.selectCurveInfos: c.alignHandle() #selected node
@@ -5512,8 +5866,8 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         description='Use custom axis scale for grid snap and transform values entered', \
                     default = False)
 
-    customAxisCo1: FloatVectorProperty(default = (LARGE_NO, LARGE_NO, LARGE_NO))
-    customAxisCo2: FloatVectorProperty(default = (LARGE_NO, LARGE_NO, LARGE_NO))
+    # ~ customAxisCo1: FloatVectorProperty(default = LARGE_VECT)
+    # ~ customAxisCo2: FloatVectorProperty(default = LARGE_VECT)
     customAxisSnapCnt: IntProperty(default = 3, min = 0)
 
 # ~ class FlexiEditBezierTool(WorkSpaceTool):
@@ -5709,35 +6063,27 @@ def updatePanel(self, context):
     except Exception as e:
         print("BezierUtils: Updating Panel locations has failed", e)
 
+
 class ResetDefaultPropsOp(bpy.types.Operator):
     bl_idname = "object.reset_default_props"
-    bl_label = "Reset"
+    bl_label = "Reset Preferences"
     bl_options = {'REGISTER', 'UNDO'}
-    bl_description = "Reset all values to default"
+    bl_description = "Reset all property values to default"
 
     def execute(self, context):
-        panel = BezierUtilsPanel
-        prefs = context.preferences.addons[__name__].preferences
-        props = prefs.bl_rna.properties
-        FTConst.refreshDisp = False
-        for prop in props:
-            try:
-                if(not hasattr(prop, "default")): continue
-                if(prop.type == 'STRING' and prop.identifier == 'category'):
-                    execStr = 'prefs.' + prop.identifier + ' =  "' + \
-                        str(prop.default) + '"'
-                    exec(execStr)
-                elif hasattr(prop, "default_array") and getattr(prop, "is_array", True):
-                    for i, a in enumerate(prop.default_array):
-                        execStr = 'prefs.' + prop.identifier + '[' + str(i) + '] = ' + str(a)
-                        exec(execStr)
-                else:
-                    execStr = 'prefs.' + prop.identifier + ' =  ' + str(prop.default)
-                    exec(execStr)
-            except Exception as e:
-                print(e)
-        FTConst.refreshDisp = True
-        FTConst.updateProps(None, context)
+        context.preferences.addons[__name__].preferences.category = 'Tool'
+        FTProps.updatePropsPrefs(context, resetPrefs = True)
+        return {'FINISHED'}
+
+
+class ResetDefaultHotkeys(bpy.types.Operator):
+    bl_idname = "object.reset_default_hotkeys"
+    bl_label = "Reset Keymap"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Reset all hotkey values to default"
+
+    def execute(self, context):
+        FTHotKeys.updateHKPropPrefs(context, reset = True)
         return {'FINISHED'}
 
 
@@ -5751,13 +6097,13 @@ class BezierUtilsPreferences(AddonPreferences):
             update = updatePanel
     )
 
-    drawLineWidth: FloatProperty(
+    lineWidth: FloatProperty(
             name = "Line Thickness",
             description = "Thickness of segment & handle Lines of Flexi Draw and Edit",
             default = 1.5,
             min = 0.1,
             max = 20,
-            update = FTConst.updateProps
+            update = FTProps.updateProps
     )
 
     drawPtSize: FloatProperty(
@@ -5766,7 +6112,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 4,
             min = 0.1,
             max = 20,
-            update = FTConst.updateProps
+            update = FTProps.updateProps
     )
 
     editSubdivPtSize: FloatProperty(
@@ -5775,7 +6121,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 6,
             min = 0.1,
             max = 20,
-            update = FTConst.updateProps
+            update = FTProps.updateProps
     )
 
     greaseSubdivPtSize: FloatProperty(
@@ -5784,7 +6130,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 4,
             min = 0.1,
             max = 20,
-            update = FTConst.updateProps
+            update = FTProps.updateProps
     )
 
     markerSize: FloatProperty(
@@ -5793,7 +6139,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 6,
             min = 0.1,
             max = 20,
-            update = FTConst.updateProps
+            update = FTProps.updateProps
     )
 
     axisLineWidth: FloatProperty(
@@ -5802,7 +6148,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 0.25,
             min = 0.1,
             max = 20,
-            update = FTConst.updateProps
+            update = FTProps.updateProps
     )
 
     snapPtSize: FloatProperty(
@@ -5811,7 +6157,7 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 3,
             min = 0.1,
             max = 20,
-            update = FTConst.updateProps
+            update = FTProps.updateProps
     )
 
     snapDist: FloatProperty(
@@ -5820,152 +6166,173 @@ class BezierUtilsPreferences(AddonPreferences):
             default = 20,
             min = 1,
             max = 200,
-            update = FTConst.updateProps
+            update = FTProps.updateProps
     )
 
     dispSnapInd: BoolProperty(
             name="Snap Indicator", \
             description='Display indicator when pointer within snapping range', \
             default = False,
-            update = FTConst.updateProps
+            update = FTProps.updateProps
     )
 
     colDrawSelSeg: bpy.props.FloatVectorProperty(
         name="Selected Draw / Edit  Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default=(.6, .8, 1, 1), \
-                description = 'Color of the segment being drawn / edited',
-                    update = FTConst.updateProps
+        default=(.6, .8, 1, 1), \
+        description = 'Color of the segment being drawn / edited',
+        update = FTProps.updateProps
     )
 
     colDrawNonHltSeg: bpy.props.FloatVectorProperty(
         name="Adjacent Draw / Edit Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default=(.1, .4, .6, 1), \
-                description = 'Color of the segment adjacent to the' + \
-                    'one being drawn / edited', update = FTConst.updateProps
+        default=(.1, .4, .6, 1), \
+        description = 'Color of the segment adjacent to the' + \
+        'one being drawn / edited', update = FTProps.updateProps
     )
 
     colDrawHltSeg: bpy.props.FloatVectorProperty(
         name="Highlighted Edit Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default=(.2, .6, .9, 1), \
-                description = 'Color of the segment under mouse curser in Flexi Edit', \
-                    update = FTConst.updateProps
+        default=(.2, .6, .9, 1), \
+        description = 'Color of the segment under mouse curser in Flexi Edit', \
+        update = FTProps.updateProps
     )
 
     colDrawMarker: bpy.props.FloatVectorProperty(
         name="Marker", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default=(.6, .8, 1, 1), \
-                description = 'Color of the marker', update = FTConst.updateProps
+        default=(.6, .8, 1, 1), \
+        description = 'Color of the marker', update = FTProps.updateProps
     )
 
     colGreaseSelSeg: bpy.props.FloatVectorProperty(
         name="Selected Grease Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default=(0.2, .8, 0.2, 1), \
-                description = 'Color of the segment being drawn', \
-                    update = FTConst.updateProps
+        default=(0.2, .8, 0.2, 1), \
+        description = 'Color of the segment being drawn', \
+        update = FTProps.updateProps
     )
 
     colGreaseNonHltSeg: bpy.props.FloatVectorProperty(
         name="Adjacent Grease Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default = (0.2, .6, 0.2, 1), \
-                description = 'Color of the segment adjacent to the one being drawn', \
-                    update = FTConst.updateProps
+        default = (0.2, .6, 0.2, 1), \
+        description = 'Color of the segment adjacent to the one being drawn', \
+        update = FTProps.updateProps
     )
 
     colGreaseMarker: bpy.props.FloatVectorProperty(
         name="Marker", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default = (0.2, .8, 0.2, 1), \
-                description = 'Color of the marker', update = FTConst.updateProps
+        default = (0.2, .8, 0.2, 1), \
+        description = 'Color of the marker', update = FTProps.updateProps
     )
 
     colHdlFree: bpy.props.FloatVectorProperty(
         name="Free Handle", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default=(.6, .05, .05, 1), \
-                description = 'Free handle color in all Flexi Tools', \
-                        update = FTConst.updateProps
+        default=(.6, .05, .05, 1), \
+        description = 'Free handle color in all Flexi Tools', \
+        update = FTProps.updateProps
     )
 
     colHdlVector: bpy.props.FloatVectorProperty(
         name="Vector Handle", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default=(.4, .5, .2, 1), \
-                description = 'Vector handle color in all Flexi Tools', \
-                    update = FTConst.updateProps
+        default=(.4, .5, .2, 1), \
+        description = 'Vector handle color in all Flexi Tools', \
+        update = FTProps.updateProps
     )
 
     colHdlAligned: bpy.props.FloatVectorProperty(
         name="Aligned Handle", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default=(1, .3, .3, 1), \
-                description = 'Aligned handle color in all Flexi Tools', \
-                    update = FTConst.updateProps
+        default=(1, .3, .3, 1), \
+        description = 'Aligned handle color in all Flexi Tools', \
+        update = FTProps.updateProps
     )
 
     colHdlAuto: bpy.props.FloatVectorProperty(
         name="Auto Handle", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default=(.8, .5, .2, 1), \
-                description = 'Auto handle color in all Flexi Tools', \
-                    update = FTConst.updateProps
+        default=(.8, .5, .2, 1), \
+        description = 'Auto handle color in all Flexi Tools', \
+        update = FTProps.updateProps
     )
 
     colSelTip: bpy.props.FloatVectorProperty(
         name="Selected Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default = (.2, .7, .3, 1), \
-                description = 'Color of the selected Bezier or handle point', \
-                    update = FTConst.updateProps
+        default = (.2, .7, .3, 1), \
+        description = 'Color of the selected Bezier or handle point', \
+        update = FTProps.updateProps
     )
 
     colHltTip: bpy.props.FloatVectorProperty(
         name="Highlighted Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default = (.2, 1, .9, 1), \
-                description = 'Color of Bezier or handle point under mouse pointer', \
-                    update = FTConst.updateProps
+        default = (.2, 1, .9, 1), \
+        description = 'Color of Bezier or handle point under mouse pointer', \
+        update = FTProps.updateProps
     )
 
     colBezPt: bpy.props.FloatVectorProperty(
         name="Bezier Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default = (1, 1, 0, 1), \
-                description = 'Color of nonselected Bezier point', \
-                    update = FTConst.updateProps
+        default = (1, 1, 0, 1), \
+        description = 'Color of nonselected Bezier point', \
+        update = FTProps.updateProps
     )
 
     colHdlPtTip: bpy.props.FloatVectorProperty(
         name="Handle Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default = (.7, .7, 0, 1), \
-                description = 'Color of nonselected handle point', \
-                    update = FTConst.updateProps
+        default = (.7, .7, 0, 1), \
+        description = 'Color of nonselected handle point', \
+        update = FTProps.updateProps
     )
 
     colAdjBezTip: bpy.props.FloatVectorProperty(
         name="Adjacent Bezier Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default = (.1, .1, .1, 1), \
-                description = 'Color of Bezier points of adjacent segments', \
-                    update = FTConst.updateProps
+        default = (.1, .1, .1, 1), \
+        description = 'Color of Bezier points of adjacent segments', \
+        update = FTProps.updateProps
     )
 
     colEditSubdiv: bpy.props.FloatVectorProperty(
         name="Uniform Subdiv Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default = (.3, 0, 0, 1), \
-                description = 'Color of point marking subdivisions', \
-                    update = FTConst.updateProps
+        default = (.3, 0, 0, 1), \
+        description = 'Color of point marking subdivisions', \
+        update = FTProps.updateProps
     )
 
     colGreaseSubdiv: bpy.props.FloatVectorProperty(
         name="Resolution Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default = (1, .3, 1, 1), \
-                description = 'Color of point marking curve resolution', \
-                    update = FTConst.updateProps
+        default = (1, .3, 1, 1), \
+        description = 'Color of point marking curve resolution', \
+        update = FTProps.updateProps
     )
 
     colGreaseBezPt: bpy.props.FloatVectorProperty(
         name="Bezier Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
-            default = (1, .3, 1, 1), \
-                description = 'Color of Bezier point', \
-                    update = FTConst.updateProps
+        default = (1, .3, 1, 1), \
+        description = 'Color of Bezier point', \
+        update = FTProps.updateProps
     )
 
-    elemDimsExpanded: BoolProperty(name="Draw Elem Expanded State", default = False)
-    drawColExpanded: BoolProperty(name="Draw Col Expanded State", default = False)
-    greaseColExpanded: BoolProperty(name="Grease Col Expanded State", default = False)
-    handleColExpanded: BoolProperty(name="Handle Col Expanded State", default = False)
-    snapOptExpanded: BoolProperty(name="Snap Options Expanded State", default = False)
+    ############################ Hotkeys ###############################
+    for i, keySet in enumerate([FTHotKeys.drawHotkeys, \
+        FTHotKeys.editHotkeys, FTHotKeys.commonHotkeys]):
+        for j, keydata in enumerate(keySet):
+            exec(FTHotKeys.getHKFieldStr(keydata, addMeta = True))
+            expStr = keydata.id + 'Exp'
+            exec(expStr + ': BoolProperty(name="' + expStr + '", default = False)')
+        expStr = 'hotKeySet'+ str(i)+'Exp'
+        exec(expStr + ': BoolProperty(name="' + expStr + '", default = False)')
+
+    for i, keydata in enumerate(FTHotKeys.snapHotkeys):
+        keydataMeta = FTHotKeys.snapHotkeysMeta[i]
+        exec(FTHotKeys.getMetaHKFieldStr(keydataMeta))
+        exec(FTHotKeys.getHKFieldStr(keydata, addMeta = False))
+        expStr = keydata.id + 'Exp'
+        exec(expStr + ': BoolProperty(name="' + expStr + '", default = True)')
+    hkSnapExp: BoolProperty(name="Snap Hotkey Expanded State", default = False)
+
+    colSizeExp: BoolProperty(name="Col Size Exp", default = False)
+    keymapExp: BoolProperty(name="Keymap Exp", default = False)
+    othPrefExp: BoolProperty(name="Other Exp", default = False)
+
+    elemDimsExp: BoolProperty(name="Draw Elem Exp", default = False)
+    drawColExp: BoolProperty(name="Draw Col Exp", default = False)
+    greaseColExp: BoolProperty(name="Grease Col Exp", default = False)
+    handleColExp: BoolProperty(name="Handle Col Exp", default = False)
 
     def draw(self, context):
         layout = self.layout
@@ -5973,127 +6340,212 @@ class BezierUtilsPreferences(AddonPreferences):
         col.label(text="Tab Category:")
         col.prop(self, "category", text="")
 
-        row = layout.row()
-        row.prop(self, "elemDimsExpanded", icon = "TRIA_DOWN" \
-            if self.elemDimsExpanded else "TRIA_RIGHT",  icon_only = True, emboss = False)
-        row.label(text = "Draw / Edit Element Dimensions (Common)")#, icon = 'UNLINKED')
-
-        if self.elemDimsExpanded:
-            col = layout.column().split()
-            col.label(text='Segment / Line Thickness:')
-            col.prop(self, "drawLineWidth", text = '')
-            col = layout.column().split()
-            col.label(text='Handle Point Size:')
-            col.prop(self, "drawPtSize", text = '')
-            col = layout.column().split()
-            col.label(text='Uniform Subdiv Point Size:')
-            col.prop(self, "editSubdivPtSize", text = '')
-            col = layout.column().split()
-            col.label(text='Flexi Grease Res Point Size:')
-            col.prop(self, "greaseSubdivPtSize", text = '')
-            col = layout.column().split()
-            col.label(text='Marker Size:')
-            col.prop(self, "markerSize", text = '')
-            col = layout.column().split()
-            col.label(text='Axis Line Thickness:')
-            col.prop(self, "axisLineWidth", text = '')
+        ####################### Color & Sizes #######################
 
         row = layout.row()
-        row.prop(self, "drawColExpanded", icon = "TRIA_DOWN" \
-            if self.drawColExpanded else "TRIA_RIGHT",  icon_only = True, emboss = False)
-        row.label(text = "Flexi Draw / Edit Colors")#, icon = 'UNLINKED')
+        row.prop(self, "colSizeExp", icon = "TRIA_DOWN" \
+            if self.colSizeExp else "TRIA_RIGHT",  icon_only = True, emboss = False)
+        row.label(text = "Color & Sizes:")
+        if self.colSizeExp:
+            box = layout.box()
+            row = box.row()
+            row.prop(self, "elemDimsExp", icon = "TRIA_DOWN" \
+                if self.elemDimsExp else "TRIA_RIGHT",  \
+                    icon_only = True, emboss = False)
+            row.label(text = "Draw / Edit Element Sizes (Common):")
 
-        if self.drawColExpanded:
-            col = layout.column().split()
-            col.label(text="Selected Draw / Edit  Segment:")
-            col.prop(self, "colDrawSelSeg", text = '')
-            col = layout.column().split()
-            col.label(text="Adjacent Draw / Edit Segment:")
-            col.prop(self, "colDrawNonHltSeg", text = '')
-            col = layout.column().split()
-            col.label(text="Highlighted Edit Segment:")
-            col.prop(self, "colDrawHltSeg", text = '')
-            col = layout.column().split()
-            col.label(text="Draw Marker:")
-            col.prop(self, "colDrawMarker", text = '')
-            col = layout.column().split()
-            col.label(text="Bezier Point:")
-            col.prop(self, "colBezPt", text = '')
-            col = layout.column().split()
-            col.label(text="Subdivision Marker:")
-            col.prop(self, "colEditSubdiv", text = '')
+            if self.elemDimsExp:
+                col = box.column().split()
+                col.label(text='Segment / Line Thickness:')
+                col.prop(self, "lineWidth", text = '')
+                col = box.column().split()
+                col.label(text='Handle Point Size:')
+                col.prop(self, "drawPtSize", text = '')
+                col = box.column().split()
+                col.label(text='Uniform Subdiv Point Size:')
+                col.prop(self, "editSubdivPtSize", text = '')
+                col = box.column().split()
+                col.label(text='Flexi Grease Res Point Size:')
+                col.prop(self, "greaseSubdivPtSize", text = '')
+                col = box.column().split()
+                col.label(text='Marker Size:')
+                col.prop(self, "markerSize", text = '')
+                col = box.column().split()
+                col.label(text='Axis Line Thickness:')
+                col.prop(self, "axisLineWidth", text = '')
+
+            row = box.row()
+            row.prop(self, "drawColExp", icon = "TRIA_DOWN" \
+                if self.drawColExp else "TRIA_RIGHT",  icon_only = True, \
+                    emboss = False)
+            row.label(text = "Flexi Draw / Edit Colors:")
+
+            if self.drawColExp:
+                col = box.column().split()
+                col.label(text="Selected Draw / Edit  Segment:")
+                col.prop(self, "colDrawSelSeg", text = '')
+                col = box.column().split()
+                col.label(text="Adjacent Draw / Edit Segment:")
+                col.prop(self, "colDrawNonHltSeg", text = '')
+                col = box.column().split()
+                col.label(text="Highlighted Edit Segment:")
+                col.prop(self, "colDrawHltSeg", text = '')
+                col = box.column().split()
+                col.label(text="Draw Marker:")
+                col.prop(self, "colDrawMarker", text = '')
+                col = box.column().split()
+                col.label(text="Bezier Point:")
+                col.prop(self, "colBezPt", text = '')
+                col = box.column().split()
+                col.label(text="Subdivision Marker:")
+                col.prop(self, "colEditSubdiv", text = '')
+
+            row = box.row()
+            row.prop(self, "greaseColExp", icon = "TRIA_DOWN" \
+                if self.greaseColExp else "TRIA_RIGHT",  icon_only = True, \
+                    emboss = False)
+            row.label(text = "Flexi Grease Colors:")
+
+            if self.greaseColExp:
+                col = box.column().split()
+                col.label(text="Selected Grease Segment:")
+                col.prop(self, "colGreaseSelSeg", text = '')
+                col = box.column().split()
+                col.label(text="Adjacent Grease Segment:")
+                col.prop(self, "colGreaseNonHltSeg", text = '')
+                col = box.column().split()
+                col.label(text="Draw Marker:")
+                col.prop(self, "colGreaseMarker", text = '')
+                col = box.column().split()
+                col.label(text="Bezier Point:")
+                col.prop(self, "colGreaseBezPt", text = '')
+                col = box.column().split()
+                col.label(text="Curve Resolution Marker:")
+                col.prop(self, "colGreaseSubdiv", text = '')
+
+            row = box.row()
+            row.prop(self, "handleColExp", icon = "TRIA_DOWN" \
+                if self.handleColExp else "TRIA_RIGHT",  icon_only = True, \
+                    emboss = False)
+            row.label(text = "Handle Colors (Common):")
+
+            if self.handleColExp:
+                col = box.column().split()
+                col.label(text="Free Handle:")
+                col.prop(self, "colHdlFree", text = '')
+                col = box.column().split()
+                col.label(text="Vector Handle:")
+                col.prop(self, "colHdlVector", text = '')
+                col = box.column().split()
+                col.label(text="Aligned Handle:")
+                col.prop(self, "colHdlAligned", text = '')
+                col = box.column().split()
+                col.label(text="Auto Handle:")
+                col.prop(self, "colHdlAuto", text = '')
+                col = box.column().split()
+                col.label(text="Selected Point:")
+                col.prop(self, "colSelTip", text = '')
+                col = box.column().split()
+                col.label(text="Highlighted Point:")
+                col.prop(self, "colHltTip", text = '')
+                col = box.column().split()
+                col.label(text="Handle Point:")
+                col.prop(self, "colHdlPtTip", text = '')
+                col = box.column().split()
+                col.label(text="Adjacent Bezier Point:")
+                col.prop(self, "colAdjBezTip", text = '')
+
+        ####################### Snapping Options #######################
 
         row = layout.row()
-        row.prop(self, "greaseColExpanded", icon = "TRIA_DOWN" \
-            if self.greaseColExpanded else "TRIA_RIGHT",  icon_only = True, emboss = False)
-        row.label(text = "Flexi Grease Colors")#, icon = 'UNLINKED')
+        row.prop(self, "othPrefExp", icon = "TRIA_DOWN" \
+            if self.othPrefExp else "TRIA_RIGHT",  icon_only = True, emboss = False)
+        row.label(text = "Snapping Options:") # Snapping & Other
 
-        if self.greaseColExpanded:
-            col = layout.column().split()
-            col.label(text="Selected Grease Segment:")
-            col.prop(self, "colGreaseSelSeg", text = '')
-            col = layout.column().split()
-            col.label(text="Adjacent Grease Segment:")
-            col.prop(self, "colGreaseNonHltSeg", text = '')
-            col = layout.column().split()
-            col.label(text="Draw Marker:")
-            col.prop(self, "colGreaseMarker", text = '')
-            col = layout.column().split()
-            col.label(text="Bezier Point:")
-            col.prop(self, "colGreaseBezPt", text = '')
-            col = layout.column().split()
-            col.label(text="Curve Resolution Marker:")
-            col.prop(self, "colGreaseSubdiv", text = '')
-
-        row = layout.row()
-        row.prop(self, "handleColExpanded", icon = "TRIA_DOWN" \
-            if self.handleColExpanded else "TRIA_RIGHT",  icon_only = True, emboss = False)
-        row.label(text = "Handle Colors (Common)")#, icon = 'UNLINKED')
-
-        if self.handleColExpanded:
-            col = layout.column().split()
-            col.label(text="Free Handle:")
-            col.prop(self, "colHdlFree", text = '')
-            col = layout.column().split()
-            col.label(text="Vector Handle:")
-            col.prop(self, "colHdlVector", text = '')
-            col = layout.column().split()
-            col.label(text="Aligned Handle:")
-            col.prop(self, "colHdlAligned", text = '')
-            col = layout.column().split()
-            col.label(text="Auto Handle:")
-            col.prop(self, "colHdlAuto", text = '')
-            col = layout.column().split()
-            col.label(text="Selected Point:")
-            col.prop(self, "colSelTip", text = '')
-            col = layout.column().split()
-            col.label(text="Highlighted Point:")
-            col.prop(self, "colHltTip", text = '')
-            col = layout.column().split()
-            col.label(text="Handle Point:")
-            col.prop(self, "colHdlPtTip", text = '')
-            col = layout.column().split()
-            col.label(text="Adjacent Bezier Point:")
-            col.prop(self, "colAdjBezTip", text = '')
-
-        row = layout.row()
-        row.prop(self, "snapOptExpanded", icon = "TRIA_DOWN" \
-            if self.snapOptExpanded else "TRIA_RIGHT",  icon_only = True, emboss = False)
-        row.label(text = "Snapping Options")#, icon = 'UNLINKED')
-
-        if self.snapOptExpanded:
-            col = layout.column().split()
+        if self.othPrefExp:
+            box = layout.box()
+            col = box.column().split()
             col.label(text='Snap Distance:')
             col.prop(self, "snapDist", text = '')
-            col = layout.column().split()
+            col = box.column().split()
             col.label(text='Snap Indicator:')
             col.prop(self, "dispSnapInd", text = '')
-            col = layout.column().split()
+            col = box.column().split()
             col.label(text='Snap Point Size:')
             col.prop(self, "snapPtSize", text = '')
 
-        col = layout.column()
+        ####################### Keymap #######################
+
+        row = layout.row()
+        row.prop(self, "keymapExp", icon = "TRIA_DOWN" \
+            if self.keymapExp else "TRIA_RIGHT",  icon_only = True, emboss = False)
+        row.label(text = "Keymap:")
+
+        if self.keymapExp:
+            box = layout.box()
+            ####################### Common / Draw / Edit Hotkeys #######################
+            labels = ["Flexi Tools Common:", "Flexi Draw / Grease:", \
+                "Flexi Edit:"]
+
+            for i, keySet in enumerate([FTHotKeys.commonHotkeys, FTHotKeys.drawHotkeys, \
+                FTHotKeys.editHotkeys]):
+                row = box.row()
+                expStr = 'hotKeySet'+ str(i)+'Exp'
+                expanded = getattr(self, expStr)
+                row.prop(self, expStr, icon = "TRIA_DOWN" \
+                    if expanded else "TRIA_RIGHT",  icon_only = True, emboss = False)
+                row.label(text = labels[i])
+
+                if expanded:
+                    colM = box.column()
+                    boxIn = colM.grid_flow(row_major = True, \
+                        even_columns = True, columns = 3)
+                    j = 0
+                    for j, keydata in enumerate(keySet):
+                        expStr = keydata.id + "Exp"
+                        col = boxIn.box().column(align=True)
+                        col.prop(self, expStr, icon = "TRIA_DOWN" \
+                            if eval('self.' + expStr) else "TRIA_RIGHT", \
+                                emboss = False, text = keydata.label + ':')
+                        if  getattr(self, expStr):
+                            col.prop(self, keydata.id, text = '', event = True)
+                            rowC = col.row()
+                            rowC.prop(self, keydata.id + 'Alt', \
+                                text = 'Alt', toggle = True)
+                            rowC.prop(self, keydata.id + 'Ctrl', \
+                                text = 'Ctrl', toggle = True)
+                            rowC.prop(self, keydata.id + 'Shift', \
+                                text = 'Shift', toggle = True)
+                    for idx in range(j % 3, 2):
+                        col = boxIn.column(align = True)
+            ####################### Snap Hotkeys #######################
+
+            row = box.row()
+            row.prop(self, "hkSnapExp", icon = "TRIA_DOWN" \
+                if self.hkSnapExp else "TRIA_RIGHT",  icon_only = True, emboss = False)
+            row.label(text = "Snapping")
+
+            if self.hkSnapExp:
+                colM = box.column()
+                box = colM.grid_flow(row_major = True, even_columns = True, columns = 3)
+                for i, keydata in enumerate(FTHotKeys.snapHotkeys):
+                    keydataMeta = FTHotKeys.snapHotkeysMeta[i]
+                    expStr = keydata.id + "Exp"
+                    col = box.box().column(align=True)
+                    col.prop(self, expStr, icon = "TRIA_DOWN" if eval('self.' + expStr) \
+                        else "TRIA_RIGHT", emboss = False, text = keydataMeta.label + ':')
+                    if  getattr(self, expStr):
+                        if(getattr(self, keydataMeta.id) != 'KEY'):
+                            col.prop(self, keydataMeta.id, text = '')
+                        else:
+                            col = col.box().column()
+                            col.prop(self, keydataMeta.id, text = '')
+                            col.prop(self, keydata.id, text = '', event = True)
+
+        col = layout.column().split()
         col.operator('object.reset_default_props')
+        col.operator('object.reset_default_hotkeys')
+
 
 classes = (
     ModalMarkSegStartOp,
@@ -6119,6 +6571,7 @@ classes = (
     BezierUtilsPreferences,
     BezierToolkitParams,
     ResetDefaultPropsOp,
+    ResetDefaultHotkeys,
 )
 
 def register():
