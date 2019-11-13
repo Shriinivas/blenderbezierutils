@@ -2264,10 +2264,16 @@ class FTHotKeys:
     # Validation for single key text field (format: meta key + regular key)
     # UI Format: Key and 3 toggle buttons for meta
     # TODO: Separate update for each id?
+    # TODO: Reset on any exception?
     def updateHotkeys(dummy, context):
-        FTHotKeys.updateHKPropPrefs(context)
+        try:
+            FTHotKeys.updateHKPropPrefs(context)
+        except Exception as e:
+            FTHotKeys.updateHKPropPrefs(context, reset = True)
+            print("BezierUtils: Error fetching keymap preferences", e)
 
     # TODO: This method combines two rather different functionality based on reset flag
+    # TODO: Metakey setting in updateSnapMetaKeys and reset here also
     def updateHKPropPrefs(context, reset = False):
         if(FTHotKeys.updating): return
 
@@ -2906,26 +2912,20 @@ class Snapper():
         params = bpy.context.window_manager.bezierToolkitParams
         orientType = params.snapOrient
 
-        if(orientType == 'AXIS'):
-            ca = self.customAxis
-            if(abs(ca.length()) > DEF_ERR_MARGIN):
-                pts = ca.axisPts
-                tm, invTm = getLineTransMatrices(pts[0], pts[1])
-                if(params.axisScale):
-                    unitD = ca.length() / 10
-                    tm = Matrix.Scale(1 / unitD, 4) @ tm
-                    invTm = tm.inverted()
+        custAxis = self.customAxis
+        if(abs(custAxis.length()) <= DEF_ERR_MARGIN): custAxis = None
 
-        elif(orientType == 'REFERENCE'):
-            refLine = self.getRefLine()
-            if(refLine != None and len(refLine) == 2):
-                tm, invTm = getLineTransMatrices(refLine[0], refLine[1])
-                if(params.axisScale):
-                    unitD = (refLine[1] - refLine[0]).length / 10
-                    tm = Matrix.Scale(1 / unitD, 4) @ tm
-                    invTm = tm.inverted()
+        refLine = self.getRefLine()
+        if(refLine != None and len(refLine) < 2): refLine = None
 
-        elif(orientType == 'VIEW'):
+        if(orientType == 'AXIS' and custAxis != None):
+            pts = custAxis.axisPts
+            tm, invTm = getLineTransMatrices(pts[0], pts[1])
+
+        if(orientType == 'REFERENCE'):
+            tm, invTm = getLineTransMatrices(refLine[0], refLine[1])
+
+        if(orientType == 'VIEW'):
             tm = rmInfo.rv3d.view_matrix
 
         if(obj != None and orientType == 'OBJECT'):
@@ -2937,6 +2937,16 @@ class Snapper():
             if(faceIdx >= 0):
                 normal = selObj.data.polygons[faceIdx].normal
                 tm = normal.to_track_quat('Z', 'X').to_matrix().to_4x4().inverted()
+
+        if(custAxis != None and params.axisScale == 'AXIS'):
+            unitD = custAxis.length() / 10
+            tm = Matrix.Scale(1 / unitD, 4) @ tm
+            invTm = tm.inverted()
+
+        if(refLine != None and params.axisScale == 'REFERENCE'):
+            unitD = (refLine[1] - refLine[0]).length / 10
+            tm = Matrix.Scale(1 / unitD, 4) @ tm
+            invTm = tm.inverted()
 
         return tm, tm.inverted()
 
@@ -3119,6 +3129,7 @@ class Snapper():
         params = bpy.context.window_manager.bezierToolkitParams
         transType = params.snapOrient
         origType = params.snapOrigin
+        axisScale = params.axisScale
 
         loc = None
 
@@ -3147,7 +3158,7 @@ class Snapper():
         if(FTProps.dispSnapInd or self.vertSnap):
             #TODO: Called very frequently (store the tree [without duplicating data])
             snapLocs = self.getAllSnapLocs((snapToAxisLine and \
-                'AXIS' in {transType, origType})) + [orig]
+                'AXIS' in {transType, origType, axisScale})) + [orig]
 
             kd = kdtree.KDTree(len(snapLocs))
             for i, l in enumerate(snapLocs):
@@ -3255,8 +3266,7 @@ class Snapper():
                         self.lastSnapTypes.add('axis1')
 
                 if(not self.snapDigits.hasVal() and self.gridSnap):
-                    if(params.axisScale and (len(refLine) > 0 and transType == 'AXIS') \
-                        or (refLineOrig and transType == 'REFERENCE')):
+                    if(refLineOrig and params.axisScale in {'AXIS' or 'REFERENCE'}):
                         # Independent of view distance
                         diffV = (loc - tm @ refLineOrig)
                         loc = tm @ refLineOrig + \
@@ -3343,6 +3353,7 @@ class Snapper():
         params = bpy.context.window_manager.bezierToolkitParams
         transType = params.snapOrient
         snapOrigin = params.snapOrigin
+        axisScale = params.axisScale
 
         if(self.tm != None and transType == 'FACE'):
             tm, invTm = self.tm, self.tm.inverted()
@@ -3387,7 +3398,7 @@ class Snapper():
                     "color": [(1, 1, 1, 1) for i in range(0, len(lineCo))]}))
 
         if(self.customAxis.length() != 0 and \
-            (self.inDrawAxis == True or transType == 'AXIS' or snapOrigin == 'AXIS')):
+            (self.inDrawAxis == True or 'AXIS' in {transType, snapOrigin, axisScale})):
             apts = self.customAxis.axisPts
             lineCo = [apts[0], apts[1]]
             ptCo = self.customAxis.getSnapPts()
@@ -5847,24 +5858,29 @@ def getSnapOriginTups(scene = None, context = None):
 
 class BezierToolkitParams(bpy.types.PropertyGroup):
     snapOrient: EnumProperty(name = 'Orientation',#"Align contrained axes and snap angle to",
-            items = getSnapOrientTups,
-            description='Orientation for Draw / Edit')
+        items = getSnapOrientTups,
+        description='Orientation for Draw / Edit')
 
     snapOrigin: EnumProperty(name = 'Origin',#"Align contrained axes and snap angle to",
-            items = getSnapOriginTups,
-            description='Origin for Draw / Edit')
+        items = getSnapOriginTups,
+        description='Origin for Draw / Edit')
 
     constrAxes: EnumProperty(name = 'Constrain Axis', #"Constrain axis for draw and edit ops",
-            items = getConstrAxisTups,
-            description='Constrain Draw / Edit Axes')
+        items = getConstrAxisTups,
+        description='Constrain Draw / Edit Axes')
 
     snapToPlane: BoolProperty(name="Snap to Plane",
         description='During draw / edit snap the point to the selected plane', \
                     default = False)
 
-    axisScale: BoolProperty(name="Axis Scale", \
-        description='Use custom axis scale for grid snap and transform values entered', \
-                    default = False)
+    axisScale: EnumProperty(name="Scale", \
+        items = (('DEFAULT', 'Default Scale', 'Use default scale'),
+                 ('REFERENCE', 'Reference Line Scale', \
+                  'Use Reference Line scale (1 Unit = 0.1 x Referendce Line Length)'), \
+                 ('AXIS', 'Custom Axis Scale', \
+                  'Use Custom Axis scale (1 Unit = 0.1 x Custom Axis Length)')),
+        description='Scale to use for grid snap and transform values entered', \
+                    default = 'DEFAULT')
 
     # ~ customAxisCo1: FloatVectorProperty(default = LARGE_VECT)
     # ~ customAxisCo2: FloatVectorProperty(default = LARGE_VECT)
@@ -5917,8 +5933,7 @@ def drawSettingsFT(self, context):
     if(showSnapToPlane(params)):
         self.layout.prop(params, "snapToPlane")
 
-    if(params.snapOrient in {'AXIS', 'REFERENCE'}):
-        self.layout.prop(params, "axisScale")
+    self.layout.prop(params, "axisScale", text = '')
 
 @ToolDef.from_fn
 def toolFlexiDraw():
