@@ -2945,8 +2945,9 @@ class Snapper():
 
         if(refLine != None and params.axisScale == 'REFERENCE'):
             unitD = (refLine[1] - refLine[0]).length / 10
-            tm = Matrix.Scale(1 / unitD, 4) @ tm
-            invTm = tm.inverted()
+            if(unitD > DEF_ERR_MARGIN):
+                tm = Matrix.Scale(1 / unitD, 4) @ tm
+                invTm = tm.inverted()
 
         return tm, tm.inverted()
 
@@ -5876,7 +5877,7 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     axisScale: EnumProperty(name="Scale", \
         items = (('DEFAULT', 'Default Scale', 'Use default scale'),
                  ('REFERENCE', 'Reference Line Scale', \
-                  'Use Reference Line scale (1 Unit = 0.1 x Referendce Line Length)'), \
+                  'Use Reference Line scale (1 Unit = 0.1 x Reference Line Length)'), \
                  ('AXIS', 'Custom Axis Scale', \
                   'Use Custom Axis scale (1 Unit = 0.1 x Custom Axis Length)')),
         description='Scale to use for grid snap and transform values entered', \
