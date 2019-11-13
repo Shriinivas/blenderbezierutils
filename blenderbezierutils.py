@@ -5333,7 +5333,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         return [ci.wsData[adjIdx][1], pt0[1]]
                     else:
                         adjIdx = ci.getAdjIdx(ptIdx)
-                        if(adjIdx in ci.ptSels.keys()):
+                        if(adjIdx != None):
                             return [ci.wsData[adjIdx][1], pt0[1]]
 
         return []
@@ -5539,13 +5539,25 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         else: retVal = {'PASS_THROUGH'}
 
         if(not snapProc and event.type == 'ESC'):
+            # Escape processing sequence: 
+            # 1) Come out of snapper / snapdigits
+            # 2) Reset position if captured (double click) (not 1)
+            # 3) Reset selection if captured and position already reset (not2)
+            # 4) Come out of edit mode if no selection (not 3)
             if(event.value == 'RELEASE'):
-                if(self.editCurveInfo == None): self.reset()
+                if(self.editCurveInfo == None): 
+                    self.reset()
+                    ModalFlexiEditBezierOp.resetDisplay()
                 else:
-                    self.capture = False
-                    self.editCurveInfo = None
-                    self.snapper.resetSnap()
-                ModalFlexiEditBezierOp.resetDisplay()
+                    if(self.capture and self.snapper.lastSelCo != None and 
+                        not vectCmpWithMargin(self.snapper.lastSelCo, \
+                            self.editCurveInfo.getSelCo())): 
+                        self.snapper.lastSelCo = self.editCurveInfo.getSelCo()
+                    else:
+                        self.capture = False
+                        self.editCurveInfo = None
+                        self.snapper.resetSnap()
+                    self.refreshDisplaySelCurves()
             return {"RUNNING_MODAL"}
 
         if(updateMetaBtns(self, event)):
@@ -5754,7 +5766,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             self.pressT = None
             return {"RUNNING_MODAL"}
 
-        elif(snapProc or event.type == 'MOUSEMOVE'):
+        # Only refresh on RELEASE event of keys processed by Snapper or SnapDigits
+        # as PRESS are not handled
+        elif((snapProc and event.value != 'PRESS') or event.type == 'MOUSEMOVE'):
             segDispInfos = None
             bptDispInfos = None
             ei = self.editCurveInfo
