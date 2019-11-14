@@ -2493,7 +2493,8 @@ class FTProps:
             'colDrawMarker', 'colGreaseSelSeg', 'colGreaseNonHltSeg', 'colGreaseMarker', \
             'colHdlFree', 'colHdlVector', 'colHdlAligned', 'colHdlAuto', 'colSelTip', \
             'colHltTip', 'colBezPt', 'colHdlPtTip', 'colAdjBezTip', 'colEditSubdiv', \
-            'colGreaseSubdiv', 'colGreaseBezPt', 'snapDist', 'dispSnapInd', 'snapPtSize']
+            'colGreaseSubdiv', 'colGreaseBezPt', 'snapDist', 'dispSnapInd', \
+            'dispAxes', 'snapPtSize']
 
             if(resetPrefs):
                 FTProps.initDefault()
@@ -2551,6 +2552,7 @@ class FTProps:
 
         FTProps.snapDist = 20
         FTProps.dispSnapInd = False
+        FTProps.dispAxes = True
         FTProps.snapPtSize = 3
 
 
@@ -3367,8 +3369,9 @@ class Snapper():
             orig = self.getCurrOrig(obj, rmInfo)
 
         lineCo = []
-        if((refLineOrig != None or transType == 'VIEW' or len(freeAxesC) == 1)
-            or (len(freeAxesN) > 0 and snapOrigin != 'REFERENCE')):
+        if(FTProps.dispAxes and ((refLineOrig != None or transType == 'VIEW' \
+            or len(freeAxesC) == 1) or (len(freeAxesN) > 0 \
+                and snapOrigin != 'REFERENCE'))):
             colors = [(.6, 0.2, 0.2, 1), (0.2, .6, 0.2, 1), (0.2, 0.4, .6, 1)]
             l = 10 * rmInfo.rv3d.view_distance
 
@@ -5812,31 +5815,6 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
 ###################### Global Params ######################
 
-def getSnapOrientTups(scene, context):
-    orients = [\
-       ('GLOBAL', 'Global Axes', "Orient to world space"), \
-       ('AXIS', 'Custom Axes', "Orient to custom axis (if available)"), \
-       ('VIEW', 'View', "Orient to window"), \
-      ]
-
-    tool = context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
-
-    # ~ if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname): (T60766)
-    if(tool != None and (tool.idname == 'flexi_bezier.draw_tool' \
-        or tool.idname == 'flexi_bezier.grease_draw_tool')):
-        orients.insert(1, ('REFERENCE', 'Reference Line', "Orient to preceding segment"))
-
-    if(tool != None and tool.idname == 'flexi_bezier.edit_tool'):
-        orients.insert(1, ('REFERENCE', 'Reference Line', \
-            "Orient to preceding segment line or current handle"))
-
-    # ~ if(context.active_object != None):
-    orients.insert(3, ('OBJECT', 'Active Object', \
-        "Orient to local space of active object"))
-    orients.insert(4, ('FACE', 'Selected Object Face', \
-        "Orient to normal of face of selected object under mouse pointer "))
-    return orients
-
 def getConstrAxisTups(scene = None, context = None):
     axesMap = {\
        0: ('NONE', 'None', "Constrain only on hotkey event"), \
@@ -5854,30 +5832,35 @@ def getConstrAxisTups(scene = None, context = None):
 
     return [axesMap[key] for key in keyset]
 
-def getSnapOriginTups(scene = None, context = None):
-    return [\
-       ('GLOBAL', 'Global Origin', \
-        "Draw / Edit with reference to global origin"), \
-       ('CURSOR', '3D Cursor Location', \
-        "Draw / Edit with reference to 3D Cursor location"), \
-       ('AXIS', 'Custom Axis Start', \
-        "Draw / Edit with reference to starting point of custom axis"), \
-       ('REFERENCE', 'Reference Line Point', \
-        "Draw / Edit with reference to the appropriate reference line point"), \
-       ('OBJECT', 'Active Object Location', \
-        "Draw / Edit with reference to active object location"), \
-       ('FACE', 'Selected Object Face', \
-        "Draw / Edit with reference to the center of " + \
-            "Selected object face under mouse pointer"), \
-      ]
 
 class BezierToolkitParams(bpy.types.PropertyGroup):
     snapOrient: EnumProperty(name = 'Orientation',#"Align contrained axes and snap angle to",
-        items = getSnapOrientTups,
+        items = (('GLOBAL', 'Global Axes', "Orient to world space"), \
+        ('REFERENCE', 'Reference Line', "Orient to preceding segment or current handle"),
+        ('AXIS', 'Custom Axes', "Orient to custom axis (if available)"), \
+        ('VIEW', 'View', "Orient to window"), \
+        ('OBJECT', 'Active Object', "Orient to local space of active object"),
+        ('FACE', 'Selected Object Face', \
+         "Orient to normal of face of selected object under mouse pointer ")),
+        default = 'GLOBAL',
         description='Orientation for Draw / Edit')
+        
 
     snapOrigin: EnumProperty(name = 'Origin',#"Align contrained axes and snap angle to",
-        items = getSnapOriginTups,
+        items = (('GLOBAL', 'Global Origin', \
+          "Draw / Edit with reference to global origin"), \
+        ('CURSOR', '3D Cursor Location', \
+          "Draw / Edit with reference to 3D Cursor location"), \
+        ('AXIS', 'Custom Axis Start', \
+          "Draw / Edit with reference to starting point of custom axis"), \
+        ('REFERENCE', 'Reference Line Point', \
+          "Draw / Edit with reference to the appropriate reference line point"), \
+        ('OBJECT', 'Active Object Location', \
+          "Draw / Edit with reference to active object location"), \
+        ('FACE', 'Selected Object Face', \
+          "Draw / Edit with reference to the center of " + \
+          "Selected object face under mouse pointer")), \
+        default = 'REFERENCE',
         description='Origin for Draw / Edit')
 
     constrAxes: EnumProperty(name = 'Constrain Axis', #"Constrain axis for draw and edit ops",
@@ -6206,6 +6189,13 @@ class BezierUtilsPreferences(AddonPreferences):
             update = FTProps.updateProps
     )
 
+    dispAxes: BoolProperty(
+            name="Orientation / Origin Axis", \
+            description='Display axes for selected orientation / origin', \
+            default = True,
+            update = FTProps.updateProps
+    )
+
     colDrawSelSeg: bpy.props.FloatVectorProperty(
         name="Selected Draw / Edit  Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
         default=(.6, .8, 1, 1), \
@@ -6490,7 +6480,7 @@ class BezierUtilsPreferences(AddonPreferences):
         row = layout.row()
         row.prop(self, "othPrefExp", icon = "TRIA_DOWN" \
             if self.othPrefExp else "TRIA_RIGHT",  icon_only = True, emboss = False)
-        row.label(text = "Snapping Options:") # Snapping & Other
+        row.label(text = "Snapping & Other Options:") # Snapping & Other
 
         if self.othPrefExp:
             box = layout.box()
@@ -6503,6 +6493,9 @@ class BezierUtilsPreferences(AddonPreferences):
             col = box.column().split()
             col.label(text='Snap Point Size:')
             col.prop(self, "snapPtSize", text = '')
+            col = box.column().split()
+            col.label(text='Orientation / Origin Axes:')
+            col.prop(self, "dispAxes", text = '')
 
         ####################### Keymap #######################
 
