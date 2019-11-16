@@ -706,7 +706,7 @@ def splitCurveSelPts(selPtMap, newColl = True):
                 createSpline(objCopy.data, srcSpline, False, False)
                 # ~ updateShapeKeyData(objCopy, keyData, keyNames, skStart, ptCnt)
             srcSpline = obj.data.splines[i]
-            selPtIdxs = splinePtMap[i] # Already sorted
+            selPtIdxs = sorted(splinePtMap[i])
 
             if(len(selPtIdxs) == 0):
                 newSpline = createSpline(objCopy.data, srcSpline, False, False)
