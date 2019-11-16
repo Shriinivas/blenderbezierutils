@@ -3,7 +3,7 @@
 <b>Add-on Version: 0.9.72 </b>
 
 This add-on contains several tools for working with Bezier curves. <br>
-Supported Blender Version: <b>2.8</b> <br>
+Supported Blender Version: <b>2.8x</b> <br>
 
 # Installation
 - Download blenderbezierutils.py (save the file from <a href = 'https://raw.githubusercontent.com/Shriinivas/blenderbezierutils/master/blenderbezierutils.py'>this location</a> in a folder on disk.)
