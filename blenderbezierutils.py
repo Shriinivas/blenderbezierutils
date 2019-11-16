@@ -2297,10 +2297,14 @@ class FTHotKeys:
             'Split curve at selected Bezier points'))
 
     # Common
+    hkSwitchOut = 'hkSwitchOut'
     hkTweakPos = 'hkTweakPos'
     hkToggleDrwEd = 'hkToggleDrwEd'
     hkReorient = 'hkReorient'
+
     commonHotkeys = []
+    commonHotkeys.append(FTHotKeyData(hkSwitchOut, 'F1', 'Switch Out', \
+            'Switch out of the Flexi Tool mode'))
     commonHotkeys.append(FTHotKeyData(hkTweakPos, 'P', 'Tweak Position', \
             'Tweak position or enter polar coordinates of the draw / edit point'))
     commonHotkeys.append(FTHotKeyData(hkToggleDrwEd, 'E', 'Toggle Draw / Edit', \
@@ -2689,8 +2693,7 @@ class SnapDigits:
                 valid = False
         return delta, valid
 
-    def __init__(self, snapper, getFreeAxes, getEditCoPair):
-        self.snapper = snapper # TODO: Only for accessing meta keys (ctrl, alt etc)
+    def __init__(self, getFreeAxes, getEditCoPair):
         self.getFreeAxes = getFreeAxes
         self.getEditCoPair = getEditCoPair
         self.initialize()
@@ -2757,9 +2760,7 @@ class SnapDigits:
         editCos = self.getEditCoPair()
         self.deltaVec = editCos[1] - editCos[0]
 
-    def procEvent(self, context, event):
-        # TODO: Metakeys at a central location
-        metakeys = [self.snapper.alt, self.snapper.ctrl, self.snapper.shift]
+    def procEvent(self, context, event, metakeys):
         if(FTHotKeys.isHotKey(FTHotKeys.hkTweakPos, event.type, metakeys)):
             editCos = self.getEditCoPair()
             if(len(editCos) == 2):
@@ -2934,7 +2935,7 @@ class Snapper():
         self.isEditing = isEditing
         self.angleSnapSteps = Snapper.DEFAULT_ANGLE_SNAP_STEPS
         self.customAxis = CustomAxis()
-        self.snapDigits = SnapDigits(self, self.getFreeAxesNormalized, self.getEditCoPair)
+        self.snapDigits = SnapDigits(self.getFreeAxesNormalized, self.getEditCoPair)
         self.initialize()
         self.updateSnapKeyMap()
         # ~ bpy.context.space_data.overlay.show_axis_x = False
@@ -3115,14 +3116,14 @@ class Snapper():
 
             return True
 
+        metakeys = [self.alt, self.ctrl, self.shift]
         snapDProc = False
         if(len(self.getRefLine()) > 0):
-            snapDProc = self.snapDigits.procEvent(context, event)
+            snapDProc = self.snapDigits.procEvent(context, event, metakeys)
             if(snapDProc):
                 self.digitsConfirmed = False # Always reset if there was any digit entered
                 return True
 
-        metakeys = [self.alt, self.ctrl, self.shift] # TODO: Move to one place
         if(FTHotKeys.isHotKey(FTHotKeys.hkReorient, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 self.tm = None # Force reorientation
@@ -3688,13 +3689,7 @@ class ModalBaseFlexiOp(Operator):
         return self.subInvoke(context, event)
 
     def modal(self, context, event):
-        # ~ if(context.space_data == None):
-            # ~ return {'PASS_THROUGH'}
 
-        # ~ if(not is3DVireport(context)):
-            # ~ self.cancelOp(context)
-            # ~ resetToolbarTool()
-            # ~ return {'CANCELLED'}
         if(event.type == 'WINDOW_DEACTIVATE' and event.value == 'PRESS'):
             self.resetMetaBtns() # Subclass
             self.snapper.initialize() # TODO: Check if needed
@@ -3712,15 +3707,16 @@ class ModalBaseFlexiOp(Operator):
 
         self.rmInfo = rmInfo
         snapProc = self.snapper.procEvent(context, event, rmInfo)
+        metakeys = [self.snapper.alt, self.snapper.ctrl, self.snapper.shift]
 
-        if(not snapProc and not self.hasSelection() and event.type == 'ESC'):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkSwitchOut, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 self.cancelOp(context)
                 resetToolbarTool()
                 return {"CANCELLED"}
             return {'RUNNING_MODAL'}
 
-        return self.subModal(context, event, snapProc)
+        return self.subModal(context, event, snapProc, metakeys)
 
     def cancelOpBase(self):
         ModalBaseFlexiOp.removeDrawHandler()
@@ -3873,12 +3869,11 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         return self.isEditing()
 
     # Common subModal for Flexi Draw and Flexi Grease
-    def baseSubModal(self, context, event, snapProc):
+    def baseSubModal(self, context, event, snapProc, metakeys):
         rmInfo = self.rmInfo
-        metaKeys = [self.alt, self.ctrl, self.shift] # Order important
 
         if(self.capture and FTHotKeys.isHotKey(FTHotKeys.hkGrabRepos, \
-            event.type, metaKeys)):
+            event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 self.grabRepos = not self.grabRepos
             return {"RUNNING_MODAL"}
@@ -3920,7 +3915,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             return {'RUNNING_MODAL'}
 
         if(not snapProc and \
-            FTHotKeys.isHotKey(FTHotKeys.hkUndoLastSeg, event.type, metaKeys)):
+            FTHotKeys.isHotKey(FTHotKeys.hkUndoLastSeg, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 self.snapper.resetSnap()
                 if(not self.capture):
@@ -4178,16 +4173,16 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         self.snapInfos = {}
         self.updateSnapLocs()
 
-    def subModal(self, context, event, snapProc):
+    def subModal(self, context, event, snapProc, metakeys):
         rmInfo = self.rmInfo
-        metaKeys = [self.alt, self.ctrl, self.shift] # TODO: Move to one location
-        if(FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metaKeys)):
+
+        if(FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 # ~ bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname) (T60766)
                 bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
             return {"RUNNING_MODAL"}
 
-        return self.baseSubModal(context, event, snapProc)
+        return self.baseSubModal(context, event, snapProc, metakeys)
 
     def getSnapLocsImpl(self):
         locs = []
@@ -4472,7 +4467,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         self.interpPts = []
         self.updateSnapLocs()
 
-    def subModal(self, context, event, snapProc):
+    def subModal(self, context, event, snapProc, metakeys):
         rmInfo = self.rmInfo
 
         if(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', 'NUMPAD_PLUS', \
@@ -4496,7 +4491,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
         ptCnt = len(self.curvePts)
 
-        retVal = self.baseSubModal(context, event, snapProc)
+        retVal = self.baseSubModal(context, event, snapProc, metakeys)
 
         newPtCnt = len(self.curvePts)
         if(newPtCnt - ptCnt != 0):
@@ -5650,10 +5645,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             return self.snapper.get3dLocSnap(self.rmInfo, \
                 vec = selCo, refreshStatus = refreshStatus)
 
-    def subModal(self, context, event, snapProc):
+    def subModal(self, context, event, snapProc, metakeys):
         rmInfo = self.rmInfo
-        # TODO: move metakeys to FlexiBase
-        metaKeys = [self.alt, self.ctrl, self.shift] # Order important
 
         if(snapProc): retVal = {"RUNNING_MODAL"}
         else: retVal = {'PASS_THROUGH'}
@@ -5690,7 +5683,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         else:
             bpy.context.window.cursor_set("DEFAULT")
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkSplitAtSel, event.type, metaKeys)):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkSplitAtSel, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 selPtMap = {}
                 for c in self.selectCurveInfos:
@@ -5707,26 +5700,26 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         self.selectCurveInfos.add(SelectCurveInfo(o, i))
             return {"RUNNING_MODAL"}
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metaKeys)):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
                 self.reset()
                 bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
             return {"RUNNING_MODAL"}
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkDeselAll, event.type, metaKeys)):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkDeselAll, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 for c in self.selectCurveInfos: c.resetAllSegsSel()
                 self.refreshDisplaySelCurves()
             return {"RUNNING_MODAL"}
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkSelAll, event.type, metaKeys)):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkSelAll, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 for c in self.selectCurveInfos: c.selectAllSegs()
                 self.refreshDisplaySelCurves()
             return {"RUNNING_MODAL"}
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkUniSubdiv, event.type, metaKeys)):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkUniSubdiv, event.type, metakeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     self.subdivMode = True
@@ -5761,14 +5754,14 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 self.refreshDisplaySelCurves()
                 return {'RUNNING_MODAL'}
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkToggleHdl, event.type, metaKeys)):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkToggleHdl, event.type, metakeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     ModalFlexiEditBezierOp.h = not ModalFlexiEditBezierOp.h
                     self.refreshDisplaySelCurves()
                 return {"RUNNING_MODAL"}
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkDelPtSeg, event.type, metaKeys)):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkDelPtSeg, event.type, metakeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     self.delSelSegs()
@@ -5780,7 +5773,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     bpy.ops.ed.undo_push()
                 return {"RUNNING_MODAL"}
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkAlignHdl, event.type, metaKeys)):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkAlignHdl, event.type, metakeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     for c in self.selectCurveInfos: c.alignHandle() #selected node
