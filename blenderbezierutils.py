@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 71),
+    "version": (0, 9, 72),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -89,8 +89,9 @@ def createSplineForSeg(curveData, bezierPts):
     spline.bezier_points.add(len(bezierPts)-1)
     spline.use_cyclic_u = False
 
-    for i in range(0, len(bezierPts)):
-        copyBezierPt(bezierPts[i], spline.bezier_points[i], freeHandles = True)
+    for i, pt in enumerate(bezierPts):
+        copyBezierPt(pt, spline.bezier_points[i], freeHandles = True)
+    return spline
 
 def createSpline(curveData, srcSpline, forceNoncyclic, freeHandles, excludePtIdxs = {}):
     spline = curveData.splines.new('BEZIER')
@@ -190,9 +191,16 @@ def getLastSegIdx(obj, splineIdx):
 
 def addLastSeg(spline):
     if(spline.use_cyclic_u):
+        lt = spline.bezier_points[0].handle_left_type
+        rt = spline.bezier_points[0].handle_right_type
+        for pt in (spline.bezier_points[0], spline.bezier_points[-1]):
+            pt.handle_left_type = 'FREE'
+            pt.handle_right_type = 'FREE'
         spline.use_cyclic_u = False
         spline.bezier_points.add(1)
         copyObjAttr(spline.bezier_points[0], spline.bezier_points[-1])
+        spline.bezier_points[0].handle_left_type = lt
+        spline.bezier_points[0].handle_right_type = rt
 
 def moveSplineStart(obj, splineIdx, idx):
     pts = obj.data.splines[splineIdx].bezier_points
@@ -656,10 +664,103 @@ def closeSplines(curve, htype = None):
             spline.bezier_points[-1].handle_right_type = htype
         spline.use_cyclic_u = True
 
+# TODO: Update shapekey (not working due to moving of start pt in cyclic)
+def splitCurveSelPts(selPtMap, newColl = True):
+    changeCnt = 0
+    newObjs = []
+
+    if(len(selPtMap) == 0): return changeCnt, newObjs
+
+    for obj in selPtMap.keys():
+        splinePtMap = selPtMap.get(obj)
+
+        if((len(obj.data.splines) == 1 and \
+            len(obj.data.splines[0].bezier_points) <= 2) or len(splinePtMap) == 0):
+            continue
+        
+        keyNames, keyData = getShapeKeyInfo(obj)
+        collections = obj.users_collection
+
+        if(newColl):
+            objGrp = bpy.data.collections.new(obj.name)
+            parentColls = [objGrp]
+        else:
+            parentColls = collections
+
+        splineCnt = len(obj.data.splines)
+
+
+        endSplineIdx = splineCnt- 1
+        if(endSplineIdx not in splinePtMap.keys()): 
+            splinePtMap[endSplineIdx] = \
+                [len(obj.data.splines[endSplineIdx].bezier_points) - 1]
+
+        splineIdxs = sorted(splinePtMap.keys())
+
+        lastSplineIdx = -1
+        objCopy = createSkeletalCurve(obj, parentColls)
+        newObjs.append(objCopy)
+        for i in splineIdxs:
+            for j in range(lastSplineIdx + 1, i):
+                srcSpline = obj.data.splines[j]
+                createSpline(objCopy.data, srcSpline, False, False)
+                # ~ updateShapeKeyData(objCopy, keyData, keyNames, skStart, ptCnt)
+            srcSpline = obj.data.splines[i]
+            selPtIdxs = splinePtMap[i] # Already sorted
+
+            if(len(selPtIdxs) == 0):
+                newSpline = createSpline(objCopy.data, srcSpline, False, False)
+            else:
+                bpts = srcSpline.bezier_points
+                cyclic = srcSpline.use_cyclic_u
+                if(cyclic):
+                    firstIdx = selPtIdxs[0]
+                    moveSplineStart(obj, i, firstIdx)
+                    selPtIdxs = [getAdjIdx(obj, i, s, -firstIdx) for s in selPtIdxs]
+                    addLastSeg(srcSpline)
+                if(len(selPtIdxs) > 0 and selPtIdxs[0] == 0): 
+                    selPtIdxs.pop(0)
+                if(len(selPtIdxs) > 0 and selPtIdxs[-1] == len(bpts) - 1): 
+                    selPtIdxs.pop(-1)
+                bpts = srcSpline.bezier_points
+                
+                if(len(selPtIdxs) == 0):
+                    segBpts = bpts[:len(bpts)]
+                    newSpline = createSplineForSeg(objCopy.data, segBpts)
+                else:
+                    lastSegIdx = 0
+                    bpts = srcSpline.bezier_points
+                    for j in selPtIdxs:
+                        segBpts = bpts[lastSegIdx:j + 1]
+                        createSplineForSeg(objCopy.data, segBpts)
+                        # ~ updateShapeKeyData(objCopy, keyData, keyNames, \
+                            # ~ len(newObjs), 2)
+                        objCopy = createSkeletalCurve(obj, parentColls)
+                        newObjs.append(objCopy)
+                        lastSegIdx = j
+                    if(j != len(bpts) - 1): createSplineForSeg(objCopy.data, bpts[j:])
+
+            lastSplineIdx = i
+                
+        if(len(objCopy.data.splines) == 0):
+            newObjs.remove(objCopy)
+            safeRemoveObj(objCopy)
+
+        if(newColl):
+            for collection in collections:
+                collection.children.link(objGrp)
+
+        safeRemoveObj(obj)
+        changeCnt += 1
+
+    for obj in newObjs:
+        obj.data.splines.active = obj.data.splines[0]
+
+    return newObjs, changeCnt
+
 #split value is one of {'spline', 'seg', 'point'} (TODO: Enum)
 def splitCurve(selObjs, split, newColl = True):
     changeCnt = 0
-    splineCnt = 0
     newObjs = []
 
     if(len(selObjs) == 0):
@@ -736,12 +837,11 @@ def splitCurve(selObjs, split, newColl = True):
                 newObjs.append(objCopy)
                 segCnt += currSegCnt
 
-        for collection in collections:
-            if(newColl):
+        if(newColl):
+            for collection in collections:
                 collection.children.link(objGrp)
-            collection.objects.unlink(obj)
 
-        bpy.data.curves.remove(obj.data)
+        safeRemoveObj(obj)
         changeCnt += 1
 
     for obj in newObjs:
@@ -1032,9 +1132,20 @@ class SplitBezierObjsOp(Operator):
     bl_description = "Separate segments of selected Bezier curves as new objects"
 
     def execute(self, context):
+        selObjs = [o for o in bpy.context.selected_objects if(isBezier(o))]
+        if(context.mode == 'EDIT_CURVE'):
+            selPtMap = {}
 
-        selObjs = bpy.context.selected_objects
-        newObjs, changeCnt = splitCurve(selObjs, split = 'seg')
+            for o in selObjs:
+                selPtMap[o] = {}
+                for i, s in enumerate(o.data.splines):
+                    pts = s.bezier_points
+                    ptIdxs = [x for x in range(0, len(pts)) if pts[x].select_control_point]
+                    if(len(ptIdxs) > 0): selPtMap[o][i] = ptIdxs
+
+            newObjs, changeCnt = splitCurveSelPts(selPtMap)
+        else:
+            newObjs, changeCnt = splitCurve(selObjs, split = 'seg')
 
         if(changeCnt > 0):
             bpy.context.view_layer.objects.active = newObjs[-1]
@@ -1576,7 +1687,7 @@ class BezierUtilsPanel(Panel):
         # ~ layout.use_property_split = True
         layout.use_property_decorate = False
 
-        if(context.mode  == 'OBJECT'):
+        if(context.mode == 'OBJECT'):
             row = layout.row()
             row.prop(context.scene, "splitExpanded",
                 icon="TRIA_DOWN" if context.scene.splitExpanded else "TRIA_RIGHT",
@@ -1709,7 +1820,10 @@ class BezierUtilsPanel(Panel):
 
         else:
             col = layout.column()
+            col.operator('object.separate_segments', text = 'Split At Selected Points')
+            col = layout.column()
             col.prop(context.scene, 'markVertex', toggle = True)
+            
 
     ################ Stand-alone handler for changing curve colors #################
 
@@ -2164,6 +2278,7 @@ class FTHotKeys:
     hkToggleHdl = 'hkToggleHdl'
     hkSelAll = 'hkSelAll'
     hkDeselAll = 'hkDeselAll'
+    hkSplitAtSel = 'hkSplitAtSel'
 
     editHotkeys = []
     editHotkeys.append(FTHotKeyData(hkUniSubdiv, 'W', 'Segment Uniform Subdivide', \
@@ -2178,6 +2293,8 @@ class FTHotKeys:
             'Select all segments'))
     editHotkeys.append(FTHotKeyData(hkDeselAll, 'Alt+A', 'De-select All Segs', \
             'De-select all segments'))
+    editHotkeys.append(FTHotKeyData(hkSplitAtSel, 'Shift+P', 'Split At Selected Points', \
+            'Split curve at selected Bezier points'))
 
     # Common
     hkTweakPos = 'hkTweakPos'
@@ -5573,6 +5690,23 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         else:
             bpy.context.window.cursor_set("DEFAULT")
 
+        if(FTHotKeys.isHotKey(FTHotKeys.hkSplitAtSel, event.type, metaKeys)):
+            if(event.value == 'RELEASE'):
+                selPtMap = {}
+                for c in self.selectCurveInfos:
+                    if(selPtMap.get(c.obj) == None):
+                        selPtMap[c.obj] = {}
+                    ptIdxs = [p for p in c.ptSels.keys() if 1 in c.ptSels[p]]
+                    if(len(ptIdxs) > 0):
+                        selPtMap[c.obj][c.splineIdx] = ptIdxs                
+                newObjs, changeCnt = splitCurveSelPts(selPtMap, newColl = False)
+                bpy.ops.ed.undo_push()
+                self.reset()
+                for o in newObjs:
+                    for i in range(len(o.data.splines)):
+                        self.selectCurveInfos.add(SelectCurveInfo(o, i))
+            return {"RUNNING_MODAL"}
+
         if(FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metaKeys)):
             if(event.value == 'RELEASE'):
                 # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
@@ -6069,12 +6203,18 @@ def updatePanel(self, context):
         panel = BezierUtilsPanel
         if "bl_rna" in panel.__dict__:
             bpy.utils.unregister_class(panel)
+    except Exception as e:
+        print("BezierUtils: Unregistering Panel has failed", e)
+        return
 
+    try:
         panel.bl_category = context.preferences.addons[__name__].preferences.category
         bpy.utils.register_class(panel)
 
     except Exception as e:
         print("BezierUtils: Updating Panel locations has failed", e)
+        panel.bl_category = 'Tool'
+        bpy.utils.register_class(panel)
 
 
 class ResetDefaultPropsOp(bpy.types.Operator):
