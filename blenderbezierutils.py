@@ -12,7 +12,7 @@
 import bpy, bmesh, bgl, gpu
 from bpy.props import BoolProperty, IntProperty, EnumProperty, \
 FloatProperty, StringProperty, CollectionProperty, FloatVectorProperty
-from bpy.types import Panel, Operator, WorkSpaceTool, AddonPreferences
+from bpy.types import Panel, Operator, WorkSpaceTool, AddonPreferences, Menu
 from mathutils import Vector, Matrix, geometry, kdtree
 from math import log, atan, tan, sin, cos, pi, radians, degrees, sqrt
 from bpy_extras.view3d_utils import region_2d_to_vector_3d, region_2d_to_location_3d, \
@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 72),
+    "version": (0, 9, 73),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -2279,6 +2279,7 @@ class FTHotKeys:
     hkSelAll = 'hkSelAll'
     hkDeselAll = 'hkDeselAll'
     hkSplitAtSel = 'hkSplitAtSel'
+    hkMnHdlType = 'hkMnHdlType'
 
     editHotkeys = []
     editHotkeys.append(FTHotKeyData(hkUniSubdiv, 'W', 'Segment Uniform Subdivide', \
@@ -2295,6 +2296,8 @@ class FTHotKeys:
             'De-select all segments'))
     editHotkeys.append(FTHotKeyData(hkSplitAtSel, 'Shift+P', 'Split At Selected Points', \
             'Split curve at selected Bezier points'))
+    editHotkeys.append(FTHotKeyData(hkMnHdlType, 'S', 'Set Handle Type', \
+            'Set type of the selected handles'))
 
     # Common
     hkSwitchOut = 'hkSwitchOut'
@@ -2362,13 +2365,18 @@ class FTHotKeys:
         keydata = FTHotKeys.idDataMap.get(kId)
         return [keydata.key]
 
-    def isHotKey(id, key, metas):
+    def getKey(key, metas):
         keyVal = ''
         for i, meta in enumerate(metas):
             if(meta): keyVal += FTHotKeys.metas[i] + '+'
-
         keyVal += key
-        return FTHotKeys.idDataMap[id].key == keyVal
+        return keyVal
+
+    def getHotKeyData(key, metas):
+        return FTHotKeys.keyDataMap.get(FTHotKeys.getKey(key, metas))
+
+    def isHotKey(id, key, metas):
+        return FTHotKeys.idDataMap[id].key == FTHotKeys.getKey(key, metas)
 
     # The regular part of the snap keys is validated against assigned key without meta
     # So that if e.g. Ctrl+B is already assigned, B is not available as reg part
@@ -2675,6 +2683,100 @@ class FTProps:
         FTProps.dispSnapInd = False
         FTProps.dispAxes = True
         FTProps.snapPtSize = 3
+
+class FTMenuData:
+
+    def __init__(self, hotkeyId, options, menuClassName, menuClassLabel, handler):
+        self.hotkeyId = hotkeyId
+        self.options = options
+        self.menuClassName = menuClassName
+        self.menuClassLabel = menuClassLabel
+        self.handler = handler
+
+class FTMenu:
+
+    # Edit
+    editMenus = []
+    editMenus.append(FTMenuData(FTHotKeys.hkMnHdlType, \
+        [['miHdlAuto', 'Auto', 'HANDLETYPE_AUTO_VEC'], \
+         ['miHdlAligned', 'Aligned', 'HANDLETYPE_ALIGNED_VEC'], \
+         ['miHdlFree', 'Free', 'HANDLETYPE_FREE_VEC'], \
+         ['miHdlVector', 'Vector', 'HANDLETYPE_VECTOR_VEC']], \
+            'VIEW3D_MT_FlexiEditHdlMenu', 'Set Handle Type', 'setHandleType'))
+
+    idDataMap = {m.hotkeyId: m for m in editMenus}
+
+    currMenuId = None
+    abandoned = False
+
+    def procMenu(parent, context, event, metakeys):
+        evtType = event.type
+
+        if(FTMenu.abandoned == True and evtType == 'ESC'):
+            FTMenu.abandoned = False
+            return True
+
+        if(FTMenu.currMenuId != None):
+            menuData = FTMenu.idDataMap.get(FTMenu.currMenuId)
+            params = bpy.context.window_manager.bezierToolkitParams
+            opt = FTMenu.getMenuSel(menuData.hotkeyId)
+            if(opt != None or evtType != 'TIMER'):
+                print(evtType)
+                context.window_manager.event_timer_remove(parent.menuTimer)
+                FTMenu.resetMenuOptions(menuData.hotkeyId)
+                FTMenu.currMenuId = None
+                if(evtType == 'TIMER'):
+                    fn = getattr(parent, menuData.handler)
+                    fn(opt)
+                else:
+                    FTMenu.abandoned = True
+            return True
+
+        hkData = FTHotKeys.getHotKeyData(evtType, metakeys)
+        if(hkData == None): return False
+        if(event.value == 'RELEASE'):
+            menuData = FTMenu.idDataMap.get(hkData.id)
+            if(menuData == None): return False
+            FTMenu.resetMenuOptions(menuData.hotkeyId)
+            ret = bpy.ops.wm.call_menu_pie(name = menuData.menuClassName)
+            parent.menuTimer = \
+                context.window_manager.event_timer_add(time_step = 0.0001, \
+                    window = context.window)
+            FTMenu.currMenuId = menuData.hotkeyId
+
+        return True
+
+    def getMenuSel(hotkeyId):
+        params = bpy.context.window_manager.bezierToolkitParams
+        menuData = FTMenu.idDataMap[hotkeyId]
+        for opt in menuData.options:
+            if(getattr(params, opt[0])): return opt
+
+        return None
+        
+    def resetMenuOptions(hotkeyId):
+        params = bpy.context.window_manager.bezierToolkitParams
+        menuData = FTMenu.idDataMap[hotkeyId]
+        for opt in menuData.options:
+            setattr(params, opt[0], False)
+
+    def getMNClassDefStr(menuData):
+        retStr = 'class ' + menuData.menuClassName + '(Menu):\n' + \
+            '\tbl_label = "' + menuData.menuClassLabel + '"\n'+ \
+            '\tdef draw(self, context): \n' + \
+            '\t\tparams = bpy.context.window_manager.bezierToolkitParams\n' + \
+            '\t\tlayout = self.layout\n' + \
+            '\t\tpie = layout.menu_pie()\n'
+        for opt in menuData.options:
+            retStr += '\t\tpie.prop(params, "' + opt[0] + '", text = "' + \
+                opt[1] + '", icon_only = True, icon = "' + opt[2] + '")\n'
+        return retStr
+
+    def getMNPropDefStr(menuData):
+        retStr = ''
+        for opt in menuData.options:
+            retStr += opt[0] + ': BoolProperty(name="' + opt[1] + '", default = False)\n'
+        return retStr
 
 
 class SnapDigits:
@@ -3708,6 +3810,9 @@ class ModalBaseFlexiOp(Operator):
         self.rmInfo = rmInfo
         snapProc = self.snapper.procEvent(context, event, rmInfo)
         metakeys = [self.snapper.alt, self.snapper.ctrl, self.snapper.shift]
+
+        menuProc = FTMenu.procMenu(self, context, event, metakeys)
+        if(menuProc): return {'RUNNING_MODAL'}
 
         if(FTHotKeys.isHotKey(FTHotKeys.hkSwitchOut, event.type, metakeys)):
             if(event.value == 'RELEASE'):
@@ -5120,7 +5225,7 @@ class SelectCurveInfo:
                     selSegDispInfo = EditSegDisplayInfo(segPts, \
                         FTProps.colDrawSelSeg, vertCos)
                     segDispInfos[ptIdx] = selSegDispInfo
-                else:
+                elif(hdlIdx == 1 or not hideHdls):
                     bptDispInfos[ptIdx].tipColors[hdlIdx] = FTProps.colSelTip
 
         # Process highlighted points after selected ones because...
@@ -5620,6 +5725,19 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             except Exception as e:
                 c.resetPtSel()
 
+    def setHandleType(self, opt):
+        if(ModalFlexiEditBezierOp.h): return
+
+        hdlType = opt[1].upper()
+        for c in self.selectCurveInfos:
+            for ptIdx in c.ptSels:
+                sels = c.ptSels[ptIdx]
+                for sel in sels:
+                    bpt = c.obj.data.splines[c.splineIdx].bezier_points[ptIdx]
+                    if(sel == 0): bpt.handle_left_type = hdlType
+                    if(sel == 2): bpt.handle_right_type = hdlType        
+        bpy.ops.ed.undo_push()
+
     def resetMetaBtns(self):
         self.ctrl = False
         self.shift = False
@@ -6007,9 +6125,13 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         description='Scale to use for grid snap and transform values entered', \
                     default = 'DEFAULT')
 
-    # ~ customAxisCo1: FloatVectorProperty(default = LARGE_VECT)
-    # ~ customAxisCo2: FloatVectorProperty(default = LARGE_VECT)
     customAxisSnapCnt: IntProperty(default = 3, min = 0)
+
+    ############################ Menu ###############################
+
+    for menudata in FTMenu.editMenus:
+        exec(FTMenu.getMNPropDefStr(menudata))
+    
 
 # ~ class FlexiEditBezierTool(WorkSpaceTool):
     # ~ bl_space_type='VIEW_3D'
@@ -6702,8 +6824,7 @@ class BezierUtilsPreferences(AddonPreferences):
         col.operator('object.reset_default_props')
         col.operator('object.reset_default_hotkeys')
 
-
-classes = (
+classes = [
     ModalMarkSegStartOp,
     SeparateSplinesObjsOp,
     SplitBezierObjsOp,
@@ -6728,7 +6849,12 @@ classes = (
     BezierToolkitParams,
     ResetDefaultPropsOp,
     ResetDefaultHotkeys,
-)
+]
+
+for menuData in FTMenu.editMenus:
+    exec(FTMenu.getMNClassDefStr(menuData))
+    classes.append(eval(menuData.menuClassName))
+
 
 def register():
     for cls in classes:
