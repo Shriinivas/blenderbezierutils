@@ -1574,25 +1574,12 @@ class ModalMarkSegStartOp(bpy.types.Operator):
             self.markerState.updateSMMap()
             self.markerState.createBatch(context)
 
-        elif(event.type in {'LEFT_CTRL', 'RIGHT_CTRL'}):
-            self.ctrl = (event.value == 'PRESS')
-
-        elif(event.type in {'LEFT_SHIFT', 'RIGHT_SHIFT'}):
-            self.shift = (event.value == 'PRESS')
-
-            if(event.type not in {"MIDDLEMOUSE", "TAB", "LEFTMOUSE", \
-                "RIGHTMOUSE", 'WHEELDOWNMOUSE', 'WHEELUPMOUSE'} and \
-                not event.type.startswith("NUMPAD_")):
-                return {'RUNNING_MODAL'}
-
         return {"PASS_THROUGH"}
 
     def execute(self, context):
         #TODO: Why such small step?
         self._timer = context.window_manager.event_timer_add(time_step = 0.0001, \
             window = context.window)
-        self.ctrl = False
-        self.shift = False
 
         context.window_manager.modal_handler_add(self)
         self.markerState = MarkerController(context)
@@ -2647,7 +2634,7 @@ class FTProps:
         FTProps.propUpdating = False
 
     def initDefault():
-        FTProps.drawPtSize = 4
+        FTProps.drawPtSize = 5
         FTProps.lineWidth = 1.5
         FTProps.axisLineWidth = .25
         FTProps.editSubdivPtSize = 6
@@ -2721,7 +2708,6 @@ class FTMenu:
             params = bpy.context.window_manager.bezierToolkitParams
             opt = FTMenu.getMenuSel(menuData.hotkeyId)
             if(opt != None or evtType != 'TIMER'):
-                print(evtType)
                 context.window_manager.event_timer_remove(parent.menuTimer)
                 FTMenu.resetMenuOptions(menuData.hotkeyId)
                 FTMenu.currMenuId = None
@@ -2992,6 +2978,7 @@ class CustomAxis:
         self.axisPts = [Vector(bpy.data.scenes[0]['btk_co1']), \
             Vector(bpy.data.scenes[0]['btk_co2'])]
         self.snapCnt = params.customAxisSnapCnt
+        self.inDrawAxis = False # User drawing the custom axis
 
     def length(self):
         pts = self.axisPts
@@ -3021,6 +3008,41 @@ class CustomAxis:
 
         snapPts.append(pts[1])
         return snapPts
+
+    def procDrawEvent(self, context, event, snapper, rmInfo):
+        if(event.type == 'RIGHTMOUSE'):
+            snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
+            if(event.value == 'RELEASE' and snapOrigin == 'AXIS'):
+                loc = snapper.get3dLocSnap(rmInfo, snapToAxisLine = False)
+                if(not self.inDrawAxis): self.set(0, loc)
+                else: self.set(1, loc)
+                self.inDrawAxis = not self.inDrawAxis
+            return True
+
+        if(self.inDrawAxis):
+            if(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', 'NUMPAD_PLUS', \
+                'NUMPAD_MINUS','PLUS', 'MINUS'}):
+                if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
+                    and event.value == 'PRESS'):
+                    return True
+                elif(event.type =='WHEELUPMOUSE' or event.type.endswith('PLUS')):
+                    if(self.snapCnt < 20): self.snapCnt += 1
+                elif(event.type =='WHEELDOWNMOUSE' or event.type.endswith('MINUS')):
+                    if(self.snapCnt > 0): self.snapCnt -= 1
+
+            if(event.type == 'MOUSEMOVE'):
+                loc = snapper.get3dLocSnap(rmInfo, snapToAxisLine = False)
+                self.set(1, loc)
+
+            if(event.type == 'ESC'):
+                self.set(0, LARGE_VECT)
+                self.set(1, LARGE_VECT)
+                self.inDrawAxis = False
+
+            return True
+
+        return False
+
 
 class Snapper():
 
@@ -3081,7 +3103,6 @@ class Snapper():
         self.digitsConfirmed = False
         self.lastSelCo = None
 
-        self.inDrawAxis = False # User drawing the custom axis
         # ~ self.snapStack = [] # TODO
 
     def getGlobalOrient(self):
@@ -3144,7 +3165,7 @@ class Snapper():
             pts = custAxis.axisPts
             tm, invTm = getLineTransMatrices(pts[0], pts[1])
 
-        if(orientType == 'REFERENCE'):
+        if(orientType == 'REFERENCE' and refLine != None):
             tm, invTm = getLineTransMatrices(refLine[0], refLine[1])
 
         if(orientType == 'VIEW'):
@@ -3178,7 +3199,7 @@ class Snapper():
             (self.snapDigits.hasVal() and not self.digitsConfirmed)
 
     # To be called in modal method of parent
-    def procEvent(self, context, event, rmInfo):
+    def procEvent(self, context, event):
 
         # update ctrl etc.
         updateMetaBtns(self, event)
@@ -3186,37 +3207,6 @@ class Snapper():
         retVal = updateMetaBtns(self, event, self.snapKeyMap)
 
         if(retVal): return True
-
-        if(event.type == 'RIGHTMOUSE'):
-            snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
-            if(event.value == 'RELEASE' and snapOrigin == 'AXIS'):
-                loc = self.get3dLocSnap(rmInfo, snapToAxisLine = False)
-                if(not self.inDrawAxis): self.customAxis.set(0, loc)
-                else: self.customAxis.set(1, loc)
-                self.inDrawAxis = not self.inDrawAxis
-            return True
-
-        if(self.inDrawAxis):
-            if(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', 'NUMPAD_PLUS', \
-                'NUMPAD_MINUS','PLUS', 'MINUS'}):
-                if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
-                    and event.value == 'PRESS'):
-                    return True
-                elif(event.type =='WHEELUPMOUSE' or event.type.endswith('PLUS')):
-                    if(self.customAxis.snapCnt < 20): self.customAxis.snapCnt += 1
-                elif(event.type =='WHEELDOWNMOUSE' or event.type.endswith('MINUS')):
-                    if(self.customAxis.snapCnt > 0): self.customAxis.snapCnt -= 1
-
-            if(event.type == 'MOUSEMOVE'):
-                loc = self.get3dLocSnap(rmInfo, snapToAxisLine = False)
-                self.customAxis.set(1, loc)
-
-            if(event.type == 'ESC'):
-                self.customAxis.set(0, LARGE_VECT)
-                self.customAxis.set(1, LARGE_VECT)
-                self.inDrawAxis = False
-
-            return True
 
         metakeys = [self.alt, self.ctrl, self.shift]
         snapDProc = False
@@ -3622,7 +3612,8 @@ class Snapper():
                     "color": [(1, 1, 1, 1) for i in range(0, len(lineCo))]}))
 
         if(self.customAxis.length() != 0 and \
-            (self.inDrawAxis == True or 'AXIS' in {transType, snapOrigin, axisScale})):
+            (self.customAxis.inDrawAxis == True or \
+                'AXIS' in {transType, snapOrigin, axisScale})):
             apts = self.customAxis.axisPts
             lineCo = [apts[0], apts[1]]
             ptCo = self.customAxis.getSnapPts()
@@ -3801,18 +3792,30 @@ class ModalBaseFlexiOp(Operator):
             self.cancelOp(context)
             return {"CANCELLED"}
 
+        evtCons = self.snapper.procEvent(context, event)
+        metakeys = [self.snapper.alt, self.snapper.ctrl, self.snapper.shift]
+
+        ret = FTMenu.procMenu(self, context, event, metakeys)
+        if(ret): return {'RUNNING_MODAL'}
+
         rmInfo = RegionMouseXYInfo.getRegionMouseXYInfo(event, self.exclToolRegion())
-        if(self.isEditing() and self.rmInfo != rmInfo):
+
+        if((self.isEditing() or self.snapper.customAxis.inDrawAxis) \
+            and self.rmInfo != rmInfo):
             return {'RUNNING_MODAL'}
-        elif(rmInfo == None and not self.isEditing()):
+        if(rmInfo == None):
             return {'PASS_THROUGH'}
 
         self.rmInfo = rmInfo
-        snapProc = self.snapper.procEvent(context, event, rmInfo)
-        metakeys = [self.snapper.alt, self.snapper.ctrl, self.snapper.shift]
 
-        menuProc = FTMenu.procMenu(self, context, event, metakeys)
-        if(menuProc): return {'RUNNING_MODAL'}
+        ret = self.snapper.customAxis.procDrawEvent(context, event, self.snapper, rmInfo)
+        evtCons = evtCons or ret
+
+        # Ignore all PRESS events if consumed, since action is taken only on RELEASE...
+        # ...except wheelup and down where there is no release
+        # TODO: A better mechanism for indicating event consumed
+        if(evtCons and event.value == 'PRESS' and not event.type.startswith('WHEEL')):
+            return {'RUNNING_MODAL'}
 
         if(FTHotKeys.isHotKey(FTHotKeys.hkSwitchOut, event.type, metakeys)):
             if(event.value == 'RELEASE'):
@@ -3821,7 +3824,7 @@ class ModalBaseFlexiOp(Operator):
                 return {"CANCELLED"}
             return {'RUNNING_MODAL'}
 
-        return self.subModal(context, event, snapProc, metakeys)
+        return self.subModal(context, event, evtCons, metakeys)
 
     def cancelOpBase(self):
         ModalBaseFlexiOp.removeDrawHandler()
@@ -5255,19 +5258,25 @@ class EditCurveInfo(SelectCurveInfo):
             pt[2] += delta
             pt[0] += delta
 
-        elif(pt[3] in {'ALIGNED', 'AUTO'} and pt[4] in {'ALIGNED', 'AUTO'}):
-            diffV = (pt[hdlIdx] - pt[1]) # Changed by user
-            impIdx = (2 - hdlIdx) # 2's opposite handle is 0 and vice versa
-            diffL = diffV.length
-            if(diffL > 0 ):
-                oldL = (pt[1] - pt[impIdx]).length #Affected
-                if(round(oldL, 4) == 0.): oldL = 1
-                pt[impIdx] = pt[1] - (oldL *  diffV/diffL)
-                pt[3] = 'ALIGNED'
-                pt[4] = 'ALIGNED'
         else:
-            pt[3] = 'FREE'
-            pt[4] = 'FREE'
+            oppHdlIdx = (2 - hdlIdx) # 2's opposite handle is 0 and vice versa
+            typeIdx = 3 + int(hdlIdx * 0.5) # Handle Type corresponding to hdlIdx
+            oppTypeIdx = 3 + int(oppHdlIdx * 0.5)
+            if(pt[3] in {'ALIGNED', 'AUTO'} and pt[4] in {'ALIGNED', 'AUTO'}):
+                diffV = (pt[hdlIdx] - pt[1]) # Changed by user
+                diffL = diffV.length
+                if(diffL > 0 ):
+                    oldL = (pt[1] - pt[oppHdlIdx]).length #Affected
+                    if(round(oldL, 4) == 0.): oldL = 1
+                    pt[oppHdlIdx] = pt[1] - (oldL *  diffV/diffL)
+                    pt[3] = 'ALIGNED'
+                    pt[4] = 'ALIGNED'
+            else:
+                # Set to free even if opp type is vector, otherwise it can't be moved
+                if(pt[typeIdx] == 'VECTOR' or pt[oppTypeIdx] == 'VECTOR'):
+                    pt[typeIdx] = 'FREE'
+                elif(pt[typeIdx] == 'AUTO'):
+                    pt[typeIdx] = 'ALIGNED'
 
     # Get seg points after change in position of handles or drag curve
     def getOffsetSegPts(self, newPos):
@@ -6014,9 +6023,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             self.pressT = None
             return {"RUNNING_MODAL"}
 
-        # Only refresh on RELEASE event of keys processed by Snapper or SnapDigits
-        # as PRESS are not handled
-        elif((snapProc and event.value != 'PRESS') or event.type == 'MOUSEMOVE'):
+        elif(snapProc or event.type == 'MOUSEMOVE'):
             segDispInfos = None
             bptDispInfos = None
             ei = self.editCurveInfo
@@ -6377,7 +6384,7 @@ class BezierUtilsPreferences(AddonPreferences):
     drawPtSize: FloatProperty(
             name = "Handle Point Size",
             description = "Size of Flexi Draw and Edit Bezier handle points",
-            default = 4,
+            default = 5,
             min = 0.1,
             max = 20,
             update = FTProps.updateProps
