@@ -2696,7 +2696,8 @@ class FTMenu:
     currMenuId = None
     abandoned = False
 
-    def procMenu(parent, context, event, metakeys):
+    def procMenu(parent, context, event):
+        metakeys = parent.snapper.getMetakeys()
         evtType = event.type
 
         if(FTMenu.abandoned == True and evtType == 'ESC'):
@@ -3066,9 +3067,11 @@ class Snapper():
         # ~ bpy.context.space_data.overlay.show_axis_y = False
 
     def initialize(self):
-        self.shift = False # For locking to plane
-        self.ctrl = False # For excluding ctrl Z etc.
-        self.alt = False # For future use
+
+        # metakeys for all functions
+        self.shift = False
+        self.ctrl = False
+        self.alt = False
 
         self.angleSnap = False
         self.gridSnap = False
@@ -3198,6 +3201,9 @@ class Snapper():
         return len(self.freeAxes) > 0 or \
             (self.snapDigits.hasVal() and not self.digitsConfirmed)
 
+    def getMetakeys(self):
+        return [self.alt, self.ctrl, self.shift]
+        
     # To be called in modal method of parent
     def procEvent(self, context, event):
 
@@ -3208,7 +3214,7 @@ class Snapper():
 
         if(retVal): return True
 
-        metakeys = [self.alt, self.ctrl, self.shift]
+        metakeys = self.getMetakeys()
         snapDProc = False
         if(len(self.getRefLine()) > 0):
             snapDProc = self.snapDigits.procEvent(context, event, metakeys)
@@ -3784,8 +3790,7 @@ class ModalBaseFlexiOp(Operator):
     def modal(self, context, event):
 
         if(event.type == 'WINDOW_DEACTIVATE' and event.value == 'PRESS'):
-            self.resetMetaBtns() # Subclass
-            self.snapper.initialize() # TODO: Check if needed
+            self.snapper.initialize()
             return {'PASS_THROUGH'}
 
         if(not self.isToolSelected(context)): # Subclass
@@ -3793,9 +3798,9 @@ class ModalBaseFlexiOp(Operator):
             return {"CANCELLED"}
 
         evtCons = self.snapper.procEvent(context, event)
-        metakeys = [self.snapper.alt, self.snapper.ctrl, self.snapper.shift]
+        metakeys = self.snapper.getMetakeys()
 
-        ret = FTMenu.procMenu(self, context, event, metakeys)
+        ret = FTMenu.procMenu(self, context, event)
         if(ret): return {'RUNNING_MODAL'}
 
         rmInfo = RegionMouseXYInfo.getRegionMouseXYInfo(event, self.exclToolRegion())
@@ -3824,7 +3829,7 @@ class ModalBaseFlexiOp(Operator):
                 return {"CANCELLED"}
             return {'RUNNING_MODAL'}
 
-        return self.subModal(context, event, evtCons, metakeys)
+        return self.subModal(context, event, evtCons)
 
     def cancelOpBase(self):
         ModalBaseFlexiOp.removeDrawHandler()
@@ -3896,7 +3901,6 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         self.pressT = None #For single click
         self.capture = False
         self.grabRepos = False
-        self.resetMetaBtns()
         self.snapper.initialize()
 
     def subInvoke(self, context, event):
@@ -3913,11 +3917,6 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             ModalDrawBezierOp.markerSize = 8
 
         return {"RUNNING_MODAL"}
-
-    def resetMetaBtns(self):
-        self.ctrl = False
-        self.shift = False
-        self.alt = False
 
     def cancelOp(self, context):
         ModalDrawBezierOp.resetDisplay()
@@ -3977,8 +3976,9 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         return self.isEditing()
 
     # Common subModal for Flexi Draw and Flexi Grease
-    def baseSubModal(self, context, event, snapProc, metakeys):
+    def baseSubModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
+        metakeys = self.snapper.getMetakeys()
 
         if(self.capture and FTHotKeys.isHotKey(FTHotKeys.hkGrabRepos, \
             event.type, metakeys)):
@@ -4281,8 +4281,9 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         self.snapInfos = {}
         self.updateSnapLocs()
 
-    def subModal(self, context, event, snapProc, metakeys):
+    def subModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
+        metakeys = self.snapper.getMetakeys()
 
         if(FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metakeys)):
             if(event.value == 'RELEASE'):
@@ -4290,7 +4291,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
             return {"RUNNING_MODAL"}
 
-        return self.baseSubModal(context, event, snapProc, metakeys)
+        return self.baseSubModal(context, event, snapProc)
 
     def getSnapLocsImpl(self):
         locs = []
@@ -4467,11 +4468,15 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 [x for y in self.getSnapObjs(context, [self.curvePts[0][1],
                     self.curvePts[-1][1]]) for x in y]
 
+            metakeys = self.snapper.getMetakeys()
+            ctrl = metakeys[1]
+            shift = metakeys[2]
+
             # ctrl pressed and there IS a snapped end obj,
             # so user does not want connection
 
             # (no option to only connect to starting curve when end object exists)
-            if(self.ctrl and endObj != None):
+            if(ctrl and endObj != None):
                 obj = self.createCurveObj(context)
                 endObj = None
             else:
@@ -4481,7 +4486,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 obj = self.createCurveObj(context, \
                     startObj, startSplineIdx, endObj, endSplineIdx)
 
-            if(endObj == None  and self.shift \
+            if(endObj == None  and shift \
                 and (event.type == 'SPACE' or event.type == 'RET')):
                 obj.data.splines[-1].use_cyclic_u = True
 
@@ -4575,8 +4580,9 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         self.interpPts = []
         self.updateSnapLocs()
 
-    def subModal(self, context, event, snapProc, metakeys):
+    def subModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
+        metakeys = self.snapper.getMetakeys()
 
         if(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', 'NUMPAD_PLUS', \
             'NUMPAD_MINUS','PLUS', 'MINUS'} and len(self.curvePts) > 1):
@@ -4599,7 +4605,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
         ptCnt = len(self.curvePts)
 
-        retVal = self.baseSubModal(context, event, snapProc, metakeys)
+        retVal = self.baseSubModal(context, event, snapProc)
 
         newPtCnt = len(self.curvePts)
         if(newPtCnt - ptCnt != 0):
@@ -5513,9 +5519,6 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         self.selectCurveInfos = set()
         self.clickT = None
         self.pressT = None
-        self.ctrl = False
-        self.shift = False
-        self.alt = False
         self.subdivMode = False
 
         # For double click (TODO: remove; same as editCurveInfo == None?)
@@ -5747,11 +5750,6 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     if(sel == 2): bpt.handle_right_type = hdlType        
         bpy.ops.ed.undo_push()
 
-    def resetMetaBtns(self):
-        self.ctrl = False
-        self.shift = False
-        self.alt = False
-
     def exclToolRegion(self):
         return False
 
@@ -5772,8 +5770,12 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             return self.snapper.get3dLocSnap(self.rmInfo, \
                 vec = selCo, refreshStatus = refreshStatus)
 
-    def subModal(self, context, event, snapProc, metakeys):
+    def subModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
+        metakeys = self.snapper.getMetakeys()
+        alt = metakeys[0]
+        ctrl = metakeys[1]
+        shift = metakeys[2]
 
         if(snapProc): retVal = {"RUNNING_MODAL"}
         else: retVal = {'PASS_THROUGH'}
@@ -5804,7 +5806,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             self.refreshDisplaySelCurves(refreshPos = True)
             return {'RUNNING_MODAL'}
 
-        if(self.ctrl and (self.editCurveInfo == None or (self.pressT != None and \
+        if(ctrl and (self.editCurveInfo == None or (self.pressT != None and \
             time.time() - self.pressT) < SNGL_CLK_DURN)):
             bpy.context.window.cursor_set("CROSSHAIR")
         else:
@@ -5923,7 +5925,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             #TODO: Move to Snapper?
             searchResult = getClosestPt2d(rmInfo.region, rmInfo.rv3d, coFind, objs, \
                 NONSEL_CURVE_SEARCH_RES, selObjInfos, NONSEL_CURVE_SEARCH_RES, \
-                    withHandles = (not self.ctrl and not ModalFlexiEditBezierOp.h))
+                    withHandles = (not ctrl and not ModalFlexiEditBezierOp.h))
 
             if(searchResult != None):
                 resType, obj, splineIdx, segIdx, otherInfo = searchResult
@@ -5947,7 +5949,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 else:#if(resType == 'SegLoc'):
                     hdlIdx = -1
                     # More precise for adding point
-                    selRes = ADD_PT_CURVE_SEARCH_RES if self.ctrl \
+                    selRes = ADD_PT_CURVE_SEARCH_RES if ctrl \
                         else SEL_CURVE_SEARCH_RES
 
                     searchResult = getClosestPt2dWithinSeg(rmInfo.region, rmInfo.rv3d, \
@@ -5968,7 +5970,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 self.pressT = time.time()
                 return {'RUNNING_MODAL'}
 
-            if(not self.shift):
+            if(not shift):
                 self.reset()
 
             return retVal
@@ -5987,9 +5989,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             else:
                 self.capture = False
                 if(self.pressT != None and (tm - self.pressT) < SNGL_CLK_DURN):
-                    if(self.ctrl and ei.clickInfo['hdlIdx'] == -1):
-                        if(self.shift): handleType = 'ALIGNED'
-                        elif(self.alt): handleType = 'VECTOR'
+                    if(ctrl and ei.clickInfo['hdlIdx'] == -1):
+                        if(shift): handleType = 'ALIGNED'
+                        elif(alt): handleType = 'VECTOR'
                         else: handleType = 'FREE'
 
                         ei.insertNode(handleType)
@@ -5999,7 +6001,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
                     # Gib dem Benutzer Zeit zum Atmen!
                     else:
-                        if(not self.shift or self.ctrl):
+                        if(not shift or ctrl):
                             for ci in self.selectCurveInfos.copy():
                                 if(ci != ei): self.selectCurveInfos.remove(ci)
                             ei.resetPtSel()
@@ -6043,7 +6045,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 #TODO: Move to Snapper
                 searchResult = getClosestPt2d(rmInfo.region, rmInfo.rv3d, coFind, objs, \
                     NONSEL_CURVE_SEARCH_RES, selObjInfos, NONSEL_CURVE_SEARCH_RES, \
-                        withHandles = (not self.ctrl and not ModalFlexiEditBezierOp.h))
+                        withHandles = (not ctrl and not ModalFlexiEditBezierOp.h))
 
                 for c in self.selectCurveInfos: c.resetHltInfo()
                 if(searchResult != None):
