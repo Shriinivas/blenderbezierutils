@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 73),
+    "version": (0, 9, 74),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -5253,57 +5253,123 @@ class EditCurveInfo(SelectCurveInfo):
     def __init__(self, obj, splineIdx):
         super(EditCurveInfo, self).__init__(obj, splineIdx)
 
-    # Calculate the opposite handle values in case of ALIGNED and AUTO handles
-    # oldPts must not be None if hdlIdx is 1 (the end point)
-    # TODO: Auto handle changes adjacent segment handles also?
-    def syncHdls(self, pt, hdlIdx, oldPt = None):
-
-        if(hdlIdx == 1): # edited the point itself (oldPt must not be None)
-            # Move the handles by the same delta regardless of the type
-            delta = pt[1] - oldPt[1]
-            pt[2] += delta
-            pt[0] += delta
-
-        else:
-            oppHdlIdx = (2 - hdlIdx) # 2's opposite handle is 0 and vice versa
-            typeIdx = 3 + int(hdlIdx * 0.5) # Handle Type corresponding to hdlIdx
-            oppTypeIdx = 3 + int(oppHdlIdx * 0.5)
-            if(pt[3] in {'ALIGNED', 'AUTO'} and pt[4] in {'ALIGNED', 'AUTO'}):
-                diffV = (pt[hdlIdx] - pt[1]) # Changed by user
-                diffL = diffV.length
-                if(diffL > 0 ):
-                    oldL = (pt[1] - pt[oppHdlIdx]).length #Affected
-                    if(round(oldL, 4) == 0.): oldL = 1
-                    pt[oppHdlIdx] = pt[1] - (oldL *  diffV/diffL)
-                    pt[3] = 'ALIGNED'
-                    pt[4] = 'ALIGNED'
+    def syncAlignedHdl(self, pt, ctrlPLoc, hdlIdx):
+        typeIdx = 3 if hdlIdx == 0 else 4
+        if(pt[typeIdx] == 'ALIGNED'):
+            oppTypeIdx = 4 if hdlIdx == 0 else 3
+            if(pt[oppTypeIdx] in {'VECTOR', 'ALIGNED'}):
+                oppHdlIdx = 2 if hdlIdx == 0 else 0
+                oppHdlV = ctrlPLoc - pt[oppHdlIdx]
+                if(oppHdlV.length != 0):
+                    currL = (ctrlPLoc - pt[hdlIdx]).length
+                    pt[hdlIdx] = ctrlPLoc + currL * oppHdlV / oppHdlV.length
+    
+    def setAlignedHdlsCo(self, pt, hdlIdx, ctrlPLoc):
+        typeIdx = 3 if hdlIdx == 0 else 4
+        if(pt[typeIdx] == 'ALIGNED'):
+            oppTypeIdx = 4 if hdlIdx == 0 else 3
+            if(pt[oppTypeIdx] != 'VECTOR'):
+                pt[hdlIdx] += (ctrlPLoc - pt[1])
             else:
-                # Set to free even if opp type is vector, otherwise it can't be moved
-                if(pt[typeIdx] == 'VECTOR' or pt[oppTypeIdx] == 'VECTOR'):
-                    pt[typeIdx] = 'FREE'
-                elif(pt[typeIdx] == 'AUTO'):
-                    pt[typeIdx] = 'ALIGNED'
+                self.syncAlignedHdl(pt, ctrlPLoc, hdlIdx)
+        
+    def setFreeHdlsCo(self, pt, hdlIdx, newLoc):
+        typeIdx = 3 if hdlIdx == 0 else 4
+        if(pt[typeIdx] == 'FREE'):
+            pt[hdlIdx] += (newLoc - pt[1])
 
+    def setVectHdlsCo(self, pt, newLoc, hdlIdx, prevPt, nextPt):
+        typeIdx = 3 if hdlIdx == 0 else 4
+        if(pt[typeIdx] == 'VECTOR'):
+            typeIdx = 3 if hdlIdx == 0 else 4
+            pts = [prevPt, nextPt] if hdlIdx == 0 else [nextPt, prevPt]
+            diffV = None
+            if(pts[0] != None): diffV = pts[0][1] - newLoc
+            if(diffV == None and pts[1] != None): 
+                diffV = pts[1][1] - newLoc
+            if(diffV == None): pt[hdlIdx] = newLoc
+            else: pt[hdlIdx] = newLoc + diffV * 1 / 3
+
+    # Calculate both handle and adjacent pt handles in case of Vector type
+    # TODO: AUTO has a separate logic set to ALIGNED for now
+    def syncCtrlPtHdls(self, ptIdx, newLoc):
+        wsData = getWSData(self.obj)
+        pt = wsData[self.splineIdx][ptIdx]
+        prevIdx = self.getAdjIdx(ptIdx, -1)
+        prevPt = None if prevIdx == None else wsData[self.splineIdx][prevIdx]
+        nextIdx = self.getAdjIdx(ptIdx)
+        nextPt = None if nextIdx == None else wsData[self.splineIdx][nextIdx]
+
+        ptIdxs = [ptIdx]
+        pts = [pt]
+
+        for typeIdx in [3, 4]:
+            if(pt[typeIdx] == 'AUTO'): pt[typeIdx] = 'ALIGNED'
+        for hdlIdx in [0, 2]:
+            self.setVectHdlsCo(pt, newLoc, hdlIdx, prevPt, nextPt)
+        for hdlIdx in [0, 2]:
+            self.setFreeHdlsCo(pt, hdlIdx, newLoc)
+        for hdlIdx in [0, 2]:
+            self.setAlignedHdlsCo(pt, hdlIdx, newLoc)
+        
+        pt[1] = newLoc
+
+        if(prevPt != None and prevPt[4] == 'VECTOR'): 
+            pPrevIdx = self.getAdjIdx(prevIdx, -1)
+            pPrevPt = None if pPrevIdx == None else wsData[self.splineIdx][pPrevIdx]
+            self.setVectHdlsCo(prevPt, prevPt[1], 2, pPrevPt, pt)
+            self.setAlignedHdlsCo(prevPt, 0, prevPt[1])
+            
+            ptIdxs.append(prevIdx)
+            pts.append(prevPt)
+
+        if(nextPt != None and nextPt[3] == 'VECTOR'): 
+            nNextIdx = self.getAdjIdx(nextIdx)
+            nNextPt = None if nNextIdx == None else wsData[self.splineIdx][nNextIdx]
+            self.setVectHdlsCo(nextPt, nextPt[1], 0, pt, nNextPt)
+            self.setAlignedHdlsCo(nextPt, 2, nextPt[1])
+
+            ptIdxs.append(nextIdx)
+            pts.append(nextPt)
+
+        return ptIdxs, pts
+
+    # Calculate the opposite handle values in case of ALIGNED and AUTO handles
+    # Also set the type(s) of current (opposite) handle(s)
+    def syncHdls(self, pt, hdlIdx, newLoc):
+        typeIdx = 3 if hdlIdx == 0 else 4
+        oppTypeIdx = 4 if hdlIdx == 0 else 3
+
+        if(pt[typeIdx] == 'VECTOR'): pt[typeIdx] = 'FREE'
+        if(pt[typeIdx] == 'AUTO'): pt[typeIdx] = 'ALIGNED'
+        if(pt[oppTypeIdx] == 'AUTO' and pt[typeIdx] != 'FREE'): pt[oppTypeIdx] = 'ALIGNED'
+
+        pt[hdlIdx] = newLoc
+
+        self.syncAlignedHdl(pt, pt[1], 2 - hdlIdx) # First opposite
+
+        self.syncAlignedHdl(pt, pt[1], hdlIdx)
+
+            
     # Get seg points after change in position of handles or drag curve
-    def getOffsetSegPts(self, newPos):
+    # The only function called on all 3 events: grab curve pt, grab handle, grab Bezier pt
+    def getOffsetSegPts(self, newLoc):
         inf = self.clickInfo
         ptIdx = inf['ptIdx']
         hdlIdx = inf['hdlIdx']
         wsData = getWSData(self.obj)
-        pt0 = wsData[self.splineIdx][ptIdx] # TODO: Why self.wsData doesn't work?
-        pts = [pt0]
-        ptIdxs = [ptIdx]
+        pt = wsData[self.splineIdx][ptIdx]
 
         if(hdlIdx == -1): # Grab point on curve
             adjIdx = self.getAdjIdx(ptIdx)
-            pt1 = wsData[self.splineIdx][adjIdx]
+            adjPt = wsData[self.splineIdx][adjIdx]
 
-            pts = [pt0, pt1]
             ptIdxs = [ptIdx, adjIdx]
+            pts = [pt, adjPt]
 
-            delta = newPos - inf['loc']
+            delta = newLoc - inf['loc']
             if(delta == 0):
-                return pts
+                return ptIdxs, pts
             t = inf['t']
 
             #****************************************************************
@@ -5324,20 +5390,35 @@ class EditCurveInfo(SelectCurveInfo):
                                                                            #*
             #****************************************************************
 
-            # If the segment is edited, the 1st pt right handle and 2nd pt
-            # left handle impacted
+            # If the segment is edited, the 1st pt right handle...
             pts[0][2] += offset0
+
+            if(pts[0][4] == 'VECTOR'): pts[0][4] = 'FREE'
+            if(pts[0][4] == 'AUTO'): pts[0][4] = 'ALIGNED'
+            # opposite handle must be changed if this is not FREE
+            if(pts[0][3] == 'VECTOR' and pts[0][4] != 'FREE'): pts[0][3] = 'FREE'
+            if(pts[0][3] == 'AUTO' and pts[0][4] != 'FREE'): pts[0][3] = 'ALIGNED'
+
+            self.syncAlignedHdl(pts[0], pts[0][1], hdlIdx = 0)
+
+            # ...and 2nd pt left handle impacted
             pts[1][0] += offset1
 
-            self.syncHdls(pts[0], hdlIdx  = 2)
-            self.syncHdls(pts[1], hdlIdx  = 0)
+            if(pts[1][3] == 'VECTOR'): pts[1][3] = 'FREE'
+            if(pts[1][3] == 'AUTO'): pts[1][3] = 'ALIGNED'
+            # opposite handle must be changed if this is not FREE
+            if(pts[1][4] == 'VECTOR' and  pts[1][3] != 'FREE'): pts[1][4] = 'FREE'
+            if(pts[1][4] == 'AUTO' and  pts[1][3] != 'FREE'): pts[1][4] = 'ALIGNED'
 
-        elif(len(self.clickInfo) > 0):
-            oldPt = pt0[:]
-            pt0[hdlIdx] = newPos
-            self.syncHdls(pt0, hdlIdx, oldPt)
+            self.syncAlignedHdl(pts[1], pts[1][1], hdlIdx = 2)
+            return ptIdxs, pts
 
-        return ptIdxs, pts
+        elif(hdlIdx in {0, 2}): # Grab one of the handles
+            self.syncHdls(pt, hdlIdx, newLoc)
+            return [ptIdx], [pt]
+
+        else: # Grab the Bezier point
+            return self.syncCtrlPtHdls(ptIdx, newLoc)
 
     def moveSeg(self, newPos):
         ptIdxs, pts = self.getOffsetSegPts(newPos)
@@ -5785,7 +5866,6 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             # 1) Come out of snapper / snapdigits
             # 2) Reset position if captured (double click) (not 1)
             # 3) Reset selection if captured and position already reset (not2)
-            # 4) Come out of edit mode if no selection (not 3)
             if(event.value == 'RELEASE'):
                 if(self.editCurveInfo == None): 
                     self.reset()
