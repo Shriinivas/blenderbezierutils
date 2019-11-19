@@ -677,7 +677,7 @@ def splitCurveSelPts(selPtMap, newColl = True):
         if((len(obj.data.splines) == 1 and \
             len(obj.data.splines[0].bezier_points) <= 2) or len(splinePtMap) == 0):
             continue
-        
+
         keyNames, keyData = getShapeKeyInfo(obj)
         collections = obj.users_collection
 
@@ -691,7 +691,7 @@ def splitCurveSelPts(selPtMap, newColl = True):
 
 
         endSplineIdx = splineCnt- 1
-        if(endSplineIdx not in splinePtMap.keys()): 
+        if(endSplineIdx not in splinePtMap.keys()):
             splinePtMap[endSplineIdx] = \
                 [len(obj.data.splines[endSplineIdx].bezier_points) - 1]
 
@@ -718,12 +718,12 @@ def splitCurveSelPts(selPtMap, newColl = True):
                     moveSplineStart(obj, i, firstIdx)
                     selPtIdxs = [getAdjIdx(obj, i, s, -firstIdx) for s in selPtIdxs]
                     addLastSeg(srcSpline)
-                if(len(selPtIdxs) > 0 and selPtIdxs[0] == 0): 
+                if(len(selPtIdxs) > 0 and selPtIdxs[0] == 0):
                     selPtIdxs.pop(0)
-                if(len(selPtIdxs) > 0 and selPtIdxs[-1] == len(bpts) - 1): 
+                if(len(selPtIdxs) > 0 and selPtIdxs[-1] == len(bpts) - 1):
                     selPtIdxs.pop(-1)
                 bpts = srcSpline.bezier_points
-                
+
                 if(len(selPtIdxs) == 0):
                     segBpts = bpts[:len(bpts)]
                     newSpline = createSplineForSeg(objCopy.data, segBpts)
@@ -741,7 +741,7 @@ def splitCurveSelPts(selPtMap, newColl = True):
                     if(j != len(bpts) - 1): createSplineForSeg(objCopy.data, bpts[j:])
 
             lastSplineIdx = i
-                
+
         if(len(objCopy.data.splines) == 0):
             newObjs.remove(objCopy)
             safeRemoveObj(objCopy)
@@ -1810,7 +1810,7 @@ class BezierUtilsPanel(Panel):
             col.operator('object.separate_segments', text = 'Split At Selected Points')
             col = layout.column()
             col.prop(context.scene, 'markVertex', toggle = True)
-            
+
 
     ################ Stand-alone handler for changing curve colors #################
 
@@ -2740,7 +2740,7 @@ class FTMenu:
             if(getattr(params, opt[0])): return opt
 
         return None
-        
+
     def resetMenuOptions(hotkeyId):
         params = bpy.context.window_manager.bezierToolkitParams
         menuData = FTMenu.idDataMap[hotkeyId]
@@ -3203,7 +3203,7 @@ class Snapper():
 
     def getMetakeys(self):
         return [self.alt, self.ctrl, self.shift]
-        
+
     # To be called in modal method of parent
     def procEvent(self, context, event):
 
@@ -5263,7 +5263,7 @@ class EditCurveInfo(SelectCurveInfo):
                 if(oppHdlV.length != 0):
                     currL = (ctrlPLoc - pt[hdlIdx]).length
                     pt[hdlIdx] = ctrlPLoc + currL * oppHdlV / oppHdlV.length
-    
+
     def setAlignedHdlsCo(self, pt, hdlIdx, ctrlPLoc):
         typeIdx = 3 if hdlIdx == 0 else 4
         if(pt[typeIdx] == 'ALIGNED'):
@@ -5272,7 +5272,7 @@ class EditCurveInfo(SelectCurveInfo):
                 pt[hdlIdx] += (ctrlPLoc - pt[1])
             else:
                 self.syncAlignedHdl(pt, ctrlPLoc, hdlIdx)
-        
+
     def setFreeHdlsCo(self, pt, hdlIdx, newLoc):
         typeIdx = 3 if hdlIdx == 0 else 4
         if(pt[typeIdx] == 'FREE'):
@@ -5285,8 +5285,8 @@ class EditCurveInfo(SelectCurveInfo):
             pts = [prevPt, nextPt] if hdlIdx == 0 else [nextPt, prevPt]
             diffV = None
             if(pts[0] != None): diffV = pts[0][1] - newLoc
-            if(diffV == None and pts[1] != None): 
-                diffV = pts[1][1] - newLoc
+            if(diffV == None and pts[1] != None):
+                diffV = newLoc - pts[1][1]
             if(diffV == None): pt[hdlIdx] = newLoc
             else: pt[hdlIdx] = newLoc + diffV * 1 / 3
 
@@ -5311,19 +5311,19 @@ class EditCurveInfo(SelectCurveInfo):
             self.setFreeHdlsCo(pt, hdlIdx, newLoc)
         for hdlIdx in [0, 2]:
             self.setAlignedHdlsCo(pt, hdlIdx, newLoc)
-        
+
         pt[1] = newLoc
 
-        if(prevPt != None and prevPt[4] == 'VECTOR'): 
+        if(prevPt != None and prevPt[4] == 'VECTOR'):
             pPrevIdx = self.getAdjIdx(prevIdx, -1)
             pPrevPt = None if pPrevIdx == None else wsData[self.splineIdx][pPrevIdx]
             self.setVectHdlsCo(prevPt, prevPt[1], 2, pPrevPt, pt)
             self.setAlignedHdlsCo(prevPt, 0, prevPt[1])
-            
+
             ptIdxs.append(prevIdx)
             pts.append(prevPt)
 
-        if(nextPt != None and nextPt[3] == 'VECTOR'): 
+        if(nextPt != None and nextPt[3] == 'VECTOR'):
             nNextIdx = self.getAdjIdx(nextIdx)
             nNextPt = None if nNextIdx == None else wsData[self.splineIdx][nNextIdx]
             self.setVectHdlsCo(nextPt, nextPt[1], 0, pt, nNextPt)
@@ -5350,7 +5350,7 @@ class EditCurveInfo(SelectCurveInfo):
 
         self.syncAlignedHdl(pt, pt[1], hdlIdx)
 
-            
+
     # Get seg points after change in position of handles or drag curve
     # The only function called on all 3 events: grab curve pt, grab handle, grab Bezier pt
     def getOffsetSegPts(self, newLoc):
@@ -5828,7 +5828,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 for sel in sels:
                     bpt = c.obj.data.splines[c.splineIdx].bezier_points[ptIdx]
                     if(sel == 0): bpt.handle_left_type = hdlType
-                    if(sel == 2): bpt.handle_right_type = hdlType        
+                    if(sel == 2): bpt.handle_right_type = hdlType
         bpy.ops.ed.undo_push()
 
     def exclToolRegion(self):
@@ -5862,18 +5862,18 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         else: retVal = {'PASS_THROUGH'}
 
         if(not snapProc and event.type == 'ESC'):
-            # Escape processing sequence: 
+            # Escape processing sequence:
             # 1) Come out of snapper / snapdigits
             # 2) Reset position if captured (double click) (not 1)
             # 3) Reset selection if captured and position already reset (not2)
             if(event.value == 'RELEASE'):
-                if(self.editCurveInfo == None): 
+                if(self.editCurveInfo == None):
                     self.reset()
                     ModalFlexiEditBezierOp.resetDisplay()
                 else:
-                    if(self.capture and self.snapper.lastSelCo != None and 
+                    if(self.capture and self.snapper.lastSelCo != None and
                         not vectCmpWithMargin(self.snapper.lastSelCo, \
-                            self.editCurveInfo.getSelCo())): 
+                            self.editCurveInfo.getSelCo())):
                         self.snapper.lastSelCo = self.editCurveInfo.getSelCo()
                     else:
                         self.capture = False
@@ -5900,7 +5900,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         selPtMap[c.obj] = {}
                     ptIdxs = [p for p in c.ptSels.keys() if 1 in c.ptSels[p]]
                     if(len(ptIdxs) > 0):
-                        selPtMap[c.obj][c.splineIdx] = ptIdxs                
+                        selPtMap[c.obj][c.splineIdx] = ptIdxs
                 newObjs, changeCnt = splitCurveSelPts(selPtMap, newColl = False)
                 bpy.ops.ed.undo_push()
                 self.reset()
@@ -6113,9 +6113,10 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
             # ei != None taken care by refreshDisplaySelCurves(refreshPos = True)
             if(ei == None):
-                # ~ coFind = Vector(rmInfo.xy).to_3d()
-                coFind = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, \
-                    self.snapper.get3dLocSnap(rmInfo)).to_3d()
+
+                coFind = Vector(rmInfo.xy).to_3d()
+                # ~ coFind = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, \
+                    # ~ self.snapper.get3dLocSnap(rmInfo)).to_3d()
 
                 objs = self.getEditableCurveObjs()
 
@@ -6178,7 +6179,7 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
          "Orient to normal of face of selected object under mouse pointer ")),
         default = 'GLOBAL',
         description='Orientation for Draw / Edit')
-        
+
 
     snapOrigin: EnumProperty(name = 'Origin',#"Align contrained axes and snap angle to",
         items = (('GLOBAL', 'Global Origin', \
@@ -6220,7 +6221,7 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
 
     for menudata in FTMenu.editMenus:
         exec(FTMenu.getMNPropDefStr(menudata))
-    
+
 
 # ~ class FlexiEditBezierTool(WorkSpaceTool):
     # ~ bl_space_type='VIEW_3D'
