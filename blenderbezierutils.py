@@ -431,13 +431,16 @@ def updateCurveEndPtMap(endPtMap, addObjNames = None, removeObjNames = None):
 #(47.538, -1) -> 47.5; (47.538, 0) -> 48.0; (47.538, 1) -> 50.0; (47.538, 2) -> 0,
 def roundedVect(vect, rounding, axes):
     rounding += 1
-    fact = ((10 ** rounding) / 10) / getUnitScale()
+    fact = ((getGridSubdiv() ** rounding) / getGridSubdiv()) / getUnitScale()
     retVect = vect.copy()
     # ~ Vector([round(vect[i] / fact) * fact for i in axes])
     for i in axes: retVect[i] = round(vect[i] / fact) * fact
     return retVect
 
 ###################### Screen functions ######################
+
+def getGridSubdiv():
+    return bpy.context.space_data.overlay.grid_subdivisions
 
 def getUnit():
     return bpy.context.scene.unit_settings.length_unit
@@ -459,7 +462,7 @@ def get3dLoc(context, event, vec = None):
 
 def  getViewDistRounding(rv3d):
     viewDist = rv3d.view_distance * getUnitScale()
-    return int(log(viewDist, 10)) - 1
+    return int(log(viewDist, getGridSubdiv())) - 1
 
 def getCoordFromLoc(region, rv3d, loc):
     coord = location_3d_to_region_2d(region, rv3d, loc)
