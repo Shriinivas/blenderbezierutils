@@ -2334,6 +2334,8 @@ class FTHotKeys:
     # Metakeys not part of the map
     idDataMap = {h.id: h for h in \
         [k for k in (drawHotkeys + editHotkeys + commonHotkeys + snapHotkeys)]}
+
+    # Imp: Needs to update after every key selection change
     keyDataMap = {h.key: h for h in \
         [k for k in (drawHotkeys + editHotkeys + commonHotkeys + snapHotkeys)]}
 
@@ -2384,6 +2386,9 @@ class FTHotKeys:
     def updateHotkeys(dummy, context):
         try:
             FTHotKeys.updateHKPropPrefs(context)
+            FTHotKeys.keyDataMap = {h.key: h for h in \
+                [k for k in (FTHotKeys.drawHotkeys + FTHotKeys.editHotkeys + \
+                    FTHotKeys.commonHotkeys + FTHotKeys.snapHotkeys)]}
         except Exception as e:
             FTHotKeys.updateHKPropPrefs(context, reset = True)
             print("BezierUtils: Error fetching keymap preferences", e)
@@ -2680,6 +2685,7 @@ class FTMenuData:
         self.menuClassLabel = menuClassLabel
         self.handler = handler
 
+# TODO: Move to end to avoid eval/getattr due to forward referencing
 class FTMenu:
 
     # Edit
@@ -2692,11 +2698,22 @@ class FTMenu:
             'VIEW3D_MT_FlexiEditHdlMenu', 'Set Handle Type', 'setHandleType'))
 
     idDataMap = {m.hotkeyId: m for m in editMenus}
+    toolClassMenuMap = {'ModalFlexiEditBezierOp': set([m.hotkeyId for m in editMenus])}
 
     currMenuId = None
     abandoned = False
 
-    def procMenu(parent, context, event):
+    def getMenuData(caller, hotkeyId):
+        found = False
+        for c in FTMenu.toolClassMenuMap:
+            if(isinstance(caller, eval(c))):
+                if(hotkeyId in FTMenu.toolClassMenuMap[c]):
+                    found = True
+                    break
+        return FTMenu.idDataMap.get(hotkeyId) if(found) else None
+        
+    def procMenu(parent, context, event, outside):
+
         metakeys = parent.snapper.getMetakeys()
         evtType = event.type
 
@@ -2719,10 +2736,12 @@ class FTMenu:
                     FTMenu.abandoned = True
             return True
 
+        if(outside): return False
+
         hkData = FTHotKeys.getHotKeyData(evtType, metakeys)
         if(hkData == None): return False
         if(event.value == 'RELEASE'):
-            menuData = FTMenu.idDataMap.get(hkData.id)
+            menuData = FTMenu.getMenuData(parent, hkData.id)
             if(menuData == None): return False
             FTMenu.resetMenuOptions(menuData.hotkeyId)
             ret = bpy.ops.wm.call_menu_pie(name = menuData.menuClassName)
@@ -3066,12 +3085,14 @@ class Snapper():
         # ~ bpy.context.space_data.overlay.show_axis_x = False
         # ~ bpy.context.space_data.overlay.show_axis_y = False
 
-    def initialize(self):
-
+    def resetMetakeys(self):
         # metakeys for all functions
         self.shift = False
         self.ctrl = False
         self.alt = False
+
+    def initialize(self):
+        self.resetMetakeys()
 
         self.angleSnap = False
         self.gridSnap = False
@@ -3800,10 +3821,12 @@ class ModalBaseFlexiOp(Operator):
         evtCons = self.snapper.procEvent(context, event)
         metakeys = self.snapper.getMetakeys()
 
-        ret = FTMenu.procMenu(self, context, event)
-        if(ret): return {'RUNNING_MODAL'}
-
         rmInfo = RegionMouseXYInfo.getRegionMouseXYInfo(event, self.exclToolRegion())
+
+        ret = FTMenu.procMenu(self, context, event, rmInfo == None)
+        if(ret): 
+            # ~ self.snapper.resetMetakeys()
+            return {'RUNNING_MODAL'}
 
         if((self.isEditing() or self.snapper.customAxis.inDrawAxis) \
             and self.rmInfo != rmInfo):
