@@ -431,13 +431,23 @@ def updateCurveEndPtMap(endPtMap, addObjNames = None, removeObjNames = None):
 #(47.538, -1) -> 47.5; (47.538, 0) -> 48.0; (47.538, 1) -> 50.0; (47.538, 2) -> 0,
 def roundedVect(vect, rounding, axes):
     rounding += 1
-    fact = (10 ** rounding) / 10
+    fact = ((10 ** rounding) / 10) / getUnitScale()
     retVect = vect.copy()
     # ~ Vector([round(vect[i] / fact) * fact for i in axes])
     for i in axes: retVect[i] = round(vect[i] / fact) * fact
     return retVect
 
 ###################### Screen functions ######################
+
+def getUnit():
+    return bpy.context.scene.unit_settings.length_unit
+
+def getUnitSystem():
+    return bpy.context.scene.unit_settings.system
+
+def getUnitScale():
+    fact = 3.28084 if(getUnitSystem() == 'IMPERIAL') else 1
+    return fact * bpy.context.scene.unit_settings.scale_length
 
 def get3dLoc(context, event, vec = None):
     region = context.region
@@ -448,7 +458,7 @@ def get3dLoc(context, event, vec = None):
     return region_2d_to_location_3d(region, rv3d, xy, vec)
 
 def  getViewDistRounding(rv3d):
-    viewDist = rv3d.view_distance
+    viewDist = rv3d.view_distance * getUnitScale()
     return int(log(viewDist, 10)) - 1
 
 def getCoordFromLoc(region, rv3d, loc):
@@ -2796,10 +2806,10 @@ class SnapDigits:
             td = digits[0:i]
             try:
                 delta = float(sign + ''.join(td))
-                return delta, valid
+                return delta / getUnitScale(), valid
             except:
                 valid = False
-        return delta, valid
+        return delta / getUnitScale(), valid
 
     def __init__(self, getFreeAxes, getEditCoPair):
         self.getFreeAxes = getFreeAxes
@@ -2978,7 +2988,7 @@ class SnapDigits:
     def getCurrDeltaStr(self):
         delta, valid = SnapDigits.getValidFloat(self.signChar, self.digitChars)
         retStr = '['
-        d = self.deltaVec[self.axisIdx]
+        d = self.deltaVec[self.axisIdx] * getUnitScale()
         if(d != 0):
             retStr += str(round(d, 4)) + ('+' if (self.signChar == '') else '')
         retStr += self.signChar + ''.join(self.digitChars) + '] = ' \
@@ -3299,7 +3309,9 @@ class Snapper():
             return self.snapDigits.getDeltaStrPolar()
 
         axes = self.getFreeAxesNormalized()
-        diffV = self.snapDigits.getCurrDelta() if manualEntry else (newPt - refPt)
+        diffV = self.snapDigits.getCurrDelta() \
+            if manualEntry else (newPt - refPt) * getUnitScale()
+
         diffVActual = invTm @ diffV
 
         retStr = ''
@@ -3387,7 +3399,7 @@ class Snapper():
 
         self.lastSnapTypes = set()
 
-        unit = unitMap.get(bpy.context.scene.unit_settings.length_unit)
+        unit = unitMap.get(getUnit())
         if(unit == None): unit = ''
 
         digitsValid = True
