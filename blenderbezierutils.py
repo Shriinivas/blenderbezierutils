@@ -2740,9 +2740,9 @@ class FTMenu:
 
         hkData = FTHotKeys.getHotKeyData(evtType, metakeys)
         if(hkData == None): return False
+        menuData = FTMenu.getMenuData(parent, hkData.id)
+        if(menuData == None): return False
         if(event.value == 'RELEASE'):
-            menuData = FTMenu.getMenuData(parent, hkData.id)
-            if(menuData == None): return False
             FTMenu.resetMenuOptions(menuData.hotkeyId)
             ret = bpy.ops.wm.call_menu_pie(name = menuData.menuClassName)
             parent.menuTimer = \
@@ -3824,8 +3824,8 @@ class ModalBaseFlexiOp(Operator):
         rmInfo = RegionMouseXYInfo.getRegionMouseXYInfo(event, self.exclToolRegion())
 
         ret = FTMenu.procMenu(self, context, event, rmInfo == None)
-        if(ret): 
-            # ~ self.snapper.resetMetakeys()
+        if(ret):
+            if(event.value == 'RELEASE'): self.snapper.resetMetakeys()
             return {'RUNNING_MODAL'}
 
         if((self.isEditing() or self.snapper.customAxis.inDrawAxis) \
