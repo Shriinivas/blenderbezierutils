@@ -2276,10 +2276,10 @@ class FTHotKeys:
     hkAlignHdl = 'hkAlignHdl'
     hkDelPtSeg = 'hkDelPtSeg'
     hkToggleHdl = 'hkToggleHdl'
-    hkSelAll = 'hkSelAll'
-    hkDeselAll = 'hkDeselAll'
     hkSplitAtSel = 'hkSplitAtSel'
     hkMnHdlType = 'hkMnHdlType'
+    hkMnSelect = 'hkMnSelect'
+    hkMnDeselect = 'hkMnDeselect'
 
     editHotkeys = []
     editHotkeys.append(FTHotKeyData(hkUniSubdiv, 'W', 'Segment Uniform Subdivide', \
@@ -2290,14 +2290,14 @@ class FTHotKeys:
             'Delete selected Point / Segment, align selected handle with other point'))
     editHotkeys.append(FTHotKeyData(hkToggleHdl, 'H', 'Hide / Unhide Handles', \
             'Toggle handle visibility'))
-    editHotkeys.append(FTHotKeyData(hkSelAll, 'A', 'Select All Segs', \
-            'Select all segments'))
-    editHotkeys.append(FTHotKeyData(hkDeselAll, 'Alt+A', 'De-select All Segs', \
-            'De-select all segments'))
     editHotkeys.append(FTHotKeyData(hkSplitAtSel, 'Shift+P', 'Split At Selected Points', \
             'Split curve at selected Bezier points'))
     editHotkeys.append(FTHotKeyData(hkMnHdlType, 'S', 'Set Handle Type', \
-            'Set type of the selected handles'))
+            'Set type of selected handles'))
+    editHotkeys.append(FTHotKeyData(hkMnSelect, 'A', 'Select', \
+            'Select elements from existing spline selection'))
+    editHotkeys.append(FTHotKeyData(hkMnDeselect, 'Alt+A', 'Deselect', \
+            'Deselect elements from existing spline selection'))
 
     # Common
     hkSwitchOut = 'hkSwitchOut'
@@ -2710,7 +2710,21 @@ class FTMenu:
          ['miHdlAligned', 'Aligned', 'HANDLETYPE_ALIGNED_VEC'], \
          ['miHdlFree', 'Free', 'HANDLETYPE_FREE_VEC'], \
          ['miHdlVector', 'Vector', 'HANDLETYPE_VECTOR_VEC']], \
-            'VIEW3D_MT_FlexiEditHdlMenu', 'Set Handle Type', 'setHandleType'))
+            'VIEW3D_MT_FlexiEditHdlMenu', 'Set Handle Type', 'mnSetHdlType'))
+
+    editMenus.append(FTMenuData(FTHotKeys.hkMnSelect, \
+        [['miSelSegs', 'Segments', 'GP_SELECT_STROKES'], \
+         ['miSelBezPts', 'Bezier Points', 'GP_SELECT_POINTS'], \
+         ['miSelHdls', 'Handles', 'GP_SELECT_BETWEEN_STROKES'], \
+         ['miSelAll', 'Everything', 'SELECT_EXTEND']], \
+            'VIEW3D_MT_FlexiEditSelMenu', 'Select', 'mnSelect'))
+
+    editMenus.append(FTMenuData(FTHotKeys.hkMnDeselect, \
+        [['miDeselSegs', 'Segments', 'GP_SELECT_STROKES'], \
+         ['miDeselBezPts', 'Bezier Points', 'GP_SELECT_POINTS'], \
+         ['miDeselHdls', 'Handles', 'GP_SELECT_BETWEEN_STROKES'], \
+         ['miDeselInvert', 'Invert Selection', 'SELECT_SUBTRACT']], \
+            'VIEW3D_MT_FlexiEditDeselMenu', 'Deselect', 'mnDeselect'))
 
     idDataMap = {m.hotkeyId: m for m in editMenus}
     toolClassMenuMap = {'ModalFlexiEditBezierOp': set([m.hotkeyId for m in editMenus])}
@@ -2797,7 +2811,7 @@ class FTMenu:
             retStr += '\t\top = pie.operator("object.ft_menu_options", text = "'+ \
                 opt[1] + '"' + \
                     ((', icon = "'+ opt[2] +'"') if(opt[2] != '') else '') + ')\n'
-            retStr += '\t\top.optIdx = "' + str(i) + '"\n'
+            retStr += '\t\top.optIdx = ' + str(i) + '\n'
         return retStr
 
     def getMNPropDefStr(menuData):
@@ -2809,14 +2823,14 @@ class FTMenu:
 class FTMenuOptionOp(Operator):
     bl_idname = "object.ft_menu_options"
     bl_label = "Set FT Menu Options"
-    bl_description = "Set FT Menu options"
+    bl_description = "Set option"
 
-    optIdx = StringProperty()
+    optIdx = IntProperty()
 
     def execute(self, context):
         FTMenu.resetMenuOptions()
         params = bpy.context.window_manager.bezierToolkitParams
-        setattr(params, FTMenu.propSuffix + self.optIdx, True)
+        setattr(params, FTMenu.propSuffix + str(self.optIdx), True)
         return {'FINISHED'}
     
 
@@ -5037,6 +5051,10 @@ class SelectCurveInfo:
         self.addSels(ptIdx, set([sel]), toggle)
 
     def addSels(self, ptIdx, sels, toggle = False):
+        # TODO: Check this condition at other places 
+        if( -1 in sels and self.getAdjIdx(ptIdx) == None): sels.remove(-1)
+        if(len(sels) == 0): return
+
         currSels = self.ptSels.get(ptIdx)
         if(currSels == None): currSels = set()
         modSels = currSels.union(sels)
@@ -5045,22 +5063,14 @@ class SelectCurveInfo:
         if(len(self.ptSels[ptIdx]) == 0 ): self.ptSels.pop(ptIdx)
 
     def removeSel(self, ptIdx, sel):
-        if(sel in self.ptSels[ptIdx]):
-            self.ptSels[ptIdx].remove(-1)
-            if(len(self.ptSels[ptIdx]) == 0): self.ptSels.pop(ptIdx)
+        self.removeSels(ptIdx, {sel})
 
-
-    def selectAllPts(self):
-        for ptIdx in range(len(self.wsData)):
-            self.addSel(ptIdx, 1)
-
-    def selectAllSegs(self):
-        for ptIdx in range(self.getLastSegIdx() + 1):
-            self.addSel(ptIdx, -1)
-
-    def resetAllSegsSel(self):
-        for ptIdx in list(self.ptSels):
-            self.removeSel(ptIdx, -1)
+    def removeSels(self, ptIdx, sels):
+        for sel in sels:
+            currSels = self.ptSels.get(ptIdx)
+            if(currSels != None and sel in currSels):
+                currSels.remove(sel)
+                if(len(currSels) == 0): self.ptSels.pop(ptIdx)
 
     def resetClickInfo(self):
         self.clickInfo = {}
@@ -5878,7 +5888,28 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             except Exception as e:
                 c.resetPtSel()
 
-    def setHandleType(self, opt):
+    def mnSelect(self, opt):
+        h = ModalFlexiEditBezierOp.h
+        for c in self.selectCurveInfos:
+            for ptIdx in range(len(c.wsData)):
+                if(opt[0] == 'miSelSegs'): c.addSel(ptIdx, -1)
+                if(opt[0] == 'miSelBezPts'): c.addSel(ptIdx, 1)
+                if(opt[0] == 'miSelHdls' and not h): c.addSels(ptIdx, {0, 2})
+                if(opt[0] == 'miSelAll'): 
+                    c.addSels(ptIdx, {-1, 1}.union({0, 2} if not h else set()))
+
+    def mnDeselect(self, opt):
+        h = ModalFlexiEditBezierOp.h
+        for c in self.selectCurveInfos:
+            for ptIdx in range(len(c.wsData)):
+                if(opt[0] == 'miDeselSegs'): c.removeSel(ptIdx, -1)
+                if(opt[0] == 'miDeselBezPts'): c.removeSel(ptIdx, 1)
+                if(opt[0] == 'miDeselHdls' and not h): c.removeSels(ptIdx, {0, 2})
+                if(opt[0] == 'miDeselInvert'): 
+                    c.addSels(ptIdx, {-1, 1}.union({0, 2} if not h else set()), \
+                        toggle = True)
+
+    def mnSetHdlType(self, opt):
         if(ModalFlexiEditBezierOp.h): return
 
         hdlType = opt[1].upper()
@@ -5974,18 +6005,6 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
                 self.reset()
                 bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
-            return {"RUNNING_MODAL"}
-
-        if(FTHotKeys.isHotKey(FTHotKeys.hkDeselAll, event.type, metakeys)):
-            if(event.value == 'RELEASE'):
-                for c in self.selectCurveInfos: c.resetAllSegsSel()
-                self.refreshDisplaySelCurves()
-            return {"RUNNING_MODAL"}
-
-        if(FTHotKeys.isHotKey(FTHotKeys.hkSelAll, event.type, metakeys)):
-            if(event.value == 'RELEASE'):
-                for c in self.selectCurveInfos: c.selectAllSegs()
-                self.refreshDisplaySelCurves()
             return {"RUNNING_MODAL"}
 
         if(FTHotKeys.isHotKey(FTHotKeys.hkUniSubdiv, event.type, metakeys)):
