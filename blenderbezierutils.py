@@ -5667,6 +5667,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         bpy.app.handlers.depsgraph_update_post.append(self.updateAfterGeomChange)
 
         self.editCurveInfo = None
+        self.htlCurveInfo = None
         self.selectCurveInfos = set()
         self.clickT = None
         self.pressT = None
@@ -5890,6 +5891,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
     def mnSelect(self, opt):
         h = ModalFlexiEditBezierOp.h
+        if(self.htlCurveInfo != None):
+            self.selectCurveInfos.add(self.htlCurveInfo)
+            self.htlCurveInfo = None
         for c in self.selectCurveInfos:
             for ptIdx in range(len(c.wsData)):
                 if(opt[0] == 'miSelSegs'): c.addSel(ptIdx, -1)
@@ -6218,6 +6222,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         ci = SelectCurveInfo(obj, splineIdx)
                         ci.setHltInfo(hltType = resType, ptIdx = segIdx, hltIdx = otherInfo)
                         segDispInfos, bptDispInfos = ci.getDisplayInfos(ModalFlexiEditBezierOp.h)
+                        self.htlCurveInfo = ci
                     else:
                         ci.setHltInfo(hltType = resType, ptIdx = segIdx, hltIdx = otherInfo)
             self.refreshDisplaySelCurves(segDispInfos, bptDispInfos, \
