@@ -2701,6 +2701,8 @@ class FTMenuData:
 # TODO: Move to end to avoid eval/getattr due to forward referencing
 class FTMenu:
 
+    propSuffix = 'ftMenuOpt'
+
     # Edit
     editMenus = []
     editMenus.append(FTMenuData(FTHotKeys.hkMnHdlType, \
@@ -2735,12 +2737,11 @@ class FTMenu:
             return True
 
         if(FTMenu.currMenuId != None):
-            menuData = FTMenu.idDataMap.get(FTMenu.currMenuId)
             params = bpy.context.window_manager.bezierToolkitParams
-            opt = FTMenu.getMenuSel(menuData.hotkeyId)
-            if(opt != None or evtType != 'TIMER'):
+            opt = FTMenu.getCurrMenuSel()
+            if(opt != None or not evtType.startswith('TIMER')): # What's TIMER_REPORT?
                 context.window_manager.event_timer_remove(parent.menuTimer)
-                FTMenu.resetMenuOptions(menuData.hotkeyId)
+                menuData = FTMenu.idDataMap.get(FTMenu.currMenuId)
                 FTMenu.currMenuId = None
                 if(evtType == 'TIMER'):
                     fn = getattr(parent, menuData.handler)
@@ -2756,29 +2757,35 @@ class FTMenu:
         menuData = FTMenu.getMenuData(parent, hkData.id)
         if(menuData == None): return False
         if(event.value == 'RELEASE'):
-            FTMenu.resetMenuOptions(menuData.hotkeyId)
-            ret = bpy.ops.wm.call_menu_pie(name = menuData.menuClassName)
+            FTMenu.resetMenuOptions()
+            FTMenu.currMenuId = menuData.hotkeyId
             parent.menuTimer = \
                 context.window_manager.event_timer_add(time_step = 0.0001, \
                     window = context.window)
-            FTMenu.currMenuId = menuData.hotkeyId
-
+            ret = bpy.ops.wm.call_menu_pie(name = menuData.menuClassName)
         return True
 
-    def getMenuSel(hotkeyId):
-        params = bpy.context.window_manager.bezierToolkitParams
-        menuData = FTMenu.idDataMap[hotkeyId]
-        for opt in menuData.options:
-            if(getattr(params, opt[0])): return opt
+    def getCurrMenuSel():
+        menuData = FTMenu.idDataMap.get(FTMenu.currMenuId)
+        if(menuData != None):
+            params = bpy.context.window_manager.bezierToolkitParams
+            for i, propName in enumerate(FTMenu.getAllOptPropNames()):
+                if(getattr(params, propName)): return menuData.options[i]
 
         return None
 
-    def resetMenuOptions(hotkeyId):
+    def resetMenuOptions():
         params = bpy.context.window_manager.bezierToolkitParams
-        menuData = FTMenu.idDataMap[hotkeyId]
-        for opt in menuData.options:
-            setattr(params, opt[0], False)
+        for propName in FTMenu.getAllOptPropNames():
+            setattr(params, propName, False)
 
+    def getAllOptPropNames():
+        propNames = []
+        maxMenuOpts = max(len(m.options) for m in FTMenu.idDataMap.values())
+        for i in range(maxMenuOpts):
+            propNames.append(FTMenu.propSuffix + str(i))
+        return propNames
+        
     def getMNClassDefStr(menuData):
         retStr = 'class ' + menuData.menuClassName + '(Menu):\n' + \
             '\tbl_label = "' + menuData.menuClassLabel + '"\n'+ \
@@ -2786,17 +2793,32 @@ class FTMenu:
             '\t\tparams = bpy.context.window_manager.bezierToolkitParams\n' + \
             '\t\tlayout = self.layout\n' + \
             '\t\tpie = layout.menu_pie()\n'
-        for opt in menuData.options:
-            retStr += '\t\tpie.prop(params, "' + opt[0] + '", text = "' + \
-                opt[1] + '", icon_only = True, icon = "' + opt[2] + '")\n'
+        for i, opt in enumerate(menuData.options):
+            retStr += '\t\top = pie.operator("object.ft_menu_options", text = "'+ \
+                opt[1] + '"' + \
+                    ((', icon = "'+ opt[2] +'"') if(opt[2] != '') else '') + ')\n'
+            retStr += '\t\top.optIdx = "' + str(i) + '"\n'
         return retStr
 
     def getMNPropDefStr(menuData):
-        retStr = ''
-        for opt in menuData.options:
-            retStr += opt[0] + ': BoolProperty(name="' + opt[1] + '", default = False)\n'
+        retStr = ''        
+        for propName in FTMenu.getAllOptPropNames():
+            retStr += propName +': BoolProperty(default = False)\n'
         return retStr
 
+class FTMenuOptionOp(Operator):
+    bl_idname = "object.ft_menu_options"
+    bl_label = "Set FT Menu Options"
+    bl_description = "Set FT Menu options"
+
+    optIdx = StringProperty()
+
+    def execute(self, context):
+        FTMenu.resetMenuOptions()
+        params = bpy.context.window_manager.bezierToolkitParams
+        setattr(params, FTMenu.propSuffix + self.optIdx, True)
+        return {'FINISHED'}
+    
 
 class SnapDigits:
     digitMap = {'ONE':'1', 'TWO':'2', 'THREE':'3', 'FOUR':'4', 'FIVE':'5', \
@@ -6977,6 +6999,7 @@ classes = [
     BezierToolkitParams,
     ResetDefaultPropsOp,
     ResetDefaultHotkeys,
+    FTMenuOptionOp,
 ]
 
 for menuData in FTMenu.editMenus:
