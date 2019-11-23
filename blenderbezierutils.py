@@ -2116,6 +2116,10 @@ SEL_CURVE_SEARCH_RES = 1000
 NONSEL_CURVE_SEARCH_RES = 100
 ADD_PT_CURVE_SEARCH_RES = 5000
 
+EVT_NOT_CONS = 0
+EVT_CONS = 1
+EVT_META_OR_SNAP = 2
+
 class BptDisplayInfo:
     # handleNos: 0: seg1-left, 1: seg1-right
     # tipColors: leftHdl, pt, rightHdl
@@ -3140,12 +3144,14 @@ class Snapper():
         self.ctrl = False
         self.alt = False
 
-    def initialize(self):
-        self.resetMetakeys()
-
+    def resetSnapKeys(self):
         self.angleSnap = False
         self.gridSnap = False
         self.vertSnap = False
+
+    def initialize(self):
+        self.resetMetakeys()
+        self.resetSnapKeys()
 
         self.tm = None
         self.orig = None
@@ -3278,25 +3284,25 @@ class Snapper():
     def procEvent(self, context, event):
 
         # update ctrl etc.
-        updateMetaBtns(self, event)
+        retValMeta = updateMetaBtns(self, event)
 
-        retVal = updateMetaBtns(self, event, self.snapKeyMap)
+        retValSnap = updateMetaBtns(self, event, self.snapKeyMap)
 
-        if(retVal): return True
+        if(retValMeta or retValSnap): return EVT_META_OR_SNAP
 
         metakeys = self.getMetakeys()
-        snapDProc = False
+
         if(len(self.getRefLine()) > 0):
             snapDProc = self.snapDigits.procEvent(context, event, metakeys)
             if(snapDProc):
                 self.digitsConfirmed = False # Always reset if there was any digit entered
-                return True
+                return EVT_CONS
 
         if(FTHotKeys.isHotKey(FTHotKeys.hkReorient, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 self.tm = None # Force reorientation
                 self.orig = None # Force origin shift
-            return True
+            return EVT_CONS
 
         if(not self.ctrl and event.type in {'X', 'Y', 'Z'}):
             self.digitsConfirmed = False # Always reset if there is any lock axis
@@ -3309,7 +3315,7 @@ class Snapper():
                 if(self.getFreeAxesCombined() == self.getFreeAxesGlobal()):
                     self.freeAxes = []
 
-            return True
+            return EVT_CONS
 
         # ~ if(event.type == 'Q' and self.getGlobalOrient() == 'AXIS'):
             # ~ if(event.value == 'RELEASE'):
@@ -3327,9 +3333,10 @@ class Snapper():
         # ~ if(event.type == 'MIDDLEMOUSE' and self.angleSnap):# Event not consumed
             # ~ self.snapSteps = self.defaultSnapSteps
 
+        retVal = EVT_NOT_CONS
         # Consume escape or return / space only if there's something to process
         if(self.isLocked()):
-            retVal = True
+            retVal = EVT_CONS
             if(event.type == 'RET' or event.type == 'SPACE'):
                 if(event.value == 'RELEASE'):
                     # ~ self.resetSnap() # This is the responsibility of the caller
@@ -3337,7 +3344,7 @@ class Snapper():
             elif(event.type == 'ESC'):
                 if(event.value == 'RELEASE'): self.resetSnap()
             else:
-                retVal = snapDProc
+                retVal = EVT_NOT_CONS
 
         return retVal
 
@@ -3869,14 +3876,17 @@ class ModalBaseFlexiOp(Operator):
             self.cancelOp(context)
             return {"CANCELLED"}
 
-        evtCons = self.snapper.procEvent(context, event)
+        snapProc = self.snapper.procEvent(context, event)
         metakeys = self.snapper.getMetakeys()
 
         rmInfo = RegionMouseXYInfo.getRegionMouseXYInfo(event, self.exclToolRegion())
 
         ret = FTMenu.procMenu(self, context, event, rmInfo == None)
         if(ret):
-            if(event.value == 'RELEASE'): self.snapper.resetMetakeys()
+            # Menu displayed on release, so retain metakeys till release
+            if(event.value == 'RELEASE'):
+                self.snapper.resetMetakeys()
+                self.snapper.resetSnapKeys()
             return {'RUNNING_MODAL'}
 
         if((self.isEditing() or self.snapper.customAxis.inDrawAxis) \
@@ -3888,12 +3898,14 @@ class ModalBaseFlexiOp(Operator):
         self.rmInfo = rmInfo
 
         ret = self.snapper.customAxis.procDrawEvent(context, event, self.snapper, rmInfo)
-        evtCons = evtCons or ret
+        evtCons = (ret or snapProc == EVT_CONS)
 
         # Ignore all PRESS events if consumed, since action is taken only on RELEASE...
-        # ...except wheelup and down where there is no release
-        # TODO: A better mechanism for indicating event consumed
-        if(evtCons and event.value == 'PRESS' and not event.type.startswith('WHEEL')):
+        # ...except 1) wheelup / down where there is no release & 2) snap / meta where...
+        # ...refresh is needed even on press
+        # TODO: Simplify the condition (Maybe return EVT values from all proc methods)
+        if(evtCons and event.value == 'PRESS' and \
+            not event.type.startswith('WHEEL') and (snapProc != EVT_META_OR_SNAP)):
             return {'RUNNING_MODAL'}
 
         if(FTHotKeys.isHotKey(FTHotKeys.hkSwitchOut, event.type, metakeys)):
@@ -3903,6 +3915,7 @@ class ModalBaseFlexiOp(Operator):
                 return {"CANCELLED"}
             return {'RUNNING_MODAL'}
 
+        evtCons = (evtCons or (snapProc == EVT_META_OR_SNAP))
         return self.subModal(context, event, evtCons)
 
     def cancelOpBase(self):
@@ -4078,8 +4091,6 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                 # set snapProc to False so this modal will process it
                 snapProc = False
 
-        isMetaKey = updateMetaBtns(self, event)
-
         if(not snapProc and event.type == 'ESC'):
             if(event.value == 'RELEASE'):
                 if(self.grabRepos):
@@ -4194,7 +4205,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         # Refresh also in case of snapper events
         # except when digitsConfirmed (to give user opportunity to draw a straight line)
         # ~ if ((snapProc and not self.snapper.digitsConfirmed) \
-        if (isMetaKey or snapProc or (event.type == 'MOUSEMOVE')):
+        if (snapProc or event.type == 'MOUSEMOVE'):
 
             # Unlock axes in case of pure mousemove (TODO: Can be better)
             # ~ if(snapProc and not self.snapper.digitsConfirmed): pass
@@ -5977,10 +5988,6 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     self.refreshDisplaySelCurves()
             return {"RUNNING_MODAL"}
 
-        if(updateMetaBtns(self, event)):
-            self.refreshDisplaySelCurves(refreshPos = True)
-            return {'RUNNING_MODAL'}
-
         if(ctrl and (self.editCurveInfo == None or (self.pressT != None and \
             time.time() - self.pressT) < SNGL_CLK_DURN)):
             bpy.context.window.cursor_set("CROSSHAIR")
@@ -6140,6 +6147,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         if(confirmed or self.snapper.digitsConfirmed or \
             (event.type == 'LEFTMOUSE' and event.value == 'RELEASE')):
+
             if(self.editCurveInfo == None):
                 return retVal
 
@@ -6230,7 +6238,11 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
             return retVal
 
-        return retVal
+        if(snapProc):
+            self.refreshDisplaySelCurves(refreshPos = True)
+            return {'RUNNING_MODAL'}
+        else: 
+            return retVal
 
 ###################### Global Params ######################
 
