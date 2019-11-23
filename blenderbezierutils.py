@@ -2849,10 +2849,10 @@ class SnapDigits:
             td = digits[0:i]
             try:
                 delta = float(sign + ''.join(td))
-                return delta / getUnitScale(), valid
+                return delta, valid
             except:
                 valid = False
-        return delta / getUnitScale(), valid
+        return delta, valid
 
     def __init__(self, getFreeAxes, getEditCoPair):
         self.getFreeAxes = getFreeAxes
@@ -2898,6 +2898,7 @@ class SnapDigits:
 
     def digitsToVec(self):
         delta, valid = SnapDigits.getValidFloat(self.signChar, self.digitChars)
+        if(not self.polar or self.pDataIdx == 0): delta /= getUnitScale()
         if(self.polar):
             axis0, axis1 = self.getFreeAxes()[0], self.getFreeAxes()[1]
             self.deltaVec[axis0], self.deltaVec[axis1] = self.addToPolar(delta)
@@ -3001,7 +3002,7 @@ class SnapDigits:
 
         val = self.deltaVec.copy()
         delta, valid = SnapDigits.getValidFloat(self.signChar, self.digitChars)
-
+        if(not self.polar or self.pDataIdx == 0): delta /= getUnitScale()
         if(self.polar):
             axis0, axis1 = self.getFreeAxes()[0], self.getFreeAxes()[1]
             val[axis0], val[axis1] = self.addToPolar(delta)
@@ -3013,6 +3014,7 @@ class SnapDigits:
     def getDeltaStrPolar(self):
         delta, valid = SnapDigits.getValidFloat(self.signChar, self.digitChars)
         polCos = self.getPolarCos()
+        polCos[0] *= getUnitScale()
         strs = ['['] * 2
         idx0 = self.pDataIdx
         idx1 = 1 - self.pDataIdx
@@ -3356,7 +3358,9 @@ class Snapper():
 
         axes = self.getFreeAxesNormalized()
         diffV = self.snapDigits.getCurrDelta() \
-            if manualEntry else (newPt - refPt) * getUnitScale()
+            if manualEntry else (newPt - refPt)
+
+        diffV *= getUnitScale()
 
         diffVActual = invTm @ diffV
 
