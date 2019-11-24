@@ -5616,6 +5616,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         removeObjNames = set() # For snaplocs
         addObjNames = set()
+        self.htlCurveInfo = None
 
         #can never be called during editing, so don't consider editInfo
         for ci in self.selectCurveInfos:
