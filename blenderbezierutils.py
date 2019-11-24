@@ -72,7 +72,7 @@ def safeRemoveObj(obj):
         pass
 
 #TODO combine with copyObjAttr
-def copyBezierPt(src, target, freeHandles, srcMw = Matrix(), invDestMW = Matrix()):
+def copyBezierPt(src, target, freeHandles = None, srcMw = Matrix(), invDestMW = Matrix()):
     target.handle_left_type = 'FREE'
     target.handle_right_type = 'FREE'
 
@@ -80,8 +80,9 @@ def copyBezierPt(src, target, freeHandles, srcMw = Matrix(), invDestMW = Matrix(
     target.handle_left = invDestMW @ (srcMw @ src.handle_left)
     target.handle_right = invDestMW @ (srcMw @ src.handle_right)
 
-    if(not freeHandles):
+    if(freeHandles == None or freeHandles[0] == False):
         target.handle_left_type = src.handle_left_type
+    if(freeHandles == None or freeHandles[1] == False):
         target.handle_right_type =  src.handle_right_type
 
 def createSplineForSeg(curveData, bezierPts):
@@ -90,28 +91,24 @@ def createSplineForSeg(curveData, bezierPts):
     spline.use_cyclic_u = False
 
     for i, pt in enumerate(bezierPts):
-        copyBezierPt(pt, spline.bezier_points[i], freeHandles = True)
+        if(i == 0): freeHandles = [False, True]
+        elif(i == len(bezierPts) - 1): freeHandles = [True, False]
+        else: freeHandles = None
+        copyBezierPt(pt, spline.bezier_points[i], freeHandles = freeHandles)
+
     return spline
 
-def createSpline(curveData, srcSpline, forceNoncyclic, freeHandles, excludePtIdxs = {}):
+def createSpline(curveData, srcSpline, excludePtIdxs = {}):
     spline = curveData.splines.new('BEZIER')
     spline.bezier_points.add(len(srcSpline.bezier_points) - len(excludePtIdxs) - 1)
-
-    if(forceNoncyclic):
-        spline.use_cyclic_u = False
-    else:
-        spline.use_cyclic_u = srcSpline.use_cyclic_u
+    spline.use_cyclic_u = srcSpline.use_cyclic_u
 
     ptIdx = 0
     for i in range(0, len(srcSpline.bezier_points)):
         if(i not in excludePtIdxs):
             copyBezierPt(srcSpline.bezier_points[i], \
-                spline.bezier_points[ptIdx], freeHandles)
+                spline.bezier_points[ptIdx], freeHandles = None)
             ptIdx += 1
-
-    if(forceNoncyclic == True and srcSpline.use_cyclic_u == True):
-        spline.bezier_points.add(1)
-        copyBezierPt(srcSpline.bezier_points[0], spline.bezier_points[-1], freeHandles)
 
     return spline
 
@@ -191,16 +188,16 @@ def getLastSegIdx(obj, splineIdx):
 
 def addLastSeg(spline):
     if(spline.use_cyclic_u):
-        lt = spline.bezier_points[0].handle_left_type
-        rt = spline.bezier_points[0].handle_right_type
-        for pt in (spline.bezier_points[0], spline.bezier_points[-1]):
-            pt.handle_left_type = 'FREE'
-            pt.handle_right_type = 'FREE'
+        lt0 = spline.bezier_points[0].handle_left_type
+        rt0 = spline.bezier_points[0].handle_right_type
+        pt = spline.bezier_points[0]
+        pt.handle_left_type = 'FREE'
+        pt.handle_right_type = 'FREE'
         spline.use_cyclic_u = False
         spline.bezier_points.add(1)
         copyObjAttr(spline.bezier_points[0], spline.bezier_points[-1])
-        spline.bezier_points[0].handle_left_type = lt
-        spline.bezier_points[0].handle_right_type = rt
+        spline.bezier_points[0].handle_left_type = lt0
+        spline.bezier_points[-1].handle_right_type = rt0
 
 def moveSplineStart(obj, splineIdx, idx):
     pts = obj.data.splines[splineIdx].bezier_points
@@ -214,12 +211,13 @@ def moveSplineStart(obj, splineIdx, idx):
         srcIdx = (idx + i) % cnt
         p = ptCopy[srcIdx]
 
-        #Must set the types first
-        pt.handle_right_type = p[3]
-        pt.handle_left_type = p[4]
+        pt.handle_left_type = 'FREE'
+        pt.handle_right_type = 'FREE'
         pt.co = p[0]
         pt.handle_right = p[1]
         pt.handle_left = p[2]
+        pt.handle_right_type = p[3]
+        pt.handle_left_type = p[4]
 
 def joinCurves(curves):
     obj = curves[0]
@@ -259,12 +257,12 @@ def reverseCurve(curve):
 def insertSpline(obj, srcSplineIdx, insertIdx, removePtIdxs):
     srcSpline = obj.data.splines[srcSplineIdx]
     # Appended at end
-    newSpline = createSpline(obj.data, srcSpline, False, False, removePtIdxs)
+    newSpline = createSpline(obj.data, srcSpline, removePtIdxs)
     splineCnt = len(obj.data.splines)
     nextIdx = insertIdx
     for idx in range(nextIdx, splineCnt - 1):
         srcSpline = obj.data.splines[nextIdx]
-        createSpline(obj.data, srcSpline, False, False)
+        createSpline(obj.data, srcSpline)
         obj.data.splines.remove(srcSpline)
 
 def removeBezierPts(obj, splineIdx, removePtIdxs):
@@ -716,13 +714,13 @@ def splitCurveSelPts(selPtMap, newColl = True):
         for i in splineIdxs:
             for j in range(lastSplineIdx + 1, i):
                 srcSpline = obj.data.splines[j]
-                createSpline(objCopy.data, srcSpline, False, False)
+                createSpline(objCopy.data, srcSpline)
                 # ~ updateShapeKeyData(objCopy, keyData, keyNames, skStart, ptCnt)
             srcSpline = obj.data.splines[i]
             selPtIdxs = sorted(splinePtMap[i])
 
             if(len(selPtIdxs) == 0):
-                newSpline = createSpline(objCopy.data, srcSpline, False, False)
+                newSpline = createSpline(objCopy.data, srcSpline)
             else:
                 bpts = srcSpline.bezier_points
                 cyclic = srcSpline.use_cyclic_u
@@ -843,8 +841,7 @@ def splitCurve(selObjs, split, newColl = True):
 
             else: #split == 'spline'
                 objCopy = createSkeletalCurve(obj, parentColls)
-                createSpline(objCopy.data, spline, forceNoncyclic = False, \
-                    freeHandles = False)
+                createSpline(objCopy.data, spline)
                 currSegCnt = len(objCopy.data.splines[0].bezier_points)
                 updateShapeKeyData(objCopy, keyData, keyNames, segCnt, currSegCnt)
                 newObjs.append(objCopy)
@@ -1009,30 +1006,29 @@ def removeDupliVert(curve):
         newCurveData.splines.new('BEZIER')
         currSpline = newCurveData.splines[-1]
         copyObjAttr(spline, currSpline)
-        prevPt = spline.bezier_points[0]
-        mextPt = None
-        copyObjAttr(spline.bezier_points[0], currSpline.bezier_points[0])
 
         if(len(spline.bezier_points) == 1):
+            copyObjAttr(spline.bezier_points[0], currSpline.bezier_points[0])
             continue
 
         cmpPts = spline.bezier_points[:]
-        pt = spline.bezier_points[0]
-        while(vectCmpWithMargin(cmpPts[-1].co, pt.co) and
+        pt0 = cmpPts[0]
+        while(vectCmpWithMargin(cmpPts[-1].co, pt0.co) and
             len(cmpPts) > 1):
-            prevPt = cmpPts.pop()
-            pt.handle_left_type = 'FREE'
-            pt.handle_left = prevPt.handle_left
+            endPt = cmpPts.pop()
+            pt0.handle_left_type = 'FREE'
+            pt0.handle_right_type = 'FREE'
+            pt0.handle_left = endPt.handle_left
             currSpline.use_cyclic_u = True
+            dupliFound = True
 
+        prevPt = None
         for pt in cmpPts:
-            if(vectCmpWithMargin(prevPt.co, pt.co)):
-                prevPt.handle_right_type = 'FREE'
-                prevPt.handle_right = pt.handle_right
+            if(prevPt != None and vectCmpWithMargin(prevPt.co, pt.co)):
                 dupliFound = True
-                continue
-            currSpline.bezier_points.add(1)
-            copyObjAttr(pt, currSpline.bezier_points[-1])
+            else:
+                if(prevPt != None): currSpline.bezier_points.add(1)
+                copyObjAttr(pt, currSpline.bezier_points[-1])
             prevPt = pt
 
     if(dupliFound):
