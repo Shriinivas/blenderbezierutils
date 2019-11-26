@@ -2290,7 +2290,7 @@ class FTHotKeys:
             'Delete selected Point / Segment, align selected handle with other point'))
     editHotkeys.append(FTHotKeyData(hkToggleHdl, 'H', 'Hide / Unhide Handles', \
             'Toggle handle visibility'))
-    editHotkeys.append(FTHotKeyData(hkSplitAtSel, 'Shift+P', 'Split At Selected Points', \
+    editHotkeys.append(FTHotKeyData(hkSplitAtSel, 'L', 'Split At Selected Points', \
             'Split curve at selected Bezier points'))
     editHotkeys.append(FTHotKeyData(hkMnHdlType, 'S', 'Set Handle Type', \
             'Set type of selected handles'))
