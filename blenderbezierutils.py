@@ -1057,6 +1057,7 @@ def applyMeshModifiers(meshObj, remeshDepth):
 
     planeVert = Vector([round(c, 5) for c in meshObj.data.vertices[0].co])
     mod = meshObj.modifiers.new('mod', type='SOLIDIFY')
+    mod.thickness = 20
     bpy.ops.object.modifier_apply(modifier = mod.name)
 
     mod = meshObj.modifiers.new('mod', type='REMESH')
