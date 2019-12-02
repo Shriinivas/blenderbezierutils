@@ -3155,6 +3155,7 @@ class Snapper():
         self.tm = None
         self.orig = None
         self.snapCo = None
+        self.freezeOrient = False
 
         self.lastSnapTypes = set()
 
@@ -3299,8 +3300,7 @@ class Snapper():
 
         if(FTHotKeys.isHotKey(FTHotKeys.hkReorient, event.type, metakeys)):
             if(event.value == 'RELEASE'):
-                self.tm = None # Force reorientation
-                self.orig = None # Force origin shift
+                self.freezeOrient = not self.freezeOrient
             return EVT_CONS
 
         if(not self.ctrl and event.type in {'X', 'Y', 'Z'}):
@@ -3409,7 +3409,16 @@ class Snapper():
         return snapLocs
 
     def get3dLocSnap(self, rmInfo, vec = None, refreshStatus = True, \
-        snapToAxisLine = True, xyDelta = [0, 0]):
+        snapToAxisLine = True, xyDelta = [0, 0], enableSnap = True):
+
+        if(enableSnap):
+            vertSnap = self.vertSnap
+            gridSnap = self.gridSnap
+            angleSnap = self.angleSnap
+        else:
+            vertSnap = False
+            gridSnap = False
+            angleSnap = False
 
         self.rmInfo = rmInfo
         self.snapCo = None
@@ -3432,15 +3441,17 @@ class Snapper():
 
         loc = None
 
-        if(self.tm != None and hasSel and transType == 'FACE'):
+        if(self.tm != None and self.freezeOrient and transType == 'FACE'):
             tm, invTm = self.tm, self.tm.inverted()
         else:
             tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
 
-        if(self.orig != None and hasSel and origType == 'FACE'):
+        if(self.orig != None and self.freezeOrient and origType == 'FACE'):
             orig = self.orig
         else:
             orig = self.getCurrOrig(obj, rmInfo)
+
+        if(hasSel): self.freezeOrient = True
 
         if(vec == None): vec = orig
 
@@ -3454,7 +3465,7 @@ class Snapper():
         freeAxesN = self.getFreeAxesNormalized()
         freeAxesG = self.getFreeAxesGlobal()
 
-        if(FTProps.dispSnapInd or self.vertSnap):
+        if(FTProps.dispSnapInd or vertSnap):
             #TODO: Called very frequently (store the tree [without duplicating data])
             snapLocs = self.getAllSnapLocs((snapToAxisLine and \
                 'AXIS' in {transType, origType, axisScale})) + [orig]
@@ -3471,7 +3482,7 @@ class Snapper():
                 co, idx, dist = min(searchResult, key = lambda x: x[2])
                 self.snapCo = snapLocs[idx]
 
-        if(self.vertSnap):
+        if(vertSnap):
             if(self.snapCo != None):
                 loc = self.snapCo
             else:
@@ -3492,9 +3503,9 @@ class Snapper():
 
             # TODO: Get gridSnap and angleSnap out of this if
             if((transType != 'GLOBAL' and inEdit) or \
-                snapToPlane or self.gridSnap or \
+                snapToPlane or gridSnap or \
                     self.snapDigits.hasVal() or \
-                        (inEdit and (len(freeAxesN) < 3 or self.angleSnap))):
+                        (inEdit and (len(freeAxesN) < 3 or angleSnap))):
 
                 # snapToPlane means global constrain axes selection is a plane
                 if(snapToPlane or refLineOrig == None): refCo = orig
@@ -3564,7 +3575,7 @@ class Snapper():
                         else: loc[axis] = (tm @ pt)[axis]
                         self.lastSnapTypes.add('axis1')
 
-                if(not self.snapDigits.hasVal() and self.gridSnap):
+                if(not self.snapDigits.hasVal() and gridSnap):
                     if(refLineOrig and params.axisScale in {'AXIS' or 'REFERENCE'}):
                         # Independent of view distance
                         diffV = (loc - tm @ refLineOrig)
@@ -3575,7 +3586,7 @@ class Snapper():
                         loc = tm @ roundedVect(invTm @ loc, rounding, freeAxesN)
                     self.lastSnapTypes.add('grid')
 
-                if(not self.snapDigits.hasVal() and self.angleSnap and len(refLine) > 0):
+                if(not self.snapDigits.hasVal() and angleSnap and len(refLine) > 0):
                     freeAxesC = [0, 1, 2] if len(freeAxesC) == 0 else freeAxesC
                     snapStart = tm @ orig
                     actualLoc = loc.copy()
@@ -3588,9 +3599,9 @@ class Snapper():
                     loc = snapStart.copy()
                     loc[axis] = actualLoc[axis]
 
-                    snapIncr = 45 / self.angleSnapSteps
+                    snapIncr = 45 / angleSnapSteps
                     snapAngles = [radians(snapIncr * a) \
-                        for a in range(0, self.angleSnapSteps + 1)]
+                        for a in range(0, angleSnapSteps + 1)]
 
                     l1 =  actualLoc[axis] - snapStart[axis] #Main axis diff value
 
@@ -3654,15 +3665,11 @@ class Snapper():
         snapOrigin = params.snapOrigin
         axisScale = params.axisScale
 
-        if(self.tm != None and transType == 'FACE'):
-            tm, invTm = self.tm, self.tm.inverted()
-        else:
-            tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
+        if(self.tm != None): tm, invTm = self.tm, self.tm.inverted()
+        else: tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
 
-        if(self.orig != None and snapOrigin == 'FACE'):
-            orig = self.orig
-        else:
-            orig = self.getCurrOrig(obj, rmInfo)
+        if(self.orig != None): orig = self.orig
+        else: orig = self.getCurrOrig(obj, rmInfo)
 
         lineCo = []
         if(FTProps.dispAxes and ((refLineOrig != None or transType == 'VIEW' \
@@ -5586,6 +5593,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
     def reset(self):
         self.editCurveInfo = None
         self.selectCurveInfos = set()
+        #TODO: freezeOrient logic should be internal to Snapper
+        if(self.snapper != None): self.snapper.freezeOrient = False
         ModalFlexiEditBezierOp.resetDisplay()
 
     def postUndoRedo(self, scene, dummy = None): # signature different in 2.8 and 2.81?
@@ -6207,9 +6216,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             # ei != None taken care by refreshDisplaySelCurves(refreshPos = True)
             if(ei == None):
 
-                coFind = Vector(rmInfo.xy).to_3d()
-                # ~ coFind = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, \
-                    # ~ self.snapper.get3dLocSnap(rmInfo)).to_3d()
+                # ~ coFind = Vector(rmInfo.xy).to_3d()
+                coFind = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, \
+                    self.snapper.get3dLocSnap(rmInfo, enableSnap = False)).to_3d()
 
                 objs = self.getEditableCurveObjs()
 
