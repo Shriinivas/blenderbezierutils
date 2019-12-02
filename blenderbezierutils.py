@@ -460,7 +460,10 @@ def get3dLoc(context, event, vec = None):
 
 def  getViewDistRounding(rv3d):
     viewDist = rv3d.view_distance * getUnitScale()
-    return int(log(viewDist, getGridSubdiv())) - 1
+    if(viewDist < 0.5):
+        return int(log(viewDist, getGridSubdiv())) - 2
+    else:
+        return int(log(viewDist, getGridSubdiv())) - 1
 
 def getCoordFromLoc(region, rv3d, loc):
     coord = location_3d_to_region_2d(region, rv3d, loc)
@@ -2302,15 +2305,15 @@ class FTHotKeys:
 
     # Common
     hkSwitchOut = 'hkSwitchOut'
-    hkTweakPos = 'hkTweakPos'
+    # ~ hkTweakPos = 'hkTweakPos'
     hkToggleDrwEd = 'hkToggleDrwEd'
     hkReorient = 'hkReorient'
 
     commonHotkeys = []
     commonHotkeys.append(FTHotKeyData(hkSwitchOut, 'F1', 'Switch Out', \
             'Switch out of the Flexi Tool mode'))
-    commonHotkeys.append(FTHotKeyData(hkTweakPos, 'P', 'Tweak Position', \
-            'Tweak position or enter polar coordinates of the draw / edit point'))
+    # ~ commonHotkeys.append(FTHotKeyData(hkTweakPos, 'P', 'Tweak Position', \
+            # ~ 'Tweak position or enter polar coordinates of the draw / edit point'))
     commonHotkeys.append(FTHotKeyData(hkToggleDrwEd, 'E', 'Toggle Draw / Edit', \
             'Toggle between Draw & Edit Flexi Tools'))
     commonHotkeys.append(FTHotKeyData(hkReorient, 'U', \
@@ -2353,7 +2356,7 @@ class FTHotKeys:
     keyDataMap = {h.key: h for h in \
         [k for k in (drawHotkeys + editHotkeys + commonHotkeys + snapHotkeys)]}
 
-    exclKeys = {'RET', 'SPACE', 'ESC', 'X', 'Y', 'Z', \
+    exclKeys = {'RET', 'SPACE', 'ESC', 'X', 'Y', 'Z', 'P', \
         'ACCENT_GRAVE', 'COMMA', 'PERIOD', 'F2', 'F3'}
 
     metas = ['Alt', 'Ctrl', 'Shift']
@@ -2920,7 +2923,7 @@ class SnapDigits:
         self.deltaVec = editCos[1] - editCos[0]
 
     def procEvent(self, context, event, metakeys):
-        if(FTHotKeys.isHotKey(FTHotKeys.hkTweakPos, event.type, metakeys)):
+        if(event.type == 'P'):
             editCos = self.getEditCoPair()
             if(len(editCos) == 2):
                 if(event.value == 'RELEASE'):
