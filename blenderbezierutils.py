@@ -3260,7 +3260,8 @@ class Snapper():
                 rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT)
             if(faceIdx >= 0):
                 normal = selObj.data.polygons[faceIdx].normal
-                tm = normal.to_track_quat('Z', 'X').to_matrix().to_4x4().inverted()
+                quat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
+                tm = (selObj.matrix_world @ quat).inverted()
 
         if(custAxis != None and params.axisScale == 'AXIS'):
             unitD = custAxis.length() / 10
