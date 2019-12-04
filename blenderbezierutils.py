@@ -1354,8 +1354,9 @@ class convertTo2DMeshOp(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        curve = context.object
-        if(curve != None and isBezier(curve)):
+        curves = [o for o in bpy.data.objects \
+            if o in bpy.context.selected_objects and isBezier(o)]
+        for curve in curves:
             for spline in curve.data.splines:
                 spline.use_cyclic_u = True
             curve.data.dimensions = '2D'
@@ -1372,8 +1373,6 @@ class convertTo2DMeshOp(Operator):
             meshObj.matrix_world = curve.matrix_world.copy()
 
             safeRemoveObj(curve)
-
-            bpy.context.view_layer.objects.active = meshObj
 
         return {'FINISHED'}
 
@@ -1630,7 +1629,7 @@ class BezierUtilsPanel(Panel):
 
     bpy.types.Scene.remeshDepth = IntProperty(name="Remesh Depth", \
         description='Remesh depth for converting to mesh', \
-            default = 4, min = 1, max = 10)
+            default = 4, min = 1, max = 20)
 
     bpy.types.Scene.unsubdivide = BoolProperty(name="Unsubdivide", \
         description='Unsubdivide to reduce the number of polygons', \
@@ -3875,6 +3874,9 @@ class ModalBaseFlexiOp(Operator):
         FTHotKeys.updateHotkeys(None, context)
         FTHotKeys.updateSnapMetaKeys(None, context)
 
+        self.clickT, self.pressT = None, None
+        self.click, self.doubleClick = False, False
+
         return self.subInvoke(context, event)
 
     def modal(self, context, event):
@@ -3886,6 +3888,21 @@ class ModalBaseFlexiOp(Operator):
         if(not self.isToolSelected(context)): # Subclass
             self.cancelOp(context)
             return {"CANCELLED"}
+
+        self.click, self.doubleClick = False, False
+        if(event.type == 'LEFTMOUSE'):
+            if(event.value == 'PRESS'): 
+                self.pressT = time.time()
+            elif(event.value == 'RELEASE'):
+                t = time.time()
+                if(self.clickT != None and (t - self.clickT) < DBL_CLK_DURN):
+                    self.clickT = None
+                    self.doubleClick = True                    
+                elif(self.pressT != None and (t - self.pressT) < SNGL_CLK_DURN):
+                    self.clickT = t
+                    self.click = True
+                self.pressT = None
+
 
         snapProc = self.snapper.procEvent(context, event)
         metakeys = self.snapper.getMetakeys()
@@ -3995,8 +4012,6 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
     #This will be called multiple times not just at the beginning
     def initialize(self):
         self.curvePts = []
-        self.clickT = None #For double click
-        self.pressT = None #For single click
         self.capture = False
         self.grabRepos = False
         self.snapper.initialize()
@@ -4161,10 +4176,8 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             if(len(self.snapper.freeAxes) == 1 and len(self.curvePts) > 1):
                 self.snapper.resetSnap()
 
-            if(not self.capture):
-                # ~ self.snapper.resetSnap()
-                self.pressT = time.time()
-                self.capture = True
+            if(self.capture): self.pressT = None # Lock capture
+            else: self.capture = True
             return {'RUNNING_MODAL'}
 
         if (not snapProc and event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
@@ -4173,9 +4186,6 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                     self.moveBptElem('right', \
                         self.snapper.get3dLocSnap(rmInfo))# changes only rt handle
                 return {'RUNNING_MODAL'}
-
-            self.capture = False
-            self.grabRepos = False
 
             # See the special condition above in event.value == 'PRESS'
             if(len(self.snapper.freeAxes) > 1):
@@ -4186,31 +4196,27 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             # So update the snap locations anyways if there was some transformation
             if(len(self.curvePts) == 0):
                 self.updateSnapLocs() # Subclass (TODO: have a relook)
-                return {'RUNNING_MODAL'}
 
-            #Looks like no 'DOUBLE_CLICK' event?
-            t = time.time()
-            if(self.clickT !=  None and (t - self.clickT) < DBL_CLK_DURN):
+            elif(self.doubleClick):
                 self.confirm(context, event)
                 self.redrawBezier(rmInfo)
-                self.clickT = None
-                return {'RUNNING_MODAL'}
 
-            self.clickT = t
-
-            co = None
-            if((self.pressT != None) and (t - self.pressT) < 0.2):
-                loc = self.curvePts[-1][1]
-                self.moveBptElem('left', loc)
-                self.moveBptElem('right', loc)
             else:
-                loc = self.snapper.get3dLocSnap(rmInfo)
+                if(self.click):
+                    loc = self.curvePts[-1][1]
+                    self.moveBptElem('left', loc)
+                    self.moveBptElem('right', loc)
+                else:
+                    loc = self.snapper.get3dLocSnap(rmInfo)
 
-            if(len(self.curvePts) == 1):
-                self.moveBptElem('right', loc)# changes only rt handle
+                if(len(self.curvePts) == 1):
+                    self.moveBptElem('right', loc)# changes only rt handle
 
-            self.newPoint(loc)
-            self.redrawBezier(rmInfo)
+                self.newPoint(loc)
+                self.redrawBezier(rmInfo)
+
+            self.capture = False
+            self.grabRepos = False
             return {'RUNNING_MODAL'}
 
         # Refresh also in case of snapper events
@@ -5694,8 +5700,6 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         self.editCurveInfo = None
         self.htlCurveInfo = None
         self.selectCurveInfos = set()
-        self.clickT = None
-        self.pressT = None
         self.subdivMode = False
 
         # For double click (TODO: remove; same as editCurveInfo == None?)
@@ -6002,8 +6006,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     self.refreshDisplaySelCurves()
             return {"RUNNING_MODAL"}
 
-        if(ctrl and (self.editCurveInfo == None or (self.pressT != None and \
-            time.time() - self.pressT) < SNGL_CLK_DURN)):
+        if(ctrl and (self.editCurveInfo == None or \
+            (self.pressT != None and not self.click))):
             bpy.context.window.cursor_set("CROSSHAIR")
         else:
             bpy.context.window.cursor_set("DEFAULT")
@@ -6150,8 +6154,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
                 self.editCurveInfo = ci
                 ci.setHltInfo(hltType = resType, ptIdx = segIdx, hltIdx = otherInfo)
-                # ~ self.refreshDisplaySelCurves()
-                self.pressT = time.time()
+                # ~ self.pressT = time.time()
                 return {'RUNNING_MODAL'}
 
             if(not shift):
@@ -6168,12 +6171,10 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             ei = self.editCurveInfo
             tm = time.time()
 
-            if(self.clickT != None and (tm - self.clickT) < DBL_CLK_DURN):
+            if(self.doubleClick):
                 self.capture = True
-                self.clickT = None
             else:
-                self.capture = False
-                if(self.pressT != None and (tm - self.pressT) < SNGL_CLK_DURN):
+                if(self.click and not self.capture):
                     if(ctrl and ei.clickInfo['hdlIdx'] == -1):
                         if(shift): handleType = 'ALIGNED'
                         elif(alt): handleType = 'VECTOR'
@@ -6198,16 +6199,13 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 else:
                     ei.moveSeg(self.getNewPos(refreshStatus = False))
                     self.updateAfterGeomChange() # TODO: Really needed?
-                    # ~ ei.wsData = getWSData(ei.obj)[ei.splineIdx]
-                    # ~ self.refreshDisplaySelCurves(refreshPos = False)
                     bpy.ops.ed.undo_push()
 
-                self.clickT = tm
+                self.capture = False
                 self.snapper.resetSnap()
                 self.editCurveInfo = None
-                # ~ self.updateAfterGeomChange()
 
-            self.pressT = None
+            # ~ self.pressT = None
             return {"RUNNING_MODAL"}
 
         elif(snapProc or event.type == 'MOUSEMOVE'):
