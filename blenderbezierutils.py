@@ -3215,7 +3215,7 @@ class Snapper():
         if(len(self.getFreeAxesCombined()) == 0): return [0, 1, 2]
         else: return self.getFreeAxesCombined()
 
-    def getCurrOrig(self, obj, rmInfo):
+    def getCurrOrig(self, rmInfo, obj):
         snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
         if(snapOrigin == 'AXIS'):
             if(self.customAxis.length() != 0): return self.customAxis.axisPts[0]
@@ -3411,6 +3411,25 @@ class Snapper():
                     break
         return snapLocs
 
+    def getTMInfoAndOrig(self, rmInfo):
+        obj = bpy.context.object
+
+        params = bpy.context.window_manager.bezierToolkitParams
+        transType = params.snapOrient
+        origType = params.snapOrigin
+
+        if(self.tm != None and self.freezeOrient and transType == 'FACE'):
+            tm, invTm = self.tm, self.tm.inverted()
+        else:
+            tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
+
+        if(self.orig != None and self.freezeOrient and origType == 'FACE'):
+            orig = self.orig
+        else:
+            orig = self.getCurrOrig(rmInfo, obj)
+
+        return tm, invTm, orig
+
     def get3dLocSnap(self, rmInfo, vec = None, refreshStatus = True, \
         snapToAxisLine = True, xyDelta = [0, 0], enableSnap = True):
 
@@ -3425,7 +3444,6 @@ class Snapper():
 
         self.rmInfo = rmInfo
         self.snapCo = None
-        obj = bpy.context.object
         xy = [rmInfo.xy[0] - xyDelta[0], rmInfo.xy[1] - xyDelta[1]]
 
         region = rmInfo.region
@@ -3444,15 +3462,7 @@ class Snapper():
 
         loc = None
 
-        if(self.tm != None and self.freezeOrient and transType == 'FACE'):
-            tm, invTm = self.tm, self.tm.inverted()
-        else:
-            tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
-
-        if(self.orig != None and self.freezeOrient and origType == 'FACE'):
-            orig = self.orig
-        else:
-            orig = self.getCurrOrig(obj, rmInfo)
+        tm, invTm, orig = self.getTMInfoAndOrig(rmInfo)
 
         if(hasSel): self.freezeOrient = True
 
@@ -3647,7 +3657,7 @@ class Snapper():
         refLineOrig = self.getRefLineOrig()
         if(self.lastSelCo == None or refLineOrig == None):
             return []
-        orig = self.getCurrOrig(bpy.context.object, self.rmInfo)
+        orig = self.getCurrOrig(self.rmInfo, bpy.context.object)
         return (self.tm @ orig, self.tm @ self.lastSelCo)
 
     def setStatus(self, area, text): #TODO Global
@@ -3656,7 +3666,6 @@ class Snapper():
     def getGuideBatches(self, shader):
         rmInfo = self.rmInfo
         if(rmInfo == None): return []
-        obj = bpy.context.object
         refLine = self.getRefLine()
         refLineOrig = self.getRefLineOrig()
         batches = []
@@ -3665,19 +3674,15 @@ class Snapper():
 
         params = bpy.context.window_manager.bezierToolkitParams
         transType = params.snapOrient
-        snapOrigin = params.snapOrigin
+        origType = params.snapOrigin
         axisScale = params.axisScale
 
-        if(self.tm != None): tm, invTm = self.tm, self.tm.inverted()
-        else: tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
-
-        if(self.orig != None): orig = self.orig
-        else: orig = self.getCurrOrig(obj, rmInfo)
+        tm, invTm, orig = self.getTMInfoAndOrig(rmInfo)
 
         lineCo = []
         if(FTProps.dispAxes and ((refLineOrig != None or transType == 'VIEW' \
             or len(freeAxesC) == 1) or (len(freeAxesN) > 0 \
-                and snapOrigin != 'REFERENCE'))):
+                and origType != 'REFERENCE'))):
             colors = [(.6, 0.2, 0.2, 1), (0.2, .6, 0.2, 1), (0.2, 0.4, .6, 1)]
             l = 10 * rmInfo.rv3d.view_distance
 
@@ -3709,7 +3714,7 @@ class Snapper():
 
         if(self.customAxis.length() != 0 and \
             (self.customAxis.inDrawAxis == True or \
-                'AXIS' in {transType, snapOrigin, axisScale})):
+                'AXIS' in {transType, origType, axisScale})):
             apts = self.customAxis.axisPts
             lineCo = [apts[0], apts[1]]
             ptCo = self.customAxis.getSnapPts()
@@ -3996,14 +4001,14 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         ModalBaseFlexiOp.resetDisplayBase()
 
     def refreshDisplay(segDispInfos, bptDispInfos, subdivCos = [], \
-        showSubdivPts = True, snapper = None):
+        showSubdivPts = True, snapper = None, hideMarker = True):
 
         ModalDrawBezierOp.subdivPtBatch, ModalDrawBezierOp.subdivLineBatch = \
             getSubdivBatches(ModalBaseFlexiOp.shader, subdivCos, showSubdivPts)
 
-        # Hide marker
-        ModalDrawBezierOp.markerBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
-            "POINTS", {"pos": [], "color": []})
+        if(hideMarker):
+            ModalDrawBezierOp.markerBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
+                "POINTS", {"pos": [], "color": []})
 
         ModalBaseFlexiOp.refreshDisplayBase(segDispInfos, bptDispInfos, snapper)
 
@@ -4158,6 +4163,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             if(event.value == 'RELEASE'):
                 if(self.snapper.digitsConfirmed):
                     self.capture = False
+                    self.grabRepos = False
                     self.snapper.digitsConfirmed = False
                     loc = self.snapper.get3dLocSnap(rmInfo)
                     self.newPoint(loc)
@@ -4192,6 +4198,9 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             if(len(self.snapper.freeAxes) > 1):
                 self.snapper.resetSnap()
 
+            self.capture = False
+            self.grabRepos = False
+
             # Rare condition: This happens e. g. when user clicks on header menu
             # like Object->Transform->Move. These ops consume press event but not release
             # So update the snap locations anyways if there was some transformation
@@ -4216,8 +4225,6 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                 self.newPoint(loc)
                 self.redrawBezier(rmInfo)
 
-            self.capture = False
-            self.grabRepos = False
             return {'RUNNING_MODAL'}
 
         # Refresh also in case of snapper events
@@ -4231,7 +4238,8 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             # ~ if(self.snapper.digitsConfirmed): self.snapper.resetSnap()
 
             bpy.context.window.cursor_set("DEFAULT")
-            if(len(self.curvePts) > 1):
+            hdlPtIdxs = None
+            if(len(self.curvePts) > 0):
                 if(self.capture):
                     if(self.grabRepos):
                         pt = self.curvePts[-1][1].copy()
@@ -4250,10 +4258,13 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                         delta = (loc - pt)
                         self.moveBptElem('left', pt - delta)
                         self.moveBptElem('right', pt + delta)
+                    hdlPtIdxs = {len(self.curvePts) - 1}
                 else:
                     loc = self.snapper.get3dLocSnap(rmInfo)
                     self.moveBezierPt(loc)
-            self.redrawBezier(rmInfo)
+                    hdlPtIdxs = {len(self.curvePts) - 2}
+                    
+            self.redrawBezier(rmInfo, hdlPtIdxs = hdlPtIdxs)
             return {'RUNNING_MODAL'}
 
         return {'PASS_THROUGH'} if not snapProc else {'RUNNING_MODAL'}
@@ -4266,13 +4277,16 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         ModalDrawBezierOp.markerBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
             "POINTS", {"pos": [markerLoc], "color": [colMarker]})
 
-        ModalBaseFlexiOp.refreshDisplayBase(segDispInfos = [], \
-            bptDispInfos = [], snapper = self.snapper)
+        ModalDrawBezierOp.refreshDisplay(segDispInfos = [], bptDispInfos = [], \
+            subdivCos = [], showSubdivPts = False, snapper = self.snapper, \
+                hideMarker = False)
 
-    def redrawBezier(self, rmInfo, subdivCos = [], segIdxRange = None, \
-        showSubdivPts = True):
+    def redrawBezier(self, rmInfo, subdivCos = [], showSubdivPts = True, \
+        hdlPtIdxs = None, hltEndSeg = True):
 
-        if(len(self.curvePts) == 0):
+        ptCnt = len(self.curvePts)
+
+        if(ptCnt == 0):
             self.refreshMarkerPos(rmInfo)
             return
 
@@ -4285,37 +4299,23 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         segColor = colSelSeg
         tipColors = [colTip, colEndTip, colTip, colTip, colEndTip, colTip]
 
-        markerLoc = []
-        handleNos  = [0, 1]
-
-        if(self.capture): hdlPtIdx = 1
-        else: hdlPtIdx = 0
-
-        curvePts = self.curvePts
-
-        # First handle (straight line), if user drags first pt
-        if(self.capture and len(self.curvePts) == 1):
-            loc = self.snapper.get3dLocSnap(rmInfo)
-            curvePts = curvePts + [[curvePts[0][0], curvePts[0][1], loc]]
-            handleNos = [1] # display only right handle
-
         tipColors = [colTip, colEndTip, colTip]
         segDispInfos = []
         bptDispInfos = []
 
-        ptCnt = len(curvePts)
-        idxRange = range(1, ptCnt) if segIdxRange == None else segIdxRange
+        if(hdlPtIdxs == None): hdlPtIdxs = {ptCnt - 2} # Default last but one
 
-        for i in idxRange:
-            segPts = [curvePts[i-1], curvePts[i]]
-            if(i == ptCnt - 1):
-                segColor = colSelSeg
-                bptDispInfos.append(BptDisplayInfo(segPts[hdlPtIdx], tipColors, \
-                    handleNos))
-            else:
-                segColor = colNonAdjSeg
+        for hdlPtIdx in hdlPtIdxs:
+            bptDispInfos.append(BptDisplayInfo(self.curvePts[hdlPtIdx], tipColors, \
+                handleNos = [0, 1]))
 
-            segDispInfos.append(SegDisplayInfo(segPts, segColor))
+        startIdx = 0
+        if(len(subdivCos) > 0 and ptCnt > 1):
+            startIdx = ptCnt - 2
+        for i in range(startIdx, ptCnt - 1):
+            segColor = colSelSeg if(i == ptCnt-2 and hltEndSeg) else colNonAdjSeg
+            segDispInfos.append(SegDisplayInfo([self.curvePts[i], self.curvePts[i+1]], \
+                segColor))
 
         ModalDrawBezierOp.refreshDisplay(segDispInfos, bptDispInfos, subdivCos, \
             showSubdivPts, self.snapper)
@@ -4457,12 +4457,12 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                     currPt.handle_right_type = 'FREE'
             else:
                 currPt.handle_left = invM @ pt[0]
-                if(i == 0 or i == len(self.curvePts) -1):
+                currPt.handle_left_type = 'ALIGNED'
+                currPt.handle_right_type = 'ALIGNED'
+                if(vectCmpWithMargin(pt[0], pt[1])):
                     currPt.handle_left_type = 'FREE'
+                if(vectCmpWithMargin(pt[2], pt[1])):
                     currPt.handle_right_type = 'FREE'
-                else:
-                    currPt.handle_left_type = 'ALIGNED'
-                    currPt.handle_right_type = 'ALIGNED'
             prevPt = currPt
 
         diffV = (spline.bezier_points[-1].co - spline.bezier_points[0].co)
@@ -4669,13 +4669,12 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         self.interpPts = []
 
     # overridden
-    def redrawBezier(self, rmInfo, subdivCos = []):
+    def redrawBezier(self, rmInfo, subdivCos = [], hdlPtIdxs = None):
         ptCnt = len(self.curvePts)
-        segIdxRange = range(ptCnt - 1, ptCnt) if(ptCnt > 1) else None
 
         super(ModalFlexiDrawGreaseOp, self).redrawBezier(rmInfo, \
             self.subdivCos if ptCnt > 1 else [], \
-                segIdxRange, showSubdivPts = not ModalFlexiDrawGreaseOp.h)
+                showSubdivPts = not ModalFlexiDrawGreaseOp.h, hdlPtIdxs = hdlPtIdxs)
 
     def initialize(self):
         super(ModalFlexiDrawGreaseOp, self).initialize()
