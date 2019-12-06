@@ -3612,9 +3612,9 @@ class Snapper():
                     loc = snapStart.copy()
                     loc[axis] = actualLoc[axis]
 
-                    snapIncr = 45 / angleSnapSteps
+                    snapIncr = 45 / self.angleSnapSteps
                     snapAngles = [radians(snapIncr * a) \
-                        for a in range(0, angleSnapSteps + 1)]
+                        for a in range(0, self.angleSnapSteps + 1)]
 
                     l1 =  actualLoc[axis] - snapStart[axis] #Main axis diff value
 
