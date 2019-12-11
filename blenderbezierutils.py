@@ -3953,6 +3953,9 @@ class ModalBaseFlexiOp(Operator):
         return self.subModal(context, event, evtCons)
 
     def cancelOpBase(self):
+        for a in bpy.context.screen.areas:
+            if (a.type == 'VIEW_3D'): a.header_text_set(None)
+
         ModalBaseFlexiOp.removeDrawHandler()
         ModalBaseFlexiOp.running = False
         bpy.types.VIEW3D_HT_tool_header.draw = ModalBaseFlexiOp.drawFunc
@@ -3967,9 +3970,6 @@ class ModalBaseFlexiOp(Operator):
 class ModalDrawBezierOp(ModalBaseFlexiOp):
 
     # Static members shared by flexi draw and flexi grease
-    subdivPtBatch = None
-    subdivLineBatch = None
-
     markerBatch = None
     markerSize = 8
 
@@ -3980,37 +3980,13 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             if(ModalDrawBezierOp.markerBatch != None):
                 ModalDrawBezierOp.markerBatch.draw(ModalBaseFlexiOp.shader)
 
-            # TODO: Move this to grease draw
-            bgl.glPointSize(FTProps.greaseSubdivPtSize)
-            if(ModalDrawBezierOp.subdivPtBatch != None):
-                ModalDrawBezierOp.subdivPtBatch.draw(ModalBaseFlexiOp.shader)
-
-            if(ModalDrawBezierOp.subdivLineBatch != None):
-                ModalDrawBezierOp.subdivLineBatch.draw(ModalBaseFlexiOp.shader)
-
             ModalBaseFlexiOp.drawHandlerBase()
 
-    def resetDisplay():
-        ModalDrawBezierOp.subdivPtBatch = \
-            getResetBatch(ModalBaseFlexiOp.shader, "POINTS")
-        ModalDrawBezierOp.subdivLineBatch = \
-            getResetBatch(ModalBaseFlexiOp.shader, "LINES")
+    def resetDisplay(self):
         ModalDrawBezierOp.markerBatch = \
             getResetBatch(ModalBaseFlexiOp.shader, "POINTS")
 
         ModalBaseFlexiOp.resetDisplayBase()
-
-    def refreshDisplay(segDispInfos, bptDispInfos, subdivCos = [], \
-        showSubdivPts = True, snapper = None, hideMarker = True):
-
-        ModalDrawBezierOp.subdivPtBatch, ModalDrawBezierOp.subdivLineBatch = \
-            getSubdivBatches(ModalBaseFlexiOp.shader, subdivCos, showSubdivPts)
-
-        if(hideMarker):
-            ModalDrawBezierOp.markerBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
-                "POINTS", {"pos": [], "color": []})
-
-        ModalBaseFlexiOp.refreshDisplayBase(segDispInfos, bptDispInfos, snapper)
 
     def __init__(self, curveDispRes):
         pass
@@ -4038,7 +4014,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         return {"RUNNING_MODAL"}
 
     def cancelOp(self, context):
-        ModalDrawBezierOp.resetDisplay()
+        self.resetDisplay()
         bpy.app.handlers.undo_post.remove(self.postUndoRedo)
         bpy.app.handlers.redo_post.remove(self.postUndoRedo)
         return self.cancelOpBase()
@@ -4053,7 +4029,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         self.save(context, event, autoclose)
         self.curvePts = []
         self.capture = False
-        ModalDrawBezierOp.resetDisplay()
+        self.resetDisplay()
         self.initialize()
 
     def newPoint(self, loc):
@@ -4279,21 +4255,23 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         colMarker = colMap['MARKER_COLOR']
         markerLoc = self.snapper.get3dLocSnap(rmInfo)
 
+        self.resetDisplay()
         ModalDrawBezierOp.markerBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
             "POINTS", {"pos": [markerLoc], "color": [colMarker]})
 
-        ModalDrawBezierOp.refreshDisplay(segDispInfos = [], bptDispInfos = [], \
-            subdivCos = [], showSubdivPts = False, snapper = self.snapper, \
-                hideMarker = False)
+        ModalBaseFlexiOp.refreshDisplayBase(segDispInfos = [], bptDispInfos = [], \
+            snapper = self.snapper)
 
-    def redrawBezier(self, rmInfo, subdivCos = [], showSubdivPts = True, \
-        hdlPtIdxs = None, hltEndSeg = True):
+    def redrawBezier(self, rmInfo, lastSegOnly = False, hdlPtIdxs = None, \
+        hltEndSeg = True):
 
         ptCnt = len(self.curvePts)
 
         if(ptCnt == 0):
             self.refreshMarkerPos(rmInfo)
             return
+
+        ModalDrawBezierOp.markerBatch = getResetBatch(ModalBaseFlexiOp.shader, 'POINTS')
 
         colMap = self.getColorMap()
         colSelSeg = colMap['SEL_SEG_COLOR']
@@ -4315,15 +4293,14 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                 handleNos = [0, 1]))
 
         startIdx = 0
-        if(len(subdivCos) > 0 and ptCnt > 1):
+        if(lastSegOnly and ptCnt > 1):
             startIdx = ptCnt - 2
         for i in range(startIdx, ptCnt - 1):
             segColor = colSelSeg if(i == ptCnt-2 and hltEndSeg) else colNonAdjSeg
             segDispInfos.append(SegDisplayInfo([self.curvePts[i], self.curvePts[i+1]], \
                 segColor))
 
-        ModalDrawBezierOp.refreshDisplay(segDispInfos, bptDispInfos, subdivCos, \
-            showSubdivPts, self.snapper)
+        ModalBaseFlexiOp.refreshDisplayBase(segDispInfos, bptDispInfos, self.snapper)
 
     #Reference point for restrict angle or lock axis
     def getRefLine(self):
@@ -4627,6 +4604,28 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
     bl_options = {'REGISTER', 'UNDO'}
     h = False
 
+    subdivPtBatch = None
+    subdivLineBatch = None
+
+    def drawHandler():
+        if(ModalBaseFlexiOp.shader != None):
+            bgl.glPointSize(FTProps.greaseSubdivPtSize)
+            if(ModalFlexiDrawGreaseOp.subdivPtBatch != None):
+                ModalFlexiDrawGreaseOp.subdivPtBatch.draw(ModalBaseFlexiOp.shader)
+
+            if(ModalFlexiDrawGreaseOp.subdivLineBatch != None):
+                ModalFlexiDrawGreaseOp.subdivLineBatch.draw(ModalBaseFlexiOp.shader)
+        
+        ModalDrawBezierOp.drawHandler()
+
+    def resetDisplay(self):
+        ModalFlexiDrawGreaseOp.subdivPtBatch = \
+            getResetBatch(ModalBaseFlexiOp.shader, "POINTS")
+        ModalFlexiDrawGreaseOp.subdivLineBatch = \
+            getResetBatch(ModalBaseFlexiOp.shader, "LINES")
+
+        super(ModalFlexiDrawGreaseOp, self).resetDisplay()
+
     def __init__(self):
         # ~ curveDispRes = 200
         # ~ super(ModalFlexiDrawGreaseOp, self).__init__(curveDispRes)
@@ -4669,12 +4668,16 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         self.interpPts = []
 
     # overridden
-    def redrawBezier(self, rmInfo, subdivCos = [], hdlPtIdxs = None):
-        ptCnt = len(self.curvePts)
+    def redrawBezier(self, rmInfo, hdlPtIdxs = None):
 
-        super(ModalFlexiDrawGreaseOp, self).redrawBezier(rmInfo, \
-            self.subdivCos if ptCnt > 1 else [], \
-                showSubdivPts = not ModalFlexiDrawGreaseOp.h, hdlPtIdxs = hdlPtIdxs)
+        subdivCos = self.subdivCos if len(self.curvePts) > 1 else []
+        showSubdivPts = not ModalFlexiDrawGreaseOp.h
+
+        ModalFlexiDrawGreaseOp.subdivPtBatch, ModalFlexiDrawGreaseOp.subdivLineBatch = \
+            getSubdivBatches(ModalBaseFlexiOp.shader, subdivCos, showSubdivPts)
+
+        super(ModalFlexiDrawGreaseOp, self).redrawBezier(rmInfo, lastSegOnly = True, \
+            hdlPtIdxs = hdlPtIdxs)
 
     def initialize(self):
         super(ModalFlexiDrawGreaseOp, self).initialize()
