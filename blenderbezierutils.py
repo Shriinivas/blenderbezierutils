@@ -689,7 +689,8 @@ def splitCurveSelPts(selPtMap, newColl = True):
         splinePtMap = selPtMap.get(obj)
 
         if((len(obj.data.splines) == 1 and \
-            len(obj.data.splines[0].bezier_points) <= 2) or len(splinePtMap) == 0):
+            len(obj.data.splines[0].bezier_points) <= 2 and \
+                not obj.data.splines[0].use_cyclic_u) or len(splinePtMap) == 0):
             continue
 
         keyNames, keyData = getShapeKeyInfo(obj)
@@ -1983,8 +1984,8 @@ def getInterpBezierPts(segPts, subdivPerUnit, segLens = None):
             res = int(segLens[i-1] * subdivPerUnit)
         else:
             res = int(getSegLen(seg) * subdivPerUnit)
-        if(res > 1):
-            curvePts += geometry.interpolate_bezier(*seg, res)
+        if(res < 2): res = 2
+        curvePts += geometry.interpolate_bezier(*seg, res)
 
     return curvePts
 
@@ -2107,7 +2108,6 @@ def getInterpolatedVertsCo(curvePts, numDivs):
 # Some global constants
 
 DEF_CURVE_RES_2D = .5 # Per pixel seg divisions (.5 is one div per 2 pixel units)
-STRT_SEG_HDL_LEN_COEFF = 0.25
 DBL_CLK_DURN = 0.25
 SNGL_CLK_DURN = 0.3
 
@@ -4047,7 +4047,10 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         self.updateSnapLocs() # subclass method
 
     def confirm(self, context, event):
-        self.save(context, event)
+        metakeys = self.snapper.getMetakeys()
+        shift = metakeys[2]
+        autoclose = (shift and (event.type == 'SPACE' or event.type == 'RET'))
+        self.save(context, event, autoclose)
         self.curvePts = []
         self.capture = False
         ModalDrawBezierOp.resetDisplay()
@@ -4147,14 +4150,14 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                     if(len(self.curvePts) > 0):
                         self.curvePts.pop()
 
-                    #Because there is an extra point (the current one)
-                    if(len(self.curvePts) <= 1):
-                        self.curvePts = []
-                        self.capture = False
-                        self.grabRepos = False
-                    else:
-                        loc = self.snapper.get3dLocSnap(rmInfo)
-                        self.curvePts[-1] = [loc, loc, loc]
+                #Because there is an extra point (the current one)
+                if(len(self.curvePts) <= 1):
+                    self.curvePts = []
+                    self.capture = False
+                    self.grabRepos = False
+                else:
+                    loc = self.snapper.get3dLocSnap(rmInfo)
+                    self.curvePts[-1] = [loc, loc, loc]
                 self.capture = False
                 self.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
@@ -4169,6 +4172,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                     self.newPoint(loc)
                     self.redrawBezier(rmInfo)
                 else:
+                    if(len(self.curvePts) > 0): self.curvePts.pop()
                     self.confirm(context, event)
                     self.snapper.resetSnap()
                     self.redrawBezier(rmInfo)
@@ -4208,6 +4212,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
                 self.updateSnapLocs() # Subclass (TODO: have a relook)
 
             elif(self.doubleClick):
+                if(len(self.curvePts) > 0): self.curvePts.pop()
                 self.confirm(context, event)
                 self.redrawBezier(rmInfo)
 
@@ -4417,7 +4422,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         spline.bezier_points[i].handle_left_type = handleType
         spline.bezier_points[i].handle_right_type = handleType
 
-    def createObjFromPts(self, context):
+    def createObjFromPts(self, context, autoclose):
         data = bpy.data.curves.new('BezierCurve', 'CURVE')
         data.dimensions = '3D'
         obj = bpy.data.objects.new('BezierCurve', data)
@@ -4435,9 +4440,12 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         spline = data.splines.new('BEZIER')
         spline.use_cyclic_u = False
 
-        if(vectCmpWithMargin(self.curvePts[0][1], self.curvePts[-1][0])):
+        if(vectCmpWithMargin(self.curvePts[0][1], self.curvePts[-1][1])):
+            self.curvePts[0][0] = self.curvePts[-1][0]
             spline.use_cyclic_u = True
             self.curvePts.pop()
+
+        if(autoclose): spline.use_cyclic_u = True
 
         spline.bezier_points.add(len(self.curvePts) - 1)
         prevPt = None
@@ -4447,39 +4455,38 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
             currPt.handle_right = invM @ pt[2]
             if(prevPt != None and prevPt.handle_right == prevPt.co \
                 and pt[0] == pt[1] and currPt.co != prevPt.co): # straight line
-                    diffV = (currPt.co - prevPt.co)
-                    if(prevPt.handle_left_type == 'ALIGNED'):
+                    if(prevPt.handle_left_type != 'VECTOR'):
                         prevPt.handle_left_type = 'FREE'
-                    prevPt.handle_right_type = 'FREE'
-                    prevPt.handle_right = prevPt.co +  STRT_SEG_HDL_LEN_COEFF * diffV
-                    currPt.handle_left = currPt.co -  STRT_SEG_HDL_LEN_COEFF * diffV
-                    currPt.handle_left_type = 'FREE'
+                    prevPt.handle_right_type = 'VECTOR'
                     currPt.handle_right_type = 'FREE'
+                    currPt.handle_left_type = 'VECTOR'
             else:
+                currPt.handle_left_type = 'FREE'
+                currPt.handle_right_type = 'FREE'
                 currPt.handle_left = invM @ pt[0]
-                currPt.handle_left_type = 'ALIGNED'
-                currPt.handle_right_type = 'ALIGNED'
-                if(vectCmpWithMargin(pt[0], pt[1])):
-                    currPt.handle_left_type = 'FREE'
-                if(vectCmpWithMargin(pt[2], pt[1])):
-                    currPt.handle_right_type = 'FREE'
+                ldiffV = (pt[1] - pt[0])
+                rdiffV = (pt[2] - pt[1])
+                if(vectCmpWithMargin(ldiffV, rdiffV) and \
+                    not floatCmpWithMargin(ldiffV.length, 0)):
+                    currPt.handle_left_type = 'ALIGNED'
+                    currPt.handle_right_type = 'ALIGNED'
             prevPt = currPt
 
-        diffV = (spline.bezier_points[-1].co - spline.bezier_points[0].co)
-        pt0 = spline.bezier_points[0]
-        pt1 = spline.bezier_points[-1]
-        if(diffV.length > 0 and pt0.handle_left == pt0.co and pt1.handle_right == pt1.co):
-            pt0.handle_left = pt0.co + STRT_SEG_HDL_LEN_COEFF * diffV
-            pt0.handle_left_type = 'FREE'
-            pt1.handle_right = pt1.co - STRT_SEG_HDL_LEN_COEFF * diffV
-            pt1.handle_right_type = 'FREE'
-
+        bpts = spline.bezier_points
+        if(spline.use_cyclic_u and bpts[-1].handle_right == bpts[-1].co \
+            and bpts[0].handle_left == bpts[0].co): 
+                if(bpts[-1].handle_left_type != 'VECTOR'):
+                    bpts[-1].handle_left_type = 'FREE'
+                bpts[-1].handle_right_type = 'VECTOR'
+                if(bpts[0].handle_right_type != 'VECTOR'):
+                    bpts[0].handle_right_type = 'FREE'
+                bpts[0].handle_left_type = 'VECTOR'
         return obj
 
     def createCurveObj(self, context, startObj = None, \
-        startSplineIdx = None, endObj = None, endSplineIdx = None):
+        startSplineIdx = None, endObj = None, endSplineIdx = None, autoclose = False):
         # First create the new curve
-        obj = self.createObjFromPts(context)
+        obj = self.createObjFromPts(context, autoclose)
 
         # Undo stack in case the user does not want to join
         if(endObj != None or startObj != None):
@@ -4561,9 +4568,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                             return retVals
         return retVals
 
-    def save(self, context, event):
-        if(len(self.curvePts) > 0):
-            self.curvePts.pop()
+    def save(self, context, event, autoclose):
 
         if(len(self.curvePts) > 1):
 
@@ -4580,18 +4585,13 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
             # (no option to only connect to starting curve when end object exists)
             if(ctrl and endObj != None):
-                obj = self.createCurveObj(context)
-                endObj = None
+                obj = self.createCurveObj(context, autoclose = False)
             else:
                 startObjName = startObj.name if(startObj != None) else ''
                 endObjName = endObj.name if(endObj != None) else ''
 
                 obj = self.createCurveObj(context, \
-                    startObj, startSplineIdx, endObj, endSplineIdx)
-
-            if(endObj == None  and shift \
-                and (event.type == 'SPACE' or event.type == 'RET')):
-                obj.data.splines[-1].use_cyclic_u = True
+                    startObj, startSplineIdx, endObj, endSplineIdx, autoclose = autoclose)
 
             #TODO: Why try?
             try:
@@ -4770,7 +4770,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
                         if(len(s.points) > 0): # Shouldn't be needed, but anyway...
                             self.snapLocs += [mw @ s.points[0].co, mw @ s.points[-1].co]
 
-    def save(self, context, event):
+    def save(self, context, event, autoclose):
         layer = self.gpencil.data.layers.active
         if(layer == None):
             layer = self.gpencil.data.layers.new('GP_Layer', set_active = True)
@@ -4780,13 +4780,15 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
         invMw = self.gpencil.matrix_world.inverted()
         if(len(self.subdivCos) > 0):
-            self.curvePts.pop()
             stroke = frame.strokes.new()
             stroke.display_mode = '3DSPACE'
             stroke.points.add(count = len(self.subdivCos))
             for i in range(0, len(self.subdivCos)):
                 pt = self.subdivCos[i]
                 stroke.points[i].co = self.gpencil.matrix_world.inverted() @ pt
+            if(autoclose):
+                stroke.points.add(count = 1)
+                stroke.points[-1].co = stroke.points[0].co.copy()
             self.snapLocs += [self.subdivCos[0][1], self.subdivCos[-1][1]]
         bpy.ops.ed.undo_push()
 
