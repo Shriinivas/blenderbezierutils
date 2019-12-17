@@ -153,6 +153,7 @@ When Constrain Axes dropdown has an axis-pair selection (lock to plane), pressin
 <b>Overview of Flexi Edit Bezier Tool:</b> https://youtu.be/enQHGmluQIw<br>
 <b>Overview of Snapping & Locking Framework:</b> https://youtu.be/VQCXZbOq47s<br>
 <b>Overview of Flexi Grease Bezier & Uniform Subdiv Op:</b> https://youtu.be/4XrjpWwLU4M<br>
+<b>Demo of Flexi Ellipse: </b>https://youtu.be/t7eVWP8gxeE<br>
 <b>All Bezier Toolkit videos: </b> https://www.youtube.com/playlist?list=PLxsh4i5F_h9G6QFoPzKvBRMayz8533fSW<br>
 
 # Credits
