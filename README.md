@@ -1,6 +1,6 @@
 
 # Blender Add-on with Bezier Utility Operations
-<b>Add-on Version: 0.9.74 </b>
+<b>Add-on Version: 0.9.80 </b>
 
 This add-on contains several tools for working with Bezier curves. <br>
 Supported Blender Version: <b>2.8x</b> <br>
@@ -156,8 +156,12 @@ When Constrain Axes dropdown has an axis-pair selection (lock to plane), pressin
 <b>All Bezier Toolkit videos: </b> https://www.youtube.com/playlist?list=PLxsh4i5F_h9G6QFoPzKvBRMayz8533fSW<br>
 
 # Credits
-The functionality of editing curve by grabbing a point on it is adapted from Inkscape edit curve tool: https://gitlab.com/inkscape/inkscape/blob/master/src/ui/tool/curve-drag-point.cpp <br>
-I am grateful to the authors of the module for making this great piece of code accessible to everyone.
+The functionality of editing curve by grabbing a point on it, is adapted from Inkscape edit curve tool: https://gitlab.com/inkscape/inkscape/blob/master/src/ui/tool/curve-drag-point.cpp <br>
+I am grateful to the authors of the module for making this great piece of code accessible to everyone.<br><br>
+
+The add-on script includes python converted a2c js function (Copyright (C) 2013-2015 by Vitaly Puzrin) located at the github repository: https://github.com/fontello/svgpath. It is used in Draw Ellipse / Circle tool. Heartfelt thanks to the authors for this amazing function!<br><br>
+
+Algorithms that were inspired by the answers on stackoverflow are mentioned with the corresponding links in the code. I would also like to thank the users who provided this very useful information, sometimes even with working sample code.<br><br>
 
 # Known Issues
 - In Flexi Draw Bezier, the part of the area under toolshelf and properties panel is excluded from drawing. Hide these elements to maximize the drawing area.<br>
