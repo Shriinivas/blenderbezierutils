@@ -234,14 +234,38 @@ def joinCurves(curves):
         safeRemoveObj(curve)
     return obj
 
-def shiftMatrixWorld(curve, mw, origin = None):
+def getBBoxCenter(obj):
+    bbox = obj.bound_box                
+    return obj.matrix_world @ Vector(((bbox[0][0] + bbox[4][0]) / 2, \
+        (bbox[0][1] + bbox[3][1]) / 2, (bbox[0][2] + bbox[1][2]) / 2))
+
+def shiftOrigin(curve, origin):
+    oLoc = curve.location.copy()
+    mw = curve.matrix_world
+    invMw = mw.inverted()
+    for s in curve.data.splines:
+        bpts = s.bezier_points
+        for bpt in bpts:
+            lht = bpt.handle_left_type
+            rht = bpt.handle_right_type
+            bpt.handle_left_type = 'FREE'
+            bpt.handle_right_type = 'FREE'
+
+            bpt.co += invMw @ oLoc - invMw @ origin
+            bpt.handle_left += invMw @ oLoc - invMw @ origin
+            bpt.handle_right += invMw @ oLoc - invMw @ origin
+
+            bpt.handle_left_type = lht
+            bpt.handle_right_type = rht
+
+    curve.location = origin
+
+def shiftMatrixWorld(curve, mw):
     invMw = mw.inverted()
     omw = curve.matrix_world
 
     loc = mw.translation.copy()
     oLoc = omw.translation.copy()
-    if(origin == None):
-        origin = oLoc
 
     for s in curve.data.splines:
         bpts = s.bezier_points
@@ -254,15 +278,10 @@ def shiftMatrixWorld(curve, mw, origin = None):
             bpt.handle_left = invMw @ (omw @ bpt.handle_left)
             bpt.handle_right = invMw @ (omw @ bpt.handle_right)
 
-            bpt.co += invMw @ loc - invMw @ origin
-            bpt.handle_left += invMw @ loc - invMw @ origin
-            bpt.handle_right += invMw @ loc - invMw @ origin
-                
             bpt.handle_left_type = lht
             bpt.handle_right_type = rht
 
     curve.matrix_world = mw
-    curve.location = origin
 
 def reverseCurve(curve):
     cp = curve.data.copy()
@@ -1426,8 +1445,12 @@ class AlignToFaceOp(Operator):
         curves = [o for o in bpy.data.objects \
             if o in bpy.context.selected_objects and isBezier(o) and o.visible_get()]
 
+        if(len(curves) == 0): return {'FINISHED'}
+
         mesheObjs = [o for o in bpy.data.objects if o in bpy.context.selected_objects \
             and  o.type == 'MESH' and o.visible_get()]
+
+        if(len(mesheObjs) == 0): return {'FINISHED'}
 
         depsgraph = bpy.context.evaluated_depsgraph_get()
         medianLists = []
@@ -1438,9 +1461,8 @@ class AlignToFaceOp(Operator):
         searchTree = NestedListSearch(medianLists)
 
         for curve in curves:
-            bbox = curve.bound_box
-            center = curve.matrix_world @ Vector(((bbox[0][0] + bbox[4][0]) / 2, \
-                (bbox[0][1] + bbox[3][1]) / 2, (bbox[0][2] + bbox[1][2]) / 2))
+            center = getBBoxCenter(curve)
+            oLoc = curve.location.copy()
 
             srs = searchTree.findInLists(center, searchRange = None)
             if(len(srs) != 1): continue
@@ -1452,12 +1474,8 @@ class AlignToFaceOp(Operator):
             quatMat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
             tm = meshObj.matrix_world @ quatMat
 
-            orig = None
-            if(alignOrig == 'FACE'): orig = faceCenter
-            elif(alignOrig == 'BBOX'): orig = center
+            shiftMatrixWorld(curve, tm)
 
-            shiftMatrixWorld(curve, tm, origin = orig)
-            tm.translation = curve.location
             invTm = tm.inverted()
             centerLocal =  invTm @ center
 
@@ -1472,6 +1490,15 @@ class AlignToFaceOp(Operator):
                     bpt.handle_left[2] = centerLocal[2]
                     bpt.handle_left_type = lht
                     bpt.handle_right_type = rht
+
+            if(alignOrig == 'FACE'):
+                shiftOrigin(curve, faceCenter)
+            elif(alignOrig == 'BBOX'): 
+                depsgraph.update()
+                center = getBBoxCenter(curve) # Recalculate after alignment
+                shiftOrigin(curve, center)
+            else:
+                shiftOrigin(curve, oLoc)
 
             if(alignLoc): curve.location = faceCenter
 
