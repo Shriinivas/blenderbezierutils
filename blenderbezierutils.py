@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 80),
+    "version": (0, 9, 81),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -233,6 +233,36 @@ def joinCurves(curves):
                     invDestMW = invMW, mw = mw)
         safeRemoveObj(curve)
     return obj
+
+def shiftMatrixWorld(curve, mw, origin = None):
+    invMw = mw.inverted()
+    omw = curve.matrix_world
+
+    loc = mw.translation.copy()
+    oLoc = omw.translation.copy()
+    if(origin == None):
+        origin = oLoc
+
+    for s in curve.data.splines:
+        bpts = s.bezier_points
+        for bpt in bpts:
+            lht = bpt.handle_left_type
+            rht = bpt.handle_right_type
+            bpt.handle_left_type = 'FREE'
+            bpt.handle_right_type = 'FREE'
+            bpt.co = invMw @ (omw @ bpt.co)
+            bpt.handle_left = invMw @ (omw @ bpt.handle_left)
+            bpt.handle_right = invMw @ (omw @ bpt.handle_right)
+
+            bpt.co += invMw @ loc - invMw @ origin
+            bpt.handle_left += invMw @ loc - invMw @ origin
+            bpt.handle_right += invMw @ loc - invMw @ origin
+                
+            bpt.handle_left_type = lht
+            bpt.handle_right_type = rht
+
+    curve.matrix_world = mw
+    curve.location = origin
 
 def reverseCurve(curve):
     cp = curve.data.copy()
@@ -591,7 +621,6 @@ def getAllAreaRegions():
 
 def getResetBatch(shader, btype): # "LINES" or "POINTS"
     return batch_for_shader(shader, btype, {"pos": [], "color": []})
-
 
 # From python template
 def getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt):
@@ -1381,6 +1410,74 @@ class convertTo2DMeshOp(Operator):
         return {'FINISHED'}
 
 
+class AlignToFaceOp(Operator):
+    bl_idname = "object.align_to_face"
+    bl_label = "Align to Face"
+    bl_description = "Align all points of selected curves with " + \
+                     "nearest face of selected meshes"
+
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+
+        alignLoc = context.scene.alignToFaceLoc
+        alignOrig = context.scene.alignToFaceOrig
+
+        curves = [o for o in bpy.data.objects \
+            if o in bpy.context.selected_objects and isBezier(o) and o.visible_get()]
+
+        mesheObjs = [o for o in bpy.data.objects if o in bpy.context.selected_objects \
+            and  o.type == 'MESH' and o.visible_get()]
+
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        medianLists = []
+
+        for o in mesheObjs:
+            medianLists.append([o.matrix_world @ f.center for f in o.data.polygons])
+
+        searchTree = NestedListSearch(medianLists)
+
+        for curve in curves:
+            bbox = curve.bound_box
+            center = curve.matrix_world @ Vector(((bbox[0][0] + bbox[4][0]) / 2, \
+                (bbox[0][1] + bbox[3][1]) / 2, (bbox[0][2] + bbox[1][2]) / 2))
+
+            srs = searchTree.findInLists(center, searchRange = None)
+            if(len(srs) != 1): continue
+
+            objIdx, faceIdx, median, dist = srs[0]
+            meshObj = mesheObjs[objIdx]
+            faceCenter = meshObj.matrix_world @ meshObj.data.polygons[faceIdx].center            
+            normal = meshObj.data.polygons[faceIdx].normal
+            quatMat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
+            tm = meshObj.matrix_world @ quatMat
+
+            orig = None
+            if(alignOrig == 'FACE'): orig = faceCenter
+            elif(alignOrig == 'BBOX'): orig = center
+
+            shiftMatrixWorld(curve, tm, origin = orig)
+            tm.translation = curve.location
+            invTm = tm.inverted()
+            centerLocal =  invTm @ center
+
+            for spline in curve.data.splines:
+                for bpt in spline.bezier_points:
+                    lht = bpt.handle_left_type
+                    rht = bpt.handle_right_type
+                    bpt.handle_left_type = 'FREE'
+                    bpt.handle_right_type = 'FREE'
+                    bpt.co[2] = centerLocal[2]
+                    bpt.handle_right[2] = centerLocal[2]
+                    bpt.handle_left[2] = centerLocal[2]
+                    bpt.handle_left_type = lht
+                    bpt.handle_right_type = rht
+
+            if(alignLoc): curve.location = faceCenter
+
+        return {'FINISHED'}
+
+
 class SetCurveColorOp(bpy.types.Operator):
     bl_idname = "object.set_curve_color"
     bl_label = "Set Color"
@@ -1653,6 +1750,9 @@ class BezierUtilsPanel(Panel):
     bpy.types.Scene.joinExpanded = BoolProperty(name="Join Expanded State",
             default = False)
 
+    bpy.types.Scene.alignToFaceExpanded = BoolProperty(name="Align to Face",
+            default = False)
+
     bpy.types.Scene.selectExpanded = BoolProperty(name="Select Expanded State",
             default = False)
 
@@ -1680,6 +1780,15 @@ class BezierUtilsPanel(Panel):
     bpy.types.Scene.applyCurveColor = BoolProperty(name="Apply Curve Color", \
         description='Apply color to all non selected curves ', \
             default = False)
+
+    bpy.types.Scene.alignToFaceOrig = EnumProperty(name="Set Origin", items = \
+        [("NONE", 'Unchanged', "Don't move origin"), \
+         ('BBOX', 'Bounding Box Center', 'Move origin to curve bounding box center'), \
+         ('FACE', 'Face Center', 'Move origin to face center')], \
+        description = 'Set origin of the curve objects', default = 'BBOX')
+
+    bpy.types.Scene.alignToFaceLoc = BoolProperty(name="Move to Face Center", \
+        description='Move curve location to face center', default = True)
 
     @classmethod
     def poll(cls, context):
@@ -1722,6 +1831,24 @@ class BezierUtilsPanel(Panel):
                 col.prop(context.scene, 'optimized')
                 col = layout.column()
                 col.operator('object.join_curves')
+
+            col = layout.column()
+            col.separator()
+
+            row = layout.row()
+            row.prop(context.scene, "alignToFaceExpanded",
+                icon="TRIA_DOWN" if context.scene.alignToFaceExpanded else "TRIA_RIGHT",
+                icon_only=True, emboss=False
+            )
+            row.label(text="Align to Face", icon = 'FCURVE')
+
+            if context.scene.alignToFaceExpanded:
+                col = layout.column()
+                col.prop(context.scene, 'alignToFaceOrig')
+                col = layout.column()
+                col.prop(context.scene, 'alignToFaceLoc')
+                col = layout.column()
+                col.operator('object.align_to_face')
 
             col = layout.column()
             col.separator()
@@ -5415,16 +5542,6 @@ def getInterpSegPts(mw, spline, ptIdx, res, startT, endT, maxRes):
 
     return interpLocs
 
-# Find the list element containing the given idx from flattened list
-# return the index of the list element containing the idx
-def findListIdx(counts, idx):
-    cumulCnt = 0
-    cntIdx= 0
-    while(idx >= cumulCnt):
-        cumulCnt += counts[cntIdx] # cntIdx can never be >= len(counts)
-        cntIdx += 1
-    return cntIdx - 1
-
 # Wrapper for spatial search within segment
 def getClosestPt2dWithinSeg(region, rv3d, coFind, selObj, selSplineIdx, selSegIdx, \
     selObjRes, withHandles, withBezPts):
@@ -5513,7 +5630,8 @@ def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
     searchPtsList = [[getCoordFromLoc(region, rv3d, pt).to_3d() \
         for pt in pts] for pts in searchPtsList]
 
-    srs = search2dFromPtsList(searchPtsList, coFind, searchRange = FTProps.snapDist)
+    srs = NestedListSearch(searchPtsList).findInLists(coFind, \
+        searchRange = FTProps.snapDist)
 
     if(len(srs) == 0):
         return None
@@ -5536,35 +5654,52 @@ def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
         return retId, obj, splineIdx, ptIdx, 1 # otherInfo = segIdx
 
     elif(sr[0] == 2): # SegLoc
-        listIdx = findListIdx(selObjInterpCounts, idx)
+        listIdx = NestedListSearch.findListIdx(selObjInterpCounts, idx)
         obj, splineIdx, segIdx = selObjLocList[listIdx]
         return  retId, obj, splineIdx, segIdx, segInterpLocs[idx]
 
     else: # CurveLoc
-        listIdx = findListIdx(objInterpCounts, idx)
+        listIdx = NestedListSearch.findListIdx(objInterpCounts, idx)
         obj, splineIdx, segIdx = objLocList[listIdx]
         return retId, obj, splineIdx, segIdx, objInterpLocs[idx]
 
-def search2dFromPtsList(ptsList, coFind, searchRange):
-    kd = kdtree.KDTree(sum(len(pts) for pts in ptsList))
-    idx = 0
-    counts = []
-    for i, pts in enumerate(ptsList):
-        counts.append(len(pts))
-        for j, pt in enumerate(pts):
-            kd.insert(pt, idx)
-            idx += 1
-    kd.balance()
-    foundVals = kd.find_range(coFind, searchRange)
-    foundVals = sorted(foundVals, key = lambda x: x[2])
+class NestedListSearch:
+    # Find the list element containing the given idx from flattened list
+    # return the index of the list element containing the idx
+    def findListIdx(counts, idx):
+        cumulCnt = 0
+        cntIdx= 0
+        while(idx >= cumulCnt):
+            cumulCnt += counts[cntIdx] # cntIdx can never be >= len(counts)
+            cntIdx += 1
+        return cntIdx - 1
 
-    searchResults = []
-    for co, idx, dist in foundVals:
-        listIdx = findListIdx(counts, idx)
-        ptIdxInList = idx - sum(len(ptsList[i]) for i in range(0, listIdx))
-        searchResults.append([listIdx, ptIdxInList, co, dist])
+    def __init__(self, ptsList):
+        self.ptsList = ptsList
+        self.kd = kdtree.KDTree(sum(len(pts) for pts in ptsList))
+        idx = 0
+        self.counts = []
+        for i, pts in enumerate(ptsList):
+            self.counts.append(len(pts))
+            for j, pt in enumerate(pts):
+                self.kd.insert(pt, idx)
+                idx += 1
+        self.kd.balance()
+        
+    def findInLists(self, coFind, searchRange):
+        if(searchRange == None):
+            foundVals = [self.kd.find(coFind)]
+        else:
+            foundVals = self.kd.find_range(coFind, searchRange)
+            foundVals = sorted(foundVals, key = lambda x: x[2])
 
-    return searchResults
+        searchResults = []
+        for co, idx, dist in foundVals:
+            listIdx = NestedListSearch.findListIdx(self.counts, idx)
+            ptIdxInList = idx - sum(len(self.ptsList[i]) for i in range(0, listIdx))
+            searchResults.append([listIdx, ptIdxInList, co, dist])
+
+        return searchResults
 
 
 class SelectCurveInfo:
@@ -7628,6 +7763,7 @@ classes = [
     SetHandleTypesOp,
     SetCurveColorOp,
     PasteLengthOp,
+    AlignToFaceOp,
     RemoveCurveColorOp,
     SelectInCollOp,
     InvertSelOp,
