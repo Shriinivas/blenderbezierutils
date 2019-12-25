@@ -2,7 +2,7 @@
 #
 # Blender add-on with tools to draw and edit Bezier curves along with other utility ops
 #
-# Supported Blender Version: 2.8
+# Supported Blender Version: 2.8x
 #
 # Copyright (C) 2019  Shrinivas Kulkarni
 
@@ -2431,10 +2431,6 @@ def getWSDataForSegs(segs):
 DEF_CURVE_RES_2D = .5 # Per pixel seg divisions (.5 is one div per 2 pixel units)
 DBL_CLK_DURN = 0.25
 SNGL_CLK_DURN = 0.3
-
-SEL_CURVE_SEARCH_RES = 1000
-NONSEL_CURVE_SEARCH_RES = 100
-ADD_PT_CURVE_SEARCH_RES = 5000
 
 EVT_NOT_CONS = 0
 EVT_CONS = 1
@@ -5462,55 +5458,33 @@ def getBezierDataForSeg(obj, splineIdx, segIdx):
     pt1 = wsData[splineIdx][segEndIdx]
     return [pt0, pt1]
 
-# Requirement is more generic than geometry.interpolate_bezier
-# TODO: revisit (maybe merge with getPtsAlongBezier2D)
-def getInterpSegPts(mw, spline, ptIdx, res, startT, endT, maxRes):
+def getInterpSegPts(mw, spline, ptIdx, res):
     bpts = spline.bezier_points
-    j = ptIdx
-    if(j < (len(bpts) - 1) ):
-        seg = [mw @ bpts[j].co, mw @ bpts[j].handle_right, \
-            mw @ bpts[j+1].handle_left, mw @ bpts[j+1].co]
-    elif(j == (len(bpts) - 1)  and spline.use_cyclic_u):
-        seg = [mw @ bpts[-1].co, mw @ bpts[-1].handle_right, \
-            mw @ bpts[0].handle_left, mw @ bpts[0].co]
-    else:
-        return []
+    
+    if(ptIdx < (len(bpts) - 1) ): ptRange = [ptIdx, ptIdx + 1]
+    elif(ptIdx == (len(bpts) - 1)  and spline.use_cyclic_u): ptRange = [-1, 0]
+    else: return []
 
-    resProp = int(res * getSegLen(seg))
-    if(resProp > 1):
-        # Otherwise too slow, when zoom level very high
-        if(resProp > maxRes): resProp = maxRes
-        interpLocs = []
-        interpIncr = float(endT - startT) / (resProp - 1)
-        for x in range(0, resProp):
-            interPt = getPtFromT(seg[0], seg[1], seg[2], seg[3],
-                startT + interpIncr * x)
-            interpLocs.append(interPt)
-    else:
-        interpLocs = [seg[0]]
+    segPts = [[mw @ bpts[x].handle_left, mw @ bpts[x].co, mw @ bpts[x].handle_right] \
+        for x in ptRange]
 
-    return interpLocs
+    areaRegionInfo = getAllAreaRegions() # TODO: To be passed from caller
+
+    return getPtsAlongBezier2D(segPts, areaRegionInfo, res)
 
 # Wrapper for spatial search within segment
 def getClosestPt2dWithinSeg(region, rv3d, coFind, selObj, selSplineIdx, selSegIdx, \
-    selObjRes, withHandles, withBezPts):
+    withHandles, withBezPts):
     infos = {selObj: {selSplineIdx:[[selSegIdx],[]]}}
 
     # set selObj in objs for CurveBezPts
-    return getClosestPt2d(region, rv3d, coFind, [selObj], 0, \
-        infos, selObjRes, withHandles, withBezPts, withObjs = False)
+    return getClosestPt2d(region, rv3d, coFind, [selObj], infos, withHandles, \
+        withBezPts, withObjs = False)
 
-def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
-    withHandles = True, withBezPts = True, withObjs = True, normalized = True, \
-        objStartT = 0, objEndT = 1, selObjStartT = 0, selObjEndT = 1):
+def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, \
+    withBezPts = True, withObjs = True):
 
     objLocMap = {}
-
-    if(normalized):
-        #TODO: Should be pixel based (2d)
-        viewDist = rv3d.view_distance
-        objRes /= viewDist # inversely proportional
-        selObjRes /= viewDist
 
     objLocList = [] # For mapping after search returns
     objInterpLocs = []
@@ -5527,8 +5501,8 @@ def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
             for j, pt in enumerate(spline.bezier_points):
                 objLocList.append([obj, i, j])
                 if(withObjs):
-                    interpLocs = getInterpSegPts(mw, spline, j, objRes, \
-                        objStartT, objEndT, maxRes = NONSEL_CURVE_SEARCH_RES)[1:-1]
+                    interpLocs = \
+                        getInterpSegPts(mw, spline, j, res = DEF_CURVE_RES_2D)[1:-1]
 
                     objInterpLocs += interpLocs
                     objInterpCounts.append(len(interpLocs))
@@ -5552,8 +5526,8 @@ def getClosestPt2d(region, rv3d, coFind, objs, objRes, selObjInfos, selObjRes, \
             segIdxs = info[splineIdx][0]
             for segIdx in segIdxs:
                 selObjLocList.append([selObj, splineIdx, segIdx])
-                interpLocs = getInterpSegPts(mw, spline, segIdx, selObjRes, \
-                    selObjStartT, selObjEndT, maxRes = ADD_PT_CURVE_SEARCH_RES * 5)[1:-1]
+                interpLocs = \
+                    getInterpSegPts(mw, spline, segIdx, res = DEF_CURVE_RES_2D * 5)[1:-1]
                 segInterpLocs += interpLocs
                 selObjInterpCounts.append(len(interpLocs))
 
@@ -6754,8 +6728,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
             #TODO: Move to Snapper?
             searchResult = getClosestPt2d(rmInfo.region, rmInfo.rv3d, coFind, objs, \
-                NONSEL_CURVE_SEARCH_RES, selObjInfos, NONSEL_CURVE_SEARCH_RES, \
-                    withHandles = (not ctrl and not ModalFlexiEditBezierOp.h))
+                selObjInfos, withHandles = (not ctrl and not ModalFlexiEditBezierOp.h))
 
             if(searchResult != None):
                 resType, obj, splineIdx, segIdx, otherInfo = searchResult
@@ -6778,14 +6751,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     hdlIdx = 1
                 else:#if(resType == 'SegLoc'):
                     hdlIdx = -1
-                    # More precise for adding point
-                    selRes = ADD_PT_CURVE_SEARCH_RES if ctrl \
-                        else SEL_CURVE_SEARCH_RES
-
                     searchResult = getClosestPt2dWithinSeg(rmInfo.region, rmInfo.rv3d, \
                         coFind, selObj = obj, selSplineIdx = splineIdx, \
-                            selSegIdx = segIdx, selObjRes = selRes, \
-                                withHandles = False, withBezPts = False)
+                            selSegIdx = segIdx, withHandles = False, withBezPts = False)
 
                     # ~ if(searchResult != None): #Must never be None
                     resType, obj, splineIdx, segIdx, otherInfo = searchResult
@@ -6870,8 +6838,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
                 #TODO: Move to Snapper
                 searchResult = getClosestPt2d(rmInfo.region, rmInfo.rv3d, coFind, objs, \
-                    NONSEL_CURVE_SEARCH_RES, selObjInfos, NONSEL_CURVE_SEARCH_RES, \
-                        withHandles = (not ctrl and not ModalFlexiEditBezierOp.h))
+                    selObjInfos, withHandles = (not ctrl and not ModalFlexiEditBezierOp.h))
 
                 for c in self.selectCurveInfos: c.resetHltInfo()
                 if(searchResult != None):
