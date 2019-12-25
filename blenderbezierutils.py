@@ -1251,8 +1251,8 @@ class JoinBezierSegsOp(Operator):
         curves = [o for o in bpy.data.objects \
             if o in bpy.context.selected_objects and isBezier(o)]
 
-        straight = bpy.context.scene.straight
-        optimized = bpy.context.scene.optimized
+        straight = bpy.context.window_manager.bezierToolkitParams.straight
+        optimized = bpy.context.window_manager.bezierToolkitParams.optimized
 
         newCurve = joinSegs(curves, optimized = optimized, straight = straight)
         # ~ removeShapeKeys(newCurve)
@@ -1291,7 +1291,7 @@ class SelectInCollOp(Operator):
             for obj in bpy.context.selected_objects:
                 obj.select_set(False)
 
-            selectIntrvl = bpy.context.scene.selectIntrvl
+            selectIntrvl = bpy.context.window_manager.bezierToolkitParams.selectIntrvl
 
             for collection in collections:
                 objs = [o for o in collection.objects]
@@ -1370,7 +1370,7 @@ class SetHandleTypesOp(Operator):
     bl_description = "Set the handle type of all the points of the selected curves"
 
     def execute(self, context):
-        ht = bpy.context.scene.handleType
+        ht = bpy.context.window_manager.bezierToolkitParams.handleType
         curves = [o for o in bpy.data.objects \
             if o in bpy.context.selected_objects and isBezier(o)]
 
@@ -1415,8 +1415,8 @@ class convertTo2DMeshOp(Operator):
             curve.data.fill_mode = 'BOTH'
             meshObj = convertToMesh(curve)
 
-            remeshDepth = bpy.context.scene.remeshDepth
-            unsubdivide = bpy.context.scene.unsubdivide
+            remeshDepth = bpy.context.window_manager.bezierToolkitParams.remeshDepth
+            unsubdivide = bpy.context.window_manager.bezierToolkitParams.unsubdivide
             applyMeshModifiers(meshObj, remeshDepth)
 
             if(unsubdivide):
@@ -1439,8 +1439,8 @@ class AlignToFaceOp(Operator):
 
     def execute(self, context):
 
-        alignLoc = context.scene.alignToFaceLoc
-        alignOrig = context.scene.alignToFaceOrig
+        alignLoc = bpy.context.window_manager.bezierToolkitParams.alignToFaceLoc
+        alignOrig = bpy.context.window_manager.bezierToolkitParams.alignToFaceOrig
 
         curves = [o for o in bpy.data.objects \
             if o in bpy.context.selected_objects and isBezier(o) and o.visible_get()]
@@ -1515,7 +1515,8 @@ class SetCurveColorOp(bpy.types.Operator):
         curves = bpy.context.selected_objects
 
         for curve in curves:
-            curve.data['curveColor'] = bpy.context.scene.curveColorPick
+            curve.data['curveColor'] = \
+                bpy.context.window_manager.bezierToolkitParams.curveColorPick
 
         return {'FINISHED'}
 
@@ -1696,12 +1697,12 @@ class ModalMarkSegStartOp(bpy.types.Operator):
         wm.event_timer_remove(self._timer)
         self.markerState.removeMarkers(context)
         MarkerController.resetShowHandleState(context, self.handleStates)
-        bpy.context.scene.markVertex = False
+        bpy.context.window_manager.bezierToolkitParams.markVertex = False
 
     def modal (self, context, event):
 
-        if(context.mode  == 'OBJECT' or event.type == "ESC" or\
-            not bpy.context.scene.markVertex):
+        if(context.mode  == 'OBJECT' or event.type == "ESC" or \
+            not bpy.context.window_manager.bezierToolkitParams.markVertex):
             self.cleanup(context)
             return {'CANCELLED'}
 
@@ -1738,124 +1739,46 @@ class BezierUtilsPanel(Panel):
     bl_region_type = 'UI'
     bl_category = 'Tool'
 
-    #TODO: Move to params class
-    bpy.types.Scene.markVertex = BoolProperty(name="Mark Starting Vertices", \
-        description='Mark first vertices in all closed splines of selected curves', \
-            default = False, update = markVertHandler)
-
-    bpy.types.Scene.selectIntrvl = IntProperty(name="Selection Interval", \
-        description='Interval between selected objects', \
-            default = 0, min = 0)
-
-    bpy.types.Scene.handleType = EnumProperty(name="Handle Type", items = \
-        [("AUTO", 'Automatic', "Automatic"), \
-         ('VECTOR', 'Vector', 'Straight line'), \
-         ('ALIGNED', 'Aligned', 'Left and right aligned'), \
-         ('FREE', 'Free', 'Left and right independent')], \
-        description = 'Handle type of the control points',
-        default = 'ALIGNED')
-
-    bpy.types.Scene.remeshDepth = IntProperty(name="Remesh Depth", \
-        description='Remesh depth for converting to mesh', \
-            default = 4, min = 1, max = 20)
-
-    bpy.types.Scene.unsubdivide = BoolProperty(name="Unsubdivide", \
-        description='Unsubdivide to reduce the number of polygons', \
-            default = False)
-
-    bpy.types.Scene.straight = BoolProperty(name="Join With Straight Segments", \
-        description='Join curves with straight segments', \
-            default = False)
-
-    bpy.types.Scene.optimized = BoolProperty(name="Join Optimized", \
-        description='Join the nearest curve (reverse direction if necessary)', \
-            default = True)
-
-    bpy.types.Scene.splitExpanded = BoolProperty(name="Split Expanded State",
-            default = False)
-
-    bpy.types.Scene.joinExpanded = BoolProperty(name="Join Expanded State",
-            default = False)
-
-    bpy.types.Scene.alignToFaceExpanded = BoolProperty(name="Align to Face",
-            default = False)
-
-    bpy.types.Scene.selectExpanded = BoolProperty(name="Select Expanded State",
-            default = False)
-
-    bpy.types.Scene.convertExpanded = BoolProperty(name="Convert Expanded State",
-            default = False)
-
-    bpy.types.Scene.handleTypesExpanded = BoolProperty(name="Set Handle Types State",
-            default = False)
-
-    bpy.types.Scene.curveColorExpanded = BoolProperty(name="Set Curve Colors State",
-            default = False)
-
-    bpy.types.Scene.otherExpanded = BoolProperty(name="Other Expanded State",
-            default = False)
-
-    bpy.types.Scene.curveColorPick = bpy.props.FloatVectorProperty(
-        name="Color",
-        subtype="COLOR",
-        size=4,
-        min=0.0,
-        max=1.0,
-        default=(1.0, 1.0, 1.0, 1.0)
-    )
-
-    bpy.types.Scene.applyCurveColor = BoolProperty(name="Apply Curve Color", \
-        description='Apply color to all non selected curves ', \
-            default = False)
-
-    bpy.types.Scene.alignToFaceOrig = EnumProperty(name="Set Origin", items = \
-        [("NONE", 'Unchanged', "Don't move origin"), \
-         ('BBOX', 'Bounding Box Center', 'Move origin to curve bounding box center'), \
-         ('FACE', 'Face Center', 'Move origin to face center')], \
-        description = 'Set origin of the curve objects', default = 'BBOX')
-
-    bpy.types.Scene.alignToFaceLoc = BoolProperty(name="Move to Face Center", \
-        description='Move curve location to face center', default = True)
-
     @classmethod
     def poll(cls, context):
         return context.mode in {'OBJECT', 'EDIT_CURVE'}
 
     def draw(self, context):
+        params = bpy.context.window_manager.bezierToolkitParams
+
         layout = self.layout
-        # ~ layout.use_property_split = True
         layout.use_property_decorate = False
 
         if(context.mode == 'OBJECT'):
             row = layout.row()
-            row.prop(context.scene, "splitExpanded",
-                icon="TRIA_DOWN" if context.scene.splitExpanded else "TRIA_RIGHT",
+            row.prop(params, "splitExpanded",
+                icon="TRIA_DOWN" if params.splitExpanded else "TRIA_RIGHT",
                 icon_only=True, emboss=False)
             row.label(text="Split Bezier Curves", icon = 'UNLINKED')
 
-            if context.scene.splitExpanded:
+            if params.splitExpanded:
                 col = layout.column()
-                col.operator('object.separate_splines')#icon = 'UNLINKED')
+                col.operator('object.separate_splines')
                 col = layout.column()
-                col.operator('object.separate_segments')#, icon = 'ORPHAN_DATA')
+                col.operator('object.separate_segments')
                 col = layout.column()
-                col.operator('object.separate_points')#, icon = 'ORPHAN_DATA')
+                col.operator('object.separate_points')
 
             col = layout.column()
             col.separator()
 
             row = layout.row()
-            row.prop(context.scene, "joinExpanded",
-                icon="TRIA_DOWN" if context.scene.joinExpanded else "TRIA_RIGHT",
+            row.prop(params, "joinExpanded",
+                icon="TRIA_DOWN" if params.joinExpanded else "TRIA_RIGHT",
                 icon_only=True, emboss=False
             )
             row.label(text="Join Bezier Curves", icon = 'LINKED')
 
-            if context.scene.joinExpanded:
+            if params.joinExpanded:
                 col = layout.column()
-                col.prop(context.scene, 'straight')
+                col.prop(params, 'straight')
                 col = layout.column()
-                col.prop(context.scene, 'optimized')
+                col.prop(params, 'optimized')
                 col = layout.column()
                 col.operator('object.join_curves')
 
@@ -1863,17 +1786,17 @@ class BezierUtilsPanel(Panel):
             col.separator()
 
             row = layout.row()
-            row.prop(context.scene, "alignToFaceExpanded",
-                icon="TRIA_DOWN" if context.scene.alignToFaceExpanded else "TRIA_RIGHT",
+            row.prop(params, "alignToFaceExpanded",
+                icon="TRIA_DOWN" if params.alignToFaceExpanded else "TRIA_RIGHT",
                 icon_only=True, emboss=False
             )
             row.label(text="Align to Face", icon = 'FCURVE')
 
-            if context.scene.alignToFaceExpanded:
+            if params.alignToFaceExpanded:
                 col = layout.column()
-                col.prop(context.scene, 'alignToFaceOrig')
+                col.prop(params, 'alignToFaceOrig')
                 col = layout.column()
-                col.prop(context.scene, 'alignToFaceLoc')
+                col.prop(params, 'alignToFaceLoc')
                 col = layout.column()
                 col.operator('object.align_to_face')
 
@@ -1881,15 +1804,15 @@ class BezierUtilsPanel(Panel):
             col.separator()
 
             row = layout.row()
-            row.prop(context.scene, "selectExpanded",
-                icon="TRIA_DOWN" if context.scene.selectExpanded else "TRIA_RIGHT",
+            row.prop(params, "selectExpanded",
+                icon="TRIA_DOWN" if params.selectExpanded else "TRIA_RIGHT",
                 icon_only=True, emboss=False
             )
             row.label(text='Select Objects In Collection', icon='RESTRICT_SELECT_OFF')
-            if context.scene.selectExpanded:
+            if params.selectExpanded:
                 col = layout.column()
                 row = col.row()
-                row.prop(context.scene, 'selectIntrvl')
+                row.prop(params, 'selectIntrvl')
                 row.operator('object.select_in_collection')
                 col = layout.column()
                 col.operator('object.invert_sel_in_collection')
@@ -1898,17 +1821,17 @@ class BezierUtilsPanel(Panel):
             col.separator()
 
             row = layout.row()
-            row.prop(context.scene, "convertExpanded",
-                icon="TRIA_DOWN" if context.scene.convertExpanded else "TRIA_RIGHT",
+            row.prop(params, "convertExpanded",
+                icon="TRIA_DOWN" if params.convertExpanded else "TRIA_RIGHT",
                 icon_only=True, emboss=False
             )
             row.label(text='Convert Curve to Mesh', icon='MESH_DATA')
 
-            if context.scene.convertExpanded:
+            if params.convertExpanded:
                 col = layout.column()
                 row = col.row()
-                row.prop(context.scene, 'remeshDepth')
-                row.prop(context.scene, 'unsubdivide')
+                row.prop(params, 'remeshDepth')
+                row.prop(params, 'unsubdivide')
                 col = layout.column()
                 col.operator('object.convert_2d_mesh')
 
@@ -1916,16 +1839,16 @@ class BezierUtilsPanel(Panel):
             col.separator()
 
             row = layout.row()
-            row.prop(context.scene, "handleTypesExpanded",
-                icon="TRIA_DOWN" if context.scene.handleTypesExpanded else "TRIA_RIGHT",
+            row.prop(params, "handleTypesExpanded",
+                icon="TRIA_DOWN" if params.handleTypesExpanded else "TRIA_RIGHT",
                 icon_only=True, emboss=False
             )
             row.label(text='Set Handle Type', icon='MOD_CURVE')
 
-            if context.scene.handleTypesExpanded:
+            if params.handleTypesExpanded:
                 col = layout.column()
                 row = col.row()
-                col.prop(context.scene, 'handleType')
+                col.prop(params, 'handleType')
                 col = layout.column()
                 col.operator('object.set_handle_types')
 
@@ -1935,20 +1858,20 @@ class BezierUtilsPanel(Panel):
             col.separator()
 
             row = layout.row()
-            row.prop(context.scene, "curveColorExpanded",
-                icon="TRIA_DOWN" if context.scene.curveColorExpanded else "TRIA_RIGHT",
+            row.prop(params, "curveColorExpanded",
+                icon="TRIA_DOWN" if params.curveColorExpanded else "TRIA_RIGHT",
                 icon_only=True, emboss=False
             )
             row.label(text='Set Curve Colors', icon='MATERIAL')
 
-            if context.scene.curveColorExpanded:
+            if params.curveColorExpanded:
                 col = layout.column()
                 row = col.row()
-                row.prop(context.scene, "curveColorPick", text = 'Curve Color')
+                row.prop(params, "curveColorPick", text = 'Curve Color')
                 row.operator('object.set_curve_color')
                 row.operator('object.remove_curve_color')
                 row = col.row()
-                row.prop(context.scene, 'applyCurveColor', toggle = True)
+                row.prop(params, 'applyCurveColor', toggle = True)
                 col = layout.column()
 
             ######## Other Tools #########
@@ -1957,13 +1880,13 @@ class BezierUtilsPanel(Panel):
             col.separator()
 
             row = layout.row()
-            row.prop(context.scene, "otherExpanded",
-                icon="TRIA_DOWN" if context.scene.otherExpanded else "TRIA_RIGHT",
+            row.prop(params, "otherExpanded",
+                icon="TRIA_DOWN" if params.otherExpanded else "TRIA_RIGHT",
                 icon_only=True, emboss=False
             )
             row.label(text='Other Tools', icon='TOOL_SETTINGS')
 
-            if context.scene.otherExpanded:
+            if params.otherExpanded:
                 col = layout.column()
                 col.operator('object.paste_length')
                 col = layout.column()
@@ -1979,7 +1902,7 @@ class BezierUtilsPanel(Panel):
             col = layout.column()
             col.operator('object.separate_segments', text = 'Split At Selected Points')
             col = layout.column()
-            col.prop(context.scene, 'markVertex', toggle = True)
+            col.prop(params, 'markVertex', toggle = True)
 
 
     ################ Stand-alone handler for changing curve colors #################
@@ -2001,14 +1924,13 @@ class BezierUtilsPanel(Panel):
                 BezierUtilsPanel.lineWidth = \
                     bpy.context.preferences.addons[__name__].preferences.lineWidth
             except Exception as e:
-                # ~ print("BezierUtils: Error fetching line width in ColorCurves: ", e)
+                print("BezierUtils: Error fetching line width in ColorCurves: ", e)
                 BezierUtilsPanel.lineWidth = 1.5
 
             BezierUtilsPanel.drawHandlerRef = \
                 bpy.types.SpaceView3D.draw_handler_add(ccDrawHandler, \
                     (), "WINDOW", "POST_VIEW")
             BezierUtilsPanel.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
-            # ~ BezierUtilsPanel.shader.bind()
             return
 
         elif(remove):
@@ -2018,7 +1940,7 @@ class BezierUtilsPanel(Panel):
                 BezierUtilsPanel.drawHandlerRef = None
                 return
 
-        if(bpy.context.scene.applyCurveColor):
+        if(bpy.context.window_manager.bezierToolkitParams.applyCurveColor):
             objs = [o for o in bpy.context.scene.objects if(isBezier(o) and \
                 o.visible_get() and len(o.modifiers) == 0 and not o.select_get())]
 
@@ -6997,6 +6919,81 @@ def getConstrAxisTups(scene = None, context = None):
 
 
 class BezierToolkitParams(bpy.types.PropertyGroup):
+
+    ############### Panel Op Params #########################
+
+    markVertex: BoolProperty(name="Mark Starting Vertices", \
+        description='Mark first vertices in all closed splines of selected curves', \
+        default = False, update = markVertHandler)
+
+    selectIntrvl: IntProperty(name="Selection Interval", \
+        description='Interval between selected objects', \
+        default = 0, min = 0)
+
+    handleType: EnumProperty(name="Handle Type", items = \
+        [("AUTO", 'Automatic', "Automatic"), \
+         ('VECTOR', 'Vector', 'Straight line'), \
+         ('ALIGNED', 'Aligned', 'Left and right aligned'), \
+         ('FREE', 'Free', 'Left and right independent')], \
+        description = 'Handle type of the control points',
+        default = 'ALIGNED')
+
+    remeshDepth: IntProperty(name="Remesh Depth", \
+        description='Remesh depth for converting to mesh', \
+        default = 4, min = 1, max = 20)
+
+    unsubdivide: BoolProperty(name="Unsubdivide", \
+        description='Unsubdivide to reduce the number of polygons', \
+        default = False)
+
+    straight: BoolProperty(name="Join With Straight Segments", \
+        description='Join curves with straight segments', \
+        default = False)
+
+    optimized: BoolProperty(name="Join Optimized", \
+        description='Join the nearest curve (reverse direction if necessary)', \
+        default = True)
+
+    curveColorPick: bpy.props.FloatVectorProperty(
+        name="Color",
+        subtype="COLOR",
+        size=4,
+        min=0.0,
+        max=1.0,
+        default=(1.0, 1.0, 1.0, 1.0)
+    )
+
+    applyCurveColor: BoolProperty(name="Apply Curve Color", \
+        description='Apply color to all non selected curves ', \
+        default = False)
+
+    alignToFaceOrig: EnumProperty(name="Set Origin", items = \
+        [("NONE", 'Unchanged', "Don't move origin"), \
+         ('BBOX', 'Bounding Box Center', 'Move origin to curve bounding box center'), \
+         ('FACE', 'Face Center', 'Move origin to face center')], \
+        description = 'Set origin of the curve objects', default = 'BBOX')
+
+    alignToFaceLoc: BoolProperty(name="Move to Face Center", \
+        description='Move curve location to face center', default = True)
+
+
+    splitExpanded: BoolProperty(name = "Split Bezier Curves", default = False)
+
+    joinExpanded: BoolProperty(name = "Join Bezier Curves", default = False)
+
+    alignToFaceExpanded: BoolProperty(name = "Align to Face", default = False)
+
+    selectExpanded: BoolProperty(name = "Select Objects In Collection", default = False)
+
+    convertExpanded: BoolProperty(name = "Convert Curve to Mesh", default = False)
+
+    handleTypesExpanded: BoolProperty(name = "Set Handle Types", default = False)
+
+    curveColorExpanded: BoolProperty(name = "Set Curve Colors", default = False)
+
+    otherExpanded: BoolProperty(name = "Other Tools", default = False)
+
+    ############### Flexi Tools Params #########################
 
     drawObjType: EnumProperty(name = "Draw Shape", \
         items = (('BEZIER', 'Bezier Curve', 'Draw Bezier Curve'),
