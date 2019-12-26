@@ -1955,7 +1955,7 @@ class BezierUtilsPanel(Panel):
                             if(segPts == None):
                                 continue
                             pts = getPtsAlongBezier2D(segPts, getAllAreaRegions(), \
-                                DEF_CURVE_RES_2D)
+                                DEF_CURVE_RES_2D, maxRes = MAX_NONSEL_CURVE_RES)
                             linePts = getLinesFromPts(pts)
                             lineCos += linePts
                             lineColors += [colorVal for i in range(0, len(linePts))]
@@ -2052,7 +2052,7 @@ def getSegLen(pts, error = DEF_ERR_MARGIN, start = None, end = None, t1 = 0, t2 
 # Get pt coords along curve defined by the four control pts (segPts)
 # subdivPerUnit: No of subdivisions per unit length
 # (which is the same as no of pts excluding the end pts)
-def getInterpBezierPts(segPts, subdivPerUnit, segLens = None):
+def getInterpBezierPts(segPts, subdivPerUnit, segLens = None, maxRes = None):
     if(len(segPts) < 2):
         return []
 
@@ -2064,6 +2064,7 @@ def getInterpBezierPts(segPts, subdivPerUnit, segLens = None):
         else:
             res = int(getSegLen(seg) * subdivPerUnit)
         if(res < 2): res = 2
+        if(maxRes != None and res > maxRes): res = maxRes
         curvePts += geometry.interpolate_bezier(*seg, res)
 
     return curvePts
@@ -2084,7 +2085,8 @@ def getPtsAlongBezier3D(segPts, rv3d, curveRes, minRes = 200):
 
 # Used in functions where only visual resolution of curve matters (like draw Bezier)
 # (... not so expensive)
-def getPtsAlongBezier2D(segPts, areaRegionInfo, curveRes):
+# TODO: Calculate maxRes dynamically
+def getPtsAlongBezier2D(segPts, areaRegionInfo, curveRes, maxRes = None):
     segLens = []
     for i in range(1, len(segPts)):
         seg = [segPts[i-1][1], segPts[i-1][2], segPts[i][0], segPts[i][1]]
@@ -2098,7 +2100,8 @@ def getPtsAlongBezier2D(segPts, areaRegionInfo, curveRes):
                 segLen = sl
         segLens.append(segLen)
 
-    return getInterpBezierPts(segPts, subdivPerUnit = curveRes, segLens = segLens)
+    return getInterpBezierPts(segPts, subdivPerUnit = curveRes, \
+        segLens = segLens, maxRes = maxRes)
 
 def getLinesFromPts(pts):
     positions = []
@@ -2432,6 +2435,9 @@ DEF_CURVE_RES_2D = .5 # Per pixel seg divisions (.5 is one div per 2 pixel units
 DBL_CLK_DURN = 0.25
 SNGL_CLK_DURN = 0.3
 
+MAX_SEL_CURVE_RES = 1000
+MAX_NONSEL_CURVE_RES = 100
+
 EVT_NOT_CONS = 0
 EVT_CONS = 1
 EVT_META_OR_SNAP = 2
@@ -2509,7 +2515,8 @@ def getBezierBatches(shader, segDispInfos, bptDispInfos, areaRegionInfo, \
     lineColors = []
     for i, info in enumerate(segDispInfos):
         segPts = info.segPts
-        pts = getPtsAlongBezier2D(segPts, areaRegionInfo, DEF_CURVE_RES_2D)
+        pts = getPtsAlongBezier2D(segPts, areaRegionInfo, \
+            DEF_CURVE_RES_2D, maxRes = MAX_NONSEL_CURVE_RES)
         segLineCos = getLinesFromPts(pts)
         lineCos += segLineCos
         lineColors += [info.segColor for j in range(0, len(segLineCos))]
@@ -5458,7 +5465,7 @@ def getBezierDataForSeg(obj, splineIdx, segIdx):
     pt1 = wsData[splineIdx][segEndIdx]
     return [pt0, pt1]
 
-def getInterpSegPts(mw, spline, ptIdx, res):
+def getInterpSegPts(mw, spline, ptIdx, res, maxRes):
     bpts = spline.bezier_points
     
     if(ptIdx < (len(bpts) - 1) ): ptRange = [ptIdx, ptIdx + 1]
@@ -5470,7 +5477,7 @@ def getInterpSegPts(mw, spline, ptIdx, res):
 
     areaRegionInfo = getAllAreaRegions() # TODO: To be passed from caller
 
-    return getPtsAlongBezier2D(segPts, areaRegionInfo, res)
+    return getPtsAlongBezier2D(segPts, areaRegionInfo, res, maxRes)
 
 # Wrapper for spatial search within segment
 def getClosestPt2dWithinSeg(region, rv3d, coFind, selObj, selSplineIdx, selSegIdx, \
@@ -5479,10 +5486,10 @@ def getClosestPt2dWithinSeg(region, rv3d, coFind, selObj, selSplineIdx, selSegId
 
     # set selObj in objs for CurveBezPts
     return getClosestPt2d(region, rv3d, coFind, [selObj], infos, withHandles, \
-        withBezPts, withObjs = False)
+        withBezPts, withObjs = False, maxSelObjRes = MAX_SEL_CURVE_RES)
 
 def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, \
-    withBezPts = True, withObjs = True):
+    withBezPts = True, withObjs = True, maxSelObjRes = MAX_NONSEL_CURVE_RES):
 
     objLocMap = {}
 
@@ -5502,7 +5509,8 @@ def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, 
                 objLocList.append([obj, i, j])
                 if(withObjs):
                     interpLocs = \
-                        getInterpSegPts(mw, spline, j, res = DEF_CURVE_RES_2D)[1:-1]
+                        getInterpSegPts(mw, spline, j, res = DEF_CURVE_RES_2D, \
+                            maxRes = MAX_NONSEL_CURVE_RES)[1:-1]
 
                     objInterpLocs += interpLocs
                     objInterpCounts.append(len(interpLocs))
@@ -5527,7 +5535,8 @@ def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, 
             for segIdx in segIdxs:
                 selObjLocList.append([selObj, splineIdx, segIdx])
                 interpLocs = \
-                    getInterpSegPts(mw, spline, segIdx, res = DEF_CURVE_RES_2D * 5)[1:-1]
+                    getInterpSegPts(mw, spline, segIdx, res = DEF_CURVE_RES_2D * 5, \
+                        maxRes = maxSelObjRes)[1:-1]
                 segInterpLocs += interpLocs
                 selObjInterpCounts.append(len(interpLocs))
 
