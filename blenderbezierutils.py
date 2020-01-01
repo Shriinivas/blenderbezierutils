@@ -26,7 +26,7 @@ from gpu_extras.presets import draw_circle_2d
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 81),
+    "version": (0, 9, 83),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -235,7 +235,7 @@ def joinCurves(curves):
     return obj
 
 def getBBoxCenter(obj):
-    bbox = obj.bound_box                
+    bbox = obj.bound_box
     return obj.matrix_world @ Vector(((bbox[0][0] + bbox[4][0]) / 2, \
         (bbox[0][1] + bbox[3][1]) / 2, (bbox[0][2] + bbox[1][2]) / 2))
 
@@ -1469,7 +1469,7 @@ class AlignToFaceOp(Operator):
 
             objIdx, faceIdx, median, dist = srs[0]
             meshObj = mesheObjs[objIdx]
-            faceCenter = meshObj.matrix_world @ meshObj.data.polygons[faceIdx].center            
+            faceCenter = meshObj.matrix_world @ meshObj.data.polygons[faceIdx].center
             normal = meshObj.data.polygons[faceIdx].normal
             quatMat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
             tm = meshObj.matrix_world @ quatMat
@@ -1493,7 +1493,7 @@ class AlignToFaceOp(Operator):
 
             if(alignOrig == 'FACE'):
                 shiftOrigin(curve, faceCenter)
-            elif(alignOrig == 'BBOX'): 
+            elif(alignOrig == 'BBOX'):
                 depsgraph.update()
                 center = getBBoxCenter(curve) # Recalculate after alignment
                 shiftOrigin(curve, center)
@@ -2187,7 +2187,7 @@ def getInterpolatedVertsCo(curvePts, numDivs):
 
 #
 # The following section is a Python conversion of the javascript
-# a2c function at: https://github.com/fontello/svgpath 
+# a2c function at: https://github.com/fontello/svgpath
 # (Copyright (C) 2013-2015 by Vitaly Puzrin)
 #
 # Note: Most of the comments are retained
@@ -2207,16 +2207,16 @@ def unit_vector_angle(ux, uy, vx, vy):
         sign = -1
     else:
         sign = 1
-        
+
     dot  = ux * vx + uy * vy
 
     # Add this to work with arbitrary vectors:
     # dot /= sqrt(ux * ux + uy * uy) * sqrt(vx * vx + vy * vy)
 
     # rounding errors, e.g. -1.0000000000000002 can screw up this
-    if (round(dot, 3) >=  1.0): 
+    if (round(dot, 3) >=  1.0):
         dot =  1.0
-        
+
     if (round(dot, 3) <= -1.0):
         dot = -1.0
 
@@ -2285,9 +2285,9 @@ def get_arc_center(x1, y1, x2, y2, fa, fs, rx, ry, sin_phi, cos_phi):
 
     if (fs == 0 and delta_theta > 0):#Migration Note: note ===
         delta_theta -= TAU
-    
+
     if (fs == 1 and delta_theta < 0):#Migration Note: note ===
-        delta_theta += TAU    
+        delta_theta += TAU
 
     return [ cx, cy, theta1, delta_theta ]
 
@@ -2351,7 +2351,7 @@ def a2c(x1, y1, x2, y2, fa, fs, rx, ry, phi, noSegs):
         result.append(approximate_unit_arc(theta1, delta_theta))
 
         theta1 += delta_theta
-        
+
     # We have a bezier approximation of a unit circle,
     # now need to transform back to the original ellipse
     #
@@ -2375,7 +2375,7 @@ def getMappedList(result, rx, ry, sin_phi, cos_phi, cc):
 
             # translate
             elem[i + 0] = xp + cc[0]
-            elem[i + 1] = yp + cc[1]        
+            elem[i + 1] = yp + cc[1]
             curve.append(complex(elem[i + 0], elem[i + 1]))
         mappedList.append(curve)
     return mappedList
@@ -2410,10 +2410,10 @@ def getWSDataForSegs(segs):
     wsData = []
 
     for j, seg in enumerate(segs):
-        
+
         pt = seg[0]
         handleRight = seg[1]
-        
+
         if(j == 0): handleLeft = pt
         else: handleLeft = prevSeg[2]
 
@@ -3069,7 +3069,7 @@ class FTMenu:
                     found = True
                     break
         return FTMenu.idDataMap.get(hotkeyId) if(found) else None
-        
+
     def procMenu(parent, context, event, outside):
 
         metakeys = parent.snapper.getMetakeys()
@@ -3128,7 +3128,7 @@ class FTMenu:
         for i in range(maxMenuOpts):
             propNames.append(FTMenu.propSuffix + str(i))
         return propNames
-        
+
     def getMNClassDefStr(menuData):
         retStr = 'class ' + menuData.menuClassName + '(Menu):\n' + \
             '\tbl_label = "' + menuData.menuClassLabel + '"\n'+ \
@@ -3144,7 +3144,7 @@ class FTMenu:
         return retStr
 
     def getMNPropDefStr(menuData):
-        retStr = ''        
+        retStr = ''
         for propName in FTMenu.getAllOptPropNames():
             retStr += propName +': BoolProperty(default = False)\n'
         return retStr
@@ -3161,7 +3161,7 @@ class FTMenuOptionOp(Operator):
         params = bpy.context.window_manager.bezierToolkitParams
         setattr(params, FTMenu.propSuffix + str(self.optIdx), True)
         return {'FINISHED'}
-    
+
 
 class SnapDigits:
     digitMap = {'ONE':'1', 'TWO':'2', 'THREE':'3', 'FOUR':'4', 'FIVE':'5', \
@@ -4224,13 +4224,13 @@ class ModalBaseFlexiOp(Operator):
 
         self.click, self.doubleClick = False, False
         if(event.type == 'LEFTMOUSE'):
-            if(event.value == 'PRESS'): 
+            if(event.value == 'PRESS'):
                 self.pressT = time.time()
             elif(event.value == 'RELEASE'):
                 t = time.time()
                 if(self.clickT != None and (t - self.clickT) < DBL_CLK_DURN):
                     self.clickT = None
-                    self.doubleClick = True                    
+                    self.doubleClick = True
                 elif(self.pressT != None and (t - self.pressT) < SNGL_CLK_DURN):
                     self.clickT = t
                     self.click = True
@@ -4294,157 +4294,133 @@ class ModalBaseFlexiOp(Operator):
 
 ################### Flexi Draw Bezier Curve ###################
 
-class EllipseDraw:
+class PrimitiveDraw:
 
-    # https://math.stackexchange.com/questions/22064/calculating-a-point-that-lies-on-an-ellipse-given-an-angle
-    def getPtAtAngle(a, b, theta):
-        if (theta < 0): theta += 2 * pi
-        denom = sqrt(b * b + a * a * tan(theta) * tan(theta))
-        num = (a * b)
-        x = num / denom
-        if(pi / 2 < theta <= 3 * pi / 2): x = -x
-        y = x * tan(theta)
-        return complex(x, y)
+    def getNumSegsLimits(self):
+        return 2, 100
+
+    def getShapePts(self, mode, numSegs, bbStart, bbEnd, center2d, startAngle, \
+        theta, axisIdxs, z):
+        raise NotImplementedError('Call to abstract method.')
+
+    def updateParam1(self, event, rmInfo):
+        raise NotImplementedError('Call to abstract method.')
 
     def getCurvePts(self, numSegs, axisIdxs, z = None):
         params = bpy.context.window_manager.bezierToolkitParams
         tm = self.parent.snapper.tm if self.parent.snapper.tm != None else Matrix()
 
         idx0, idx1, idx2 = axisIdxs
-        theta = params.drawArcAngle2
+        startAngle = params.drawStartAngle
+        sweep = params.drawAngleSweep
 
-        bbEnd = tm @ self.bbEnd 
+        bbEnd = tm @ self.bbEnd
 
-        if(params.drawObjMode == 'CENTER'):
+        mode = params.drawObjMode
+
+        if(mode == 'CENTER'):
             diffV = (self.bbEnd - self.bbStart)
             bbStart = tm @ (self.bbStart - diffV)
         else:
             bbStart = tm @ self.bbStart
 
-        if(z == None): z = bbStart[idx2]
-
         cX = (bbEnd[idx0] - bbStart[idx0]) / 2
         cY = (bbEnd[idx1] - bbStart[idx1]) / 2
-        if(cX == 0 or cY == 0):
+        if(cX == 0 and cY == 0):
             return None
 
-        radius = complex(cX, cY)
-        center = complex(cX, cY)
-        segStart = complex(bbStart[idx0] + cX, bbStart[idx1])
-        
-        large_arc = 0        
-        rotation = 0 
+        if(z == None): z = bbStart[idx2]
+        center2d = complex(cX, cY)
 
-        startAngle = params.drawArcAngle1
-        # ~ if(startAngle > 180): startAngle = startAngle - 360
-        sweep = 1
-        startIdx = 0
-        endIdx = 1
-        rvs = False
-
-        if(theta < 0):
-            sweep = 0
-            startIdx = 1
-            endIdx = 0
-            rvs = True
-
-        pt1 = EllipseDraw.getPtAtAngle(abs(cX), abs(cY), radians(startAngle))
-        a1 = startAngle + theta / 2
-        if(a1 > 360): a1 = a1 - 360
-        if(a1 < -360): a1 = a1 + 360
-        a2 = startAngle + theta
-        if(a2 > 360): a2 = a2 - 360
-        if(a2 < -360): a2 = a2 + 360
-        pt2 = EllipseDraw.getPtAtAngle(abs(cX), abs(cY), radians(a1))
-        pt3 = EllipseDraw.getPtAtAngle(abs(cX), abs(cY), radians(a2))
-
-        orig = complex(bbStart[idx0], bbStart[idx1])
-
-        snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin        
+        snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
         if(snapOrigin == 'REFERENCE'):
-            self.center3d = tm.inverted() @ get3DVector(orig + center, axisIdxs, z)
+            orig = complex(bbStart[idx0], bbStart[idx1])
+            self.curveObjOrigin = tm.inverted() @ \
+                get3DVector(orig + center2d, axisIdxs, z)
         else:
-            self.center3d = self.parent.snapper.orig \
+            self.curveObjOrigin = self.parent.snapper.orig \
                 if self.parent.snapper.orig != None else Vector()
 
-        pt1 = orig + pt1 + center
-        pt2 = orig + pt2 + center
-        pt3 = orig + pt3 + center
-       
-        endPts = [pt1, pt2]
-        segs1 = getSegsForArc(endPts[startIdx], radius, 1, endPts[endIdx], \
-            10, axisIdxs, z)
+        curvePts = self.getShapePts(mode, numSegs, bbStart, bbEnd, center2d, \
+            startAngle, sweep, axisIdxs, z)
 
-        endPts = [pt2, pt3]
-        segs2 = getSegsForArc(endPts[startIdx], radius, 1, endPts[endIdx], \
-            10, axisIdxs, z)
-
-        segElems = [segs1, segs2]
-        segs = segElems[startIdx] + segElems[endIdx]
-
-        if(len(segs) == 0): return None
-        curvePts = getWSDataForSegs(segs)
-        
-        if(len(curvePts) == 0): return None
-        pts = getInterpBezierPts(curvePts, subdivPerUnit = 100, segLens = None)
-        if(len(pts) == 0): return None
-        vertCos = getInterpolatedVertsCo(pts, numSegs)
-
-        # TODO: A more efficient approach for dividing ellipse uniformly
-        newSegs = []
-        for i in range(1, len(vertCos)):
-            segStart = complex(vertCos[i-1][idx0], vertCos[i-1][idx1])
-            segEnd = complex(vertCos[i][idx0], vertCos[i][idx1])
-            endPts = [segStart, segEnd]
-            segs1 = getSegsForArc(endPts[startIdx], radius, sweep, \
-                endPts[endIdx], 1, axisIdxs, z)
-
-            newSegs += segs1
-
-        if(rvs): newSegs = reversed(newSegs)
-        curvePts = getWSDataForSegs(newSegs)
-
-        if(vectCmpWithMargin(curvePts[0][1], curvePts[-1][1])):
-            ldiffV = curvePts[0][1] - curvePts[0][0]
-            rdiffV = curvePts[-1][2] - curvePts[-1][1]
-            if(vectCmpWithMargin(ldiffV, rdiffV)):
-                curvePts[0][3] = 'ALIGNED'
-                curvePts[0][4] = 'ALIGNED'
-                curvePts[-1][3] = 'ALIGNED'
-                curvePts[-1][4] = 'ALIGNED'
+        if(curvePts == None): return None
 
         curvePts = [[tm.inverted() @ p if type(p) != str \
             else p for p in pts] for pts in curvePts]
 
         return curvePts
-        
+
     def __init__(self, parent):
         self.parent = parent
         self.initialize()
+        self.shapeSegCnt = 4
 
     def initialize(self):
         self.bbStart = None
         self.bbEnd = None
 
-    def updateCurvePts(self):        
+    def updateCurvePts(self):
         freeAxes = self.parent.snapper.getFreeAxesNormalized()
         axisIdxs = freeAxes[:]
         if(len(freeAxes) < 3):
             axisIdxs += sorted(list({0, 1, 2} - set(freeAxes)))
 
         curvePts = self.getCurvePts(axisIdxs = axisIdxs, \
-            numSegs = self.parent.shapeSegCnt)
+            numSegs = self.shapeSegCnt)
 
         if(curvePts != None):
             self.parent.curvePts = curvePts
         else:
             self.parent.curvePts = [[self.bbStart, self.bbStart, self.bbStart], \
                 [self.bbEnd, self.bbEnd, self.bbEnd]]
+            self.curveObjOrigin = self.bbStart
 
     def procDrawEvent(self, context, event, snapProc):
         parent = self.parent
         rmInfo = parent.rmInfo
         metakeys = parent.snapper.getMetakeys()
+
+        if(len(self.parent.curvePts) > 0 and not snapProc):
+            if(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', \
+                    'NUMPAD_PLUS', 'NUMPAD_MINUS','PLUS', 'MINUS'}):
+                if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
+                    and event.value == 'PRESS'):
+                    return {'RUNNING_MODAL'}
+                minSegs, maxSegs = self.getNumSegsLimits()
+                if(event.type =='WHEELDOWNMOUSE' or event.type.endswith('MINUS')):
+                    if(self.shapeSegCnt > minSegs): self.shapeSegCnt -= 1
+                elif(event.type =='WHEELUPMOUSE' or event.type.endswith('PLUS')):
+                    if(self.shapeSegCnt < maxSegs): self.shapeSegCnt += 1
+                self.updateCurvePts()
+                self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
+                return {'RUNNING_MODAL'}
+
+            if(event.type in {'UP_ARROW', 'DOWN_ARROW'}):
+                if(self.updateParam1(event, rmInfo)): return {'RUNNING_MODAL'}
+
+            if(event.type in {'LEFT_ARROW', 'RIGHT_ARROW'}):
+                    if(event.value == 'PRESS'): return {'RUNNING_MODAL'}
+                    params = bpy.context.window_manager.bezierToolkitParams
+                    theta = params.drawAngleSweep
+
+                    if(event.type =='LEFT_ARROW'):
+                        if(theta <= 10 and theta >= 0): params.drawAngleSweep = -10
+                        elif(theta < -350): params.drawAngleSweep = 350
+                        else: params.drawAngleSweep = theta - 10
+                    else:
+                        if(theta >= -10 and theta <= 0): params.drawAngleSweep = 10
+                        elif(theta > 350): params.drawAngleSweep = -350
+                        else: params.drawAngleSweep = theta + 10
+                    self.updateCurvePts()
+                    self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
+                    return {'RUNNING_MODAL'}
+
+            if(event.type == 'H' or event.type == 'h'):
+                if(event.value == 'RELEASE'):
+                    ModalDrawBezierOp.h = not ModalDrawBezierOp.h
+                    self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
+                return {"RUNNING_MODAL"}
 
         if(self.bbStart != None and (event.type == 'RET' or event.type == 'SPACE')):
             if(event.value == 'RELEASE'):
@@ -4469,7 +4445,7 @@ class EllipseDraw:
             else:
                 self.bbEnd = loc
                 self.updateCurvePts()
-                parent.confirm(context, event, location = self.center3d)
+                parent.confirm(context, event, location = self.curveObjOrigin)
             return {"RUNNING_MODAL"}
         if (snapProc or event.type == 'MOUSEMOVE'):
             if(self.bbStart != None):
@@ -4495,6 +4471,174 @@ class EllipseDraw:
         return refLine[0] if len(refLine) > 0 else None
 
 
+class PolygonDraw(PrimitiveDraw):
+
+    def updateParam1(self, event, rmInfo):
+        if(event.value == 'PRESS'): return True
+        params = bpy.context.window_manager.bezierToolkitParams
+        offset = params.drawStarOffset
+
+        if(event.type =='DOWN_ARROW'):
+            params.drawStarOffset -= 0.1
+        else:
+            params.drawStarOffset += 0.1
+        self.updateCurvePts()
+        self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
+        return True
+
+    def getNumSegsLimits(self):
+        return 3, 100
+
+    def __init__(self, parent, star = False):
+        super(PolygonDraw, self).__init__(parent)
+        self.star = star
+
+    def getShapePts(self, mode, numSegs, bbStart, bbEnd, center2d, startAngle, \
+        theta, axisIdxs, z, star = True):
+        params = bpy.context.window_manager.bezierToolkitParams
+        params.drawSides = numSegs
+        idx0, idx1, idx2 = axisIdxs
+        cX, cY = center2d.real, center2d.imag
+        radius = sqrt(cX * cX + cY * cY)
+        offset = params.drawStarOffset
+        orig = complex(bbStart[idx0], bbStart[idx1])
+
+        if(cX == 0): startAngle = 90 * ((cY / abs(cY)) if cY != 0 else 1)
+        else: startAngle = degrees(atan(cY / cX))
+        if(cX < 0): startAngle += 180
+        thetaIncr = theta / numSegs
+        curvePts = []
+        for segCnt in range(numSegs + 1):
+            if(self.star):
+                angle = startAngle + thetaIncr * segCnt - thetaIncr / 2
+                shift = complex(offset * radius * cos(radians(angle)), \
+                    offset * radius * sin(radians(angle)))
+                pt = get3DVector(orig + center2d + shift, axisIdxs, z)
+                curvePts.append([pt, pt, pt, 'VECTOR', 'VECTOR'])
+            if(not self.star or segCnt < numSegs):
+                angle = startAngle + thetaIncr * segCnt
+                shift = complex(radius * cos(radians(angle)), radius * sin(radians(angle)))
+                pt = get3DVector(orig + center2d + shift, axisIdxs, z)
+                curvePts.append([pt, pt, pt, 'VECTOR', 'VECTOR'])
+
+        return curvePts
+
+class EllipseDraw(PrimitiveDraw):
+
+    # https://math.stackexchange.com/questions/22064/calculating-a-point-that-lies-on-an-ellipse-given-an-angle
+    def getPtAtAngle(a, b, theta):
+        if (theta < 0): theta += 2 * pi
+        denom = sqrt(b * b + a * a * tan(theta) * tan(theta))
+        num = (a * b)
+        x = num / denom
+        if(pi / 2 < theta <= 3 * pi / 2): x = -x
+        y = x * tan(theta)
+        return complex(x, y)
+
+    def __init__(self, parent):
+        super(EllipseDraw, self).__init__(parent)
+
+    def updateParam1(self, event, rmInfo):
+        if(event.value == 'PRESS'): return True
+        params = bpy.context.window_manager.bezierToolkitParams
+        theta = params.drawStartAngle
+
+        if(event.type =='DOWN_ARROW'):
+            if(theta < -350): params.drawStartAngle = 0
+            else: params.drawStartAngle = theta - 10
+        else:
+            if(theta > 350): params.drawStartAngle = 0
+            else: params.drawStartAngle = theta + 10
+        self.updateCurvePts()
+        self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
+        return True
+
+    def getShapePts(self, mode, numSegs, bbStart, bbEnd, center2d, startAngle, \
+        theta, axisIdxs, z):
+
+        idx0, idx1, idx2 = axisIdxs
+        cX, cY = center2d.real, center2d.imag
+
+        if(cX == 0 or cY == 0):
+            return None
+
+        radius = complex(cX, cY) # Actually same as center2d
+        orig = complex(bbStart[idx0], bbStart[idx1])
+
+        large_arc = 0
+        rotation = 0
+
+        sweep = 1
+        startIdx = 0
+        endIdx = 1
+        rvs = False
+
+        if(theta < 0):
+            sweep = 0
+            startIdx = 1
+            endIdx = 0
+            rvs = True
+
+        pt1 = EllipseDraw.getPtAtAngle(abs(cX), abs(cY), radians(startAngle))
+        a1 = startAngle + theta / 2
+        if(a1 > 360): a1 = a1 - 360
+        if(a1 < -360): a1 = a1 + 360
+        a2 = startAngle + theta
+        if(a2 > 360): a2 = a2 - 360
+        if(a2 < -360): a2 = a2 + 360
+        pt2 = EllipseDraw.getPtAtAngle(abs(cX), abs(cY), radians(a1))
+        pt3 = EllipseDraw.getPtAtAngle(abs(cX), abs(cY), radians(a2))
+
+        pt1 = orig + pt1 + center2d
+        pt2 = orig + pt2 + center2d
+        pt3 = orig + pt3 + center2d
+
+        endPts = [pt1, pt2]
+        segs1 = getSegsForArc(endPts[startIdx], radius, 1, endPts[endIdx], \
+            10, axisIdxs, z)
+
+        endPts = [pt2, pt3]
+        segs2 = getSegsForArc(endPts[startIdx], radius, 1, endPts[endIdx], \
+            10, axisIdxs, z)
+
+        segElems = [segs1, segs2]
+        segs = segElems[startIdx] + segElems[endIdx]
+
+        curvePts = getWSDataForSegs(segs)
+        if(len(curvePts) < 2): return None
+
+        pts = getInterpBezierPts(curvePts, subdivPerUnit = 100, segLens = None)
+        if(len(pts) < 2): return None
+
+        vertCos = getInterpolatedVertsCo(pts, numSegs)
+
+        # TODO: A more efficient approach for dividing ellipse uniformly
+        newSegs = []
+        for i in range(1, len(vertCos)):
+            segStart = complex(vertCos[i-1][idx0], vertCos[i-1][idx1])
+            segEnd = complex(vertCos[i][idx0], vertCos[i][idx1])
+            endPts = [segStart, segEnd]
+            segs1 = getSegsForArc(endPts[startIdx], radius, sweep, \
+                endPts[endIdx], 1, axisIdxs, z)
+
+            newSegs += segs1
+
+        if(rvs): newSegs = reversed(newSegs)
+        curvePts = getWSDataForSegs(newSegs)
+
+        if(len(curvePts) < 2): return None
+
+        if(vectCmpWithMargin(curvePts[0][1], curvePts[-1][1])):
+            ldiffV = curvePts[0][1] - curvePts[0][0]
+            rdiffV = curvePts[-1][2] - curvePts[-1][1]
+            if(vectCmpWithMargin(ldiffV, rdiffV)):
+                curvePts[0][3] = 'ALIGNED'
+                curvePts[0][4] = 'ALIGNED'
+                curvePts[-1][3] = 'ALIGNED'
+                curvePts[-1][4] = 'ALIGNED'
+
+        return curvePts
+
 class BezierDraw:
     def __init__(self, parent):
         self.parent = parent
@@ -4508,7 +4652,7 @@ class BezierDraw:
         self.parent.curvePts.append([loc, loc, loc])
 
     def moveBezierPt(self, loc):
-        if(len(self.parent.curvePts) > 0): 
+        if(len(self.parent.curvePts) > 0):
             self.parent.curvePts[-1] = [loc, loc, loc]
 
     def movePointByDelta(self, delta):
@@ -4703,7 +4847,7 @@ class BezierDraw:
                     loc = snapper.get3dLocSnap(rmInfo)
                     self.moveBezierPt(loc)
                     hdlPtIdxs = {len(self.parent.curvePts) - 2}
-                    
+
             self.parent.redrawBezier(rmInfo, hdlPtIdxs = hdlPtIdxs)
             return {'RUNNING_MODAL'}
 
@@ -4756,6 +4900,14 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             opObj.drawObj = ModalDrawBezierOp.drawObjMap[params.drawObjType]
             opObj.initialize()
             opObj.resetDisplay()
+            opObj.drawType = params.drawObjType
+            ModalDrawBezierOp.updateDrawSides(dummy, context)
+
+    def updateDrawSides(dummy, context):
+        params = bpy.context.window_manager.bezierToolkitParams
+        opObj = ModalDrawBezierOp.opObj
+        if(opObj != None and opObj.drawType != 'BEZIER'):
+            opObj.drawObj.shapeSegCnt = params.drawSides
 
     def resetDisplay(self):
         ModalDrawBezierOp.markerBatch = \
@@ -4772,20 +4924,17 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         self.drawObj.initialize()
         self.snapper.initialize()
 
-        # TODO: Flag common for all shape types, for which some special functionality
-        # is added in ModalDrawBezierOp (maybe a base class: DrawShape?)
-        self.isDrawShape = (self.drawObj != self.bezierDrawObj)
-
     def subInvoke(self, context, event):
         self.bezierDrawObj = BezierDraw(self)
         self.ellipseDrawObj = EllipseDraw(self)
-
-        # Specific to draw shapes (not for Bezier curve)
-        self.shapeSegCnt = 4
+        self.polygonDrawObj = PolygonDraw(self)
+        self.starDrawObj = PolygonDraw(self, star = True)
 
         ModalDrawBezierOp.drawObjMap = \
         {'BEZIER': self.bezierDrawObj, \
          'ELLIPSE': self.ellipseDrawObj, \
+         'POLYGON': self.polygonDrawObj, \
+         'STAR': self.starDrawObj, \
         }
 
         bpy.app.handlers.undo_post.append(self.postUndoRedo)
@@ -4799,6 +4948,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             ModalDrawBezierOp.markerSize = 8
 
         self.updateDrawType(context)
+        self.updateDrawSides(context)
         return {"RUNNING_MODAL"}
 
     def cancelOp(self, context):
@@ -4813,7 +4963,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
     def confirm(self, context, event, location = None):
         metakeys = self.snapper.getMetakeys()
         shift = metakeys[2]
-        autoclose = (not self.isDrawShape and shift and \
+        autoclose = (self.drawType == 'BEZIER' and shift and \
             (event.type == 'SPACE' or event.type == 'RET'))
         self.save(context, event, autoclose, location)
         self.curvePts = []
@@ -4832,58 +4982,6 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
     # Common subModal for Flexi Draw and Flexi Grease
     def baseSubModal(self, context, event, snapProc):
-        if(self.isDrawShape and len(self.curvePts) > 0 and not snapProc):
-            if(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', \
-                    'NUMPAD_PLUS', 'NUMPAD_MINUS','PLUS', 'MINUS'}):
-                if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
-                    and event.value == 'PRESS'):
-                    return {'RUNNING_MODAL'}
-                if(event.type =='WHEELDOWNMOUSE' or event.type.endswith('MINUS')):
-                    if(self.shapeSegCnt > 2): self.shapeSegCnt -= 1
-                elif(event.type =='WHEELUPMOUSE' or event.type.endswith('PLUS')):
-                    if(self.shapeSegCnt < 50): self.shapeSegCnt += 1
-                self.drawObj.updateCurvePts()
-                self.redrawBezier(self.rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
-                return {'RUNNING_MODAL'}
-
-            if(event.type in {'UP_ARROW', 'DOWN_ARROW'}):
-                    if(event.value == 'PRESS'): return {'RUNNING_MODAL'}
-                    params = bpy.context.window_manager.bezierToolkitParams
-                    theta = params.drawArcAngle1
-                    
-                    if(event.type =='DOWN_ARROW'):
-                        if(theta < -350): params.drawArcAngle1 = 0
-                        else: params.drawArcAngle1 = theta - 10
-                    else:
-                        if(theta > 350): params.drawArcAngle1 = 0
-                        else: params.drawArcAngle1 = theta + 10
-                    self.drawObj.updateCurvePts()
-                    self.redrawBezier(self.rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
-                    return {'RUNNING_MODAL'}
-
-            if(event.type in {'LEFT_ARROW', 'RIGHT_ARROW'}):
-                    if(event.value == 'PRESS'): return {'RUNNING_MODAL'}
-                    params = bpy.context.window_manager.bezierToolkitParams
-                    theta = params.drawArcAngle2
-                    
-                    if(event.type =='LEFT_ARROW'):
-                        if(theta <= 10 and theta >= 0): params.drawArcAngle2 = -10
-                        elif(theta < -350): params.drawArcAngle2 = 350
-                        else: params.drawArcAngle2 = theta - 10
-                    else:
-                        if(theta >= -10 and theta <= 0): params.drawArcAngle2 = 10
-                        elif(theta > 350): params.drawArcAngle2 = -350
-                        else: params.drawArcAngle2 = theta + 10
-                    self.drawObj.updateCurvePts()
-                    self.redrawBezier(self.rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
-                    return {'RUNNING_MODAL'}
-
-            if(event.type == 'H' or event.type == 'h'):
-                if(event.value == 'RELEASE'):
-                    ModalDrawBezierOp.h = not ModalDrawBezierOp.h
-                    self.redrawBezier(self.rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
-                return {"RUNNING_MODAL"}
-
         return self.drawObj.procDrawEvent(context, event, snapProc)
 
     def refreshMarkerPos(self, rmInfo):
@@ -5072,8 +5170,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
             prevPt = currPt
 
         bpts = spline.bezier_points
-        if(spline.use_cyclic_u and bpts[-1].handle_right == bpts[-1].co \
-            and bpts[0].handle_left == bpts[0].co): 
+        if(spline.use_cyclic_u and vectCmpWithMargin(bpts[-1].handle_right, bpts[-1].co) \
+            and vectCmpWithMargin(bpts[0].handle_left, bpts[0].co)):
                 if(bpts[-1].handle_left_type != 'VECTOR'):
                     bpts[-1].handle_left_type = 'FREE'
                 bpts[-1].handle_right_type = 'VECTOR'
@@ -5238,7 +5336,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
             if(ModalFlexiDrawGreaseOp.subdivLineBatch != None):
                 ModalFlexiDrawGreaseOp.subdivLineBatch.draw(ModalBaseFlexiOp.shader)
-        
+
         ModalDrawBezierOp.drawHandler()
 
     def resetDisplay(self):
@@ -5293,20 +5391,20 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
     # overridden
     def redrawBezier(self, rmInfo, hdlPtIdxs = None, hltEndSeg = True):
-        
+
         ptCnt = len(self.curvePts)
         subdivCos = self.subdivCos if ptCnt > 1 else []
         showSubdivPts = not ModalFlexiDrawGreaseOp.h
         ModalFlexiDrawGreaseOp.subdivPtBatch, ModalFlexiDrawGreaseOp.subdivLineBatch = \
             getSubdivBatches(ModalBaseFlexiOp.shader, subdivCos, showSubdivPts)
 
-        if(self.isDrawShape and len(self.curvePts) > 0):
+        if(self.drawType != 'BEZIER' and len(self.curvePts) > 0):
             ModalBaseFlexiOp.refreshDisplayBase(segDispInfos = [], bptDispInfos = [], \
                 snapper = self.snapper)
         else:
             super(ModalFlexiDrawGreaseOp, self).redrawBezier(rmInfo, lastSegOnly = True, \
                 hdlPtIdxs = {ptCnt-1}, hltEndSeg = hltEndSeg)
-            
+
     def initialize(self):
         super(ModalFlexiDrawGreaseOp, self).initialize()
         self.subdivCos = []
@@ -5320,7 +5418,8 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         if(not metakeys[2]):
             cntIncr = 5 #if(self.isDrawShape) else 5
 
-            if(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', 'NUMPAD_PLUS', \
+            if(self.drawType in {'BEZIER', 'ELLIPSE'} and \
+                event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', 'NUMPAD_PLUS', \
                 'NUMPAD_MINUS','PLUS', 'MINUS'} and len(self.curvePts) > 1):
                 if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
                     and event.value == 'PRESS'):
@@ -5367,16 +5466,18 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         return clen
 
     def updateSubdivCos(self, clen = None):
-        if(self.interpPts != []):
+        if(self.drawType in {'POLYGON', 'STAR'}):
+            self.subdivCos = [p[0] for p in self.curvePts]
+        elif(self.interpPts != []):
             if(clen == None): clen = sum(self.getCurveSegLens())
             cnt = round(self.subdivPerUnit * clen)
             if(cnt > 0):
                 self.subdivCos = getInterpolatedVertsCo(self.interpPts, cnt)#[1:-1]
                 return
-        self.subdivCos = []
+            self.subdivCos = []
 
     def updateInterpPts(self, slens):
-        curvePts = self.curvePts[:] if(self.isDrawShape) else self.curvePts[:-1]
+        curvePts = self.curvePts[:] if(self.drawType != 'BEZIER') else self.curvePts[:-1]
         self.interpPts = getInterpBezierPts(curvePts, self.initSubdivPerUnit, slens)
 
         return self.interpPts
@@ -5467,7 +5568,7 @@ def getBezierDataForSeg(obj, splineIdx, segIdx):
 
 def getInterpSegPts(mw, spline, ptIdx, res, maxRes):
     bpts = spline.bezier_points
-    
+
     if(ptIdx < (len(bpts) - 1) ): ptRange = [ptIdx, ptIdx + 1]
     elif(ptIdx == (len(bpts) - 1)  and spline.use_cyclic_u): ptRange = [-1, 0]
     else: return []
@@ -5617,7 +5718,7 @@ class NestedListSearch:
                 self.kd.insert(pt, idx)
                 idx += 1
         self.kd.balance()
-        
+
     def findInLists(self, coFind, searchRange):
         if(searchRange == None):
             foundVals = [self.kd.find(coFind)]
@@ -5704,7 +5805,7 @@ class SelectCurveInfo:
         self.addSels(ptIdx, set([sel]), toggle)
 
     def addSels(self, ptIdx, sels, toggle = False):
-        # TODO: Check this condition at other places 
+        # TODO: Check this condition at other places
         if( -1 in sels and self.getAdjIdx(ptIdx) == None): sels.remove(-1)
         if(len(sels) == 0): return
 
@@ -6553,7 +6654,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 if(opt[0] == 'miSelSegs'): c.addSel(ptIdx, -1)
                 if(opt[0] == 'miSelBezPts'): c.addSel(ptIdx, 1)
                 if(opt[0] == 'miSelHdls' and not h): c.addSels(ptIdx, {0, 2})
-                if(opt[0] == 'miSelAll'): 
+                if(opt[0] == 'miSelAll'):
                     c.addSels(ptIdx, {-1, 1}.union({0, 2} if not h else set()))
 
     def mnDeselect(self, opt):
@@ -6563,7 +6664,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 if(opt[0] == 'miDeselSegs'): c.removeSel(ptIdx, -1)
                 if(opt[0] == 'miDeselBezPts'): c.removeSel(ptIdx, 1)
                 if(opt[0] == 'miDeselHdls' and not h): c.removeSels(ptIdx, {0, 2})
-                if(opt[0] == 'miDeselInvert'): 
+                if(opt[0] == 'miDeselInvert'):
                     c.addSels(ptIdx, {-1, 1}.union({0, 2} if not h else set()), \
                         toggle = True)
 
@@ -6871,7 +6972,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         if(snapProc):
             self.refreshDisplaySelCurves(refreshPos = True)
             return {'RUNNING_MODAL'}
-        else: 
+        else:
             return retVal
 
 ###################### Global Params ######################
@@ -6973,21 +7074,29 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
 
     drawObjType: EnumProperty(name = "Draw Shape", \
         items = (('BEZIER', 'Bezier Curve', 'Draw Bezier Curve'),
-            ('ELLIPSE', 'Ellipse / Circle', 'Draw Ellipse or Circle')),
+            ('ELLIPSE', 'Ellipse / Circle', 'Draw Ellipse or Circle'),
+            ('POLYGON', 'Polygon', 'Draw polygon'),
+            ('STAR', 'Star', 'Draw Star')),
         description = 'Type of shape to draw', default = 'BEZIER',
         update = ModalDrawBezierOp.updateDrawType)
 
     drawObjMode: EnumProperty(name = "Draw Shape Mode", \
         items = (('BBOX', 'Bounding Box', 'Draw within bounding box'),
             ('CENTER', 'Center', 'Draw from center')),
-        description = 'Drawing mode', default = 'BBOX',
+        description = 'Drawing mode', default = 'CENTER',
         update = ModalDrawBezierOp.updateDrawType)
 
-    drawArcAngle1: FloatProperty(name = "Arc Start Angle", \
+    drawStartAngle: FloatProperty(name = "Arc Start Angle", \
         description = 'Start angle in degrees', default = 90, max = 360, min = -360)
 
-    drawArcAngle2: FloatProperty(name = "Arc Sweep", \
+    drawSides: IntProperty(name = "Polygon / Star Sides", description = 'Sides of polygon', \
+        default = 4, max = 100, min = 3, update = ModalDrawBezierOp.updateDrawSides)
+
+    drawAngleSweep: FloatProperty(name = "Arc Sweep", \
         description = 'Arc sweep in degrees', default = 360, max = 360, min = -360)
+
+    drawStarOffset: FloatProperty(name = "Offset", \
+        description = 'Offset of star sides', default = .3)
 
     snapOrient: EnumProperty(name = 'Orientation',#"Align contrained axes and snap angle to",
         items = (('GLOBAL', 'Global Axes', "Orient to world space"), \
@@ -7089,12 +7198,16 @@ def drawSettingsFT(self, context):
         (context.mode == 'PAINT_GPENCIL' and \
             toolGP.idname == 'flexi_bezier.grease_draw_tool')):
         self.layout.prop(params, "drawObjType", text = '')
-        if(bpy.context.window_manager.bezierToolkitParams.drawObjType != 'BEZIER'):
+        if(params.drawObjType != 'BEZIER'):
             self.layout.prop(params, "drawObjMode", text = '')
-        if(bpy.context.window_manager.bezierToolkitParams.drawObjType == 'ELLIPSE'):
-            self.layout.prop(params, "drawArcAngle1", text = '')
-            self.layout.prop(params, "drawArcAngle2", text = '')
-    
+            if(params.drawObjType == 'ELLIPSE'):
+                self.layout.prop(params, "drawStartAngle", text = '')
+            if(params.drawObjType in {'POLYGON', 'STAR'}):
+                self.layout.prop(params, "drawSides", text = '')
+            if(params.drawObjType == 'STAR'):
+                self.layout.prop(params, "drawStarOffset", text = '')
+            self.layout.prop(params, "drawAngleSweep", text = '')
+
     self.layout.prop(params, "snapOrient", text = '')
     self.layout.prop(params, "snapOrigin", text = '')
     self.layout.prop(params, "constrAxes", text = '')
