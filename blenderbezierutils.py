@@ -7277,9 +7277,6 @@ def unregisterFlexiBezierTools():
     index = tools.index(toolFlexiDraw) - 1 #None
     tools.pop(index)
     tools.remove(toolFlexiDraw)
-
-    index = tools.index(toolFlexiEdit) - 1 #None
-    tools.pop(index)
     tools.remove(toolFlexiEdit)
     del tools
 
