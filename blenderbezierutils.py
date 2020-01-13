@@ -664,7 +664,7 @@ def getSelFaceLoc(region, rv3d, xy, maxFaceCnt):
     aos = [bpy.context.object] if bpy.context.object != None else []
     objs = bpy.context.selected_objects + aos
     for obj in objs:
-        if(obj.type == 'MESH'):
+        if(obj.type == 'MESH' and len(obj.modifiers) == 0):
             if(not isPtIn2dBBox(obj, region, rv3d, xy)): continue
             loc, normal, faceIdx = getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt)
             if(faceIdx >= 0):
