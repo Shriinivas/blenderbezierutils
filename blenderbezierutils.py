@@ -21,12 +21,11 @@ from bpy_extras.view3d_utils import location_3d_to_region_2d
 from gpu_extras.batch import batch_for_shader
 import time
 from bpy.app.handlers import persistent
-from gpu_extras.presets import draw_circle_2d
 
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 83),
+    "version": (0, 9, 85),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -139,24 +138,29 @@ def getShapeKeyInfo(obj):
     if(obj.data.shape_keys != None):
         keyblocks = obj.data.shape_keys.key_blocks
         for key in keyblocks:
-            keyData.append([[d.handle_left, d.co, d.handle_right] for d in key.data])
+            keyData.append([[d.handle_left.copy(), d.co.copy(), d.handle_right.copy()] \
+                for d in key.data])
             keyNames.append(key.name)
 
     return keyNames, keyData
 
-def updateShapeKeyData(obj, keyData, keyNames, startIdx, cnt):
-    if(obj.data.shape_keys == None):
+def updateShapeKeyData(obj, keyData, keyNames, startIdx, cnt = None, add = False):
+    if(obj.data.shape_keys == None and not add):
         return
 
-    removeShapeKeys(obj)
+    currIdx = obj.active_shape_key_index
+    if(not add): removeShapeKeys(obj)
+    if(cnt == None): cnt = len(keyData[0])
 
     for i, name in enumerate(keyNames):
         key = obj.shape_key_add(name = name)
         for j in range(0, cnt):
             keyIdx = j + startIdx
-            key.data[j].handle_left = keyData[i][keyIdx][0]
-            key.data[j].co = keyData[i][keyIdx][1]
-            key.data[j].handle_right = keyData[i][keyIdx][2]
+            key.data[j].handle_left = keyData[i][keyIdx][0].copy()
+            key.data[j].co = keyData[i][keyIdx][1].copy()
+            key.data[j].handle_right = keyData[i][keyIdx][2].copy()
+    
+    obj.active_shape_key_index = currIdx
 
 #TODO: Fix this hack if possible
 def copyObjAttr(src, dest, invDestMW = Matrix(), mw = Matrix()):
@@ -1951,7 +1955,8 @@ class BezierUtilsPanel(Panel):
                 if(colorVal != None):
                     for i, spline in enumerate(o.data.splines):
                         for j in range(0, len(spline.bezier_points)):
-                            segPts = getBezierDataForSeg(o, i, j)
+                            segPts = getBezierDataForSeg(o, i, j, withShapeKey = True, \
+                                shapeKeyIdx = None, fromMix = True)
                             if(segPts == None):
                                 continue
                             pts = getPtsAlongBezier2D(segPts, getAllAreaRegions(), \
@@ -3042,16 +3047,18 @@ class FTMenu:
             'VIEW3D_MT_FlexiEditHdlMenu', 'Set Handle Type', 'mnSetHdlType'))
 
     editMenus.append(FTMenuData(FTHotKeys.hkMnSelect, \
-        [['miSelSegs', 'Segments', 'GP_SELECT_STROKES'], \
+        [['miSelSegs', 'Segments', 'GP_SELECT_BETWEEN_STROKES'], \
          ['miSelBezPts', 'Bezier Points', 'GP_SELECT_POINTS'], \
-         ['miSelHdls', 'Handles', 'GP_SELECT_BETWEEN_STROKES'], \
+         ['miSelHdls', 'Handles', 'CURVE_BEZCURVE'], \
+         ['miSelObj', 'Curve Object', 'GP_SELECT_STROKES'], \
          ['miSelAll', 'Everything', 'SELECT_EXTEND']], \
             'VIEW3D_MT_FlexiEditSelMenu', 'Select', 'mnSelect'))
 
     editMenus.append(FTMenuData(FTHotKeys.hkMnDeselect, \
-        [['miDeselSegs', 'Segments', 'GP_SELECT_STROKES'], \
+        [['miDeselSegs', 'Segments', 'GP_SELECT_BETWEEN_STROKES'], \
          ['miDeselBezPts', 'Bezier Points', 'GP_SELECT_POINTS'], \
-         ['miDeselHdls', 'Handles', 'GP_SELECT_BETWEEN_STROKES'], \
+         ['miDeselHdls', 'Handles', 'CURVE_BEZCURVE'], \
+         ['miDeselObj', 'Curve Object', 'GP_SELECT_STROKES'], \
          ['miDeselInvert', 'Invert Selection', 'SELECT_SUBTRACT']], \
             'VIEW3D_MT_FlexiEditDeselMenu', 'Deselect', 'mnDeselect'))
 
@@ -5536,17 +5543,50 @@ class EditSegDisplayInfo(SegDisplayInfo):
         super(EditSegDisplayInfo, self).__init__(segPts, segColor)
         self.subdivCos = subdivCos
 
-def getWSData(obj):
+# fromMix True: points after shape key value / eval_time applied
+def getWSData(obj, withShapeKey = True, shapeKeyIdx = None, fromMix = True, \
+    updateDeps = False):
     # Less readable but more convenient than class
     # Format: [handle_left, co, handle_right, handle_left_type, handle_right_type]
     worldSpaceData = []
     mw = obj.matrix_world
+
+    keydata = None
+    dataIdx = 0
+    shapeKey = obj.active_shape_key
+    tmpsk = None
+    if(withShapeKey and shapeKey != None):
+        if(shapeKeyIdx == None): 
+            shapeKeyIdx = obj.active_shape_key_index
+        if(fromMix):
+            if(obj.data.shape_keys.use_relative):
+                val = obj.data.shape_keys.eval_time
+            else:
+                val = obj.data.shape_keys.key_blocks[obj.active_shape_key_index]
+
+            if(floatCmpWithMargin(val, 0)):
+                keyBlock = obj.data.shape_keys.key_blocks[0]
+            else:
+                tmpsk = obj.shape_key_add(name = 'tmp', from_mix = True)
+                keyBlock = obj.data.shape_keys.key_blocks[tmpsk.name]
+        else: 
+            keyBlock = obj.data.shape_keys.key_blocks[shapeKeyIdx]
+        keydata = keyBlock.data
+
     for spline in obj.data.splines:
         pts = []
         for pt in spline.bezier_points:
-            pts.append([mw @ pt.handle_left, mw @ pt.co, mw @ pt.handle_right, \
-                pt.handle_left_type, pt.handle_right_type])
+            lt, rt = pt.handle_left_type, pt.handle_right_type
+            if(keydata != None):
+                pt = keydata[dataIdx]
+                dataIdx += 1
+
+            pts.append([mw @ pt.handle_left, mw @ pt.co, mw @ pt.handle_right, lt, rt])
         worldSpaceData.append(pts)
+    if(tmpsk != None): 
+        obj.shape_key_remove(tmpsk)
+        obj.active_shape_key_index = shapeKeyIdx
+        if(updateDeps): bpy.context.evaluated_depsgraph_get().update()
     return worldSpaceData
 
 def getAdjIdx(obj, splineIdx, startIdx, offset = 1):
@@ -5557,8 +5597,9 @@ def getAdjIdx(obj, splineIdx, startIdx, offset = 1):
             return None
     return (ptCnt + startIdx + offset) % ptCnt # add ptCnt for negative offset
 
-def getBezierDataForSeg(obj, splineIdx, segIdx):
-    wsData = getWSData(obj)
+def getBezierDataForSeg(obj, splineIdx, segIdx, withShapeKey = True, shapeKeyIdx = None, \
+    fromMix = True, updateDeps = False):
+    wsData = getWSData(obj, withShapeKey, shapeKeyIdx, fromMix, updateDeps)
     pt0 = wsData[splineIdx][segIdx]
     segEndIdx = getAdjIdx(obj, splineIdx, segIdx)
     if(segEndIdx == None):
@@ -5566,15 +5607,13 @@ def getBezierDataForSeg(obj, splineIdx, segIdx):
     pt1 = wsData[splineIdx][segEndIdx]
     return [pt0, pt1]
 
-def getInterpSegPts(mw, spline, ptIdx, res, maxRes):
-    bpts = spline.bezier_points
-
-    if(ptIdx < (len(bpts) - 1) ): ptRange = [ptIdx, ptIdx + 1]
-    elif(ptIdx == (len(bpts) - 1)  and spline.use_cyclic_u): ptRange = [-1, 0]
+def getInterpSegPts(wsData, splineIdx, ptIdx, cyclic, res, maxRes):
+    splinePts = wsData[splineIdx]
+    if(ptIdx < (len(splinePts) - 1) ): ptRange = [ptIdx, ptIdx + 1]
+    elif(ptIdx == (len(splinePts) - 1)  and cyclic): ptRange = [-1, 0]
     else: return []
 
-    segPts = [[mw @ bpts[x].handle_left, mw @ bpts[x].co, mw @ bpts[x].handle_right] \
-        for x in ptRange]
+    segPts = [[splinePts[x][0], splinePts[x][1], splinePts[x][2]] for x in ptRange]
 
     areaRegionInfo = getAllAreaRegions() # TODO: To be passed from caller
 
@@ -5590,54 +5629,84 @@ def getClosestPt2dWithinSeg(region, rv3d, coFind, selObj, selSplineIdx, selSegId
         withBezPts, withObjs = False, maxSelObjRes = MAX_SEL_CURVE_RES)
 
 def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, \
-    withBezPts = True, withObjs = True, maxSelObjRes = MAX_NONSEL_CURVE_RES):
+    withBezPts = True, withObjs = True, maxSelObjRes = MAX_NONSEL_CURVE_RES, \
+        withShapeKey = True):
 
     objLocMap = {}
 
     objLocList = [] # For mapping after search returns
     objInterpLocs = []
     objInterpCounts = []
+    objBezPtCounts = []
 
     objSplineEndPts = []
 
     for obj in objs:
-        mw = obj.matrix_world
-        if(not isPtIn2dBBox(obj, region, rv3d, coFind, FTProps.snapDist)):
+        #TODO: Check of shape key bounding box
+        if(obj.active_shape_key == None and \
+            not isPtIn2dBBox(obj, region, rv3d, coFind, FTProps.snapDist)):
             continue
+
+        wsDataSK = None
+        # Curve data with shape key value applied (if shape key exists)
+        wsData = getWSData(obj, fromMix = True, updateDeps = True)
+        if(withShapeKey and obj.active_shape_key != None):
+            # active shape key data with value = 1
+            wsDataSK = getWSData(obj, fromMix = False)
 
         for i, spline in enumerate(obj.data.splines):
             for j, pt in enumerate(spline.bezier_points):
                 objLocList.append([obj, i, j])
                 if(withObjs):
                     interpLocs = \
-                        getInterpSegPts(mw, spline, j, res = DEF_CURVE_RES_2D, \
-                            maxRes = MAX_NONSEL_CURVE_RES)[1:-1]
+                        getInterpSegPts(wsData, i, j, spline.use_cyclic_u, \
+                            res = DEF_CURVE_RES_2D, maxRes = MAX_NONSEL_CURVE_RES)[1:-1]
+                    if(wsDataSK != None):
+                        interpLocs += \
+                            getInterpSegPts(wsDataSK, i, j, spline.use_cyclic_u, \
+                                res = DEF_CURVE_RES_2D, \
+                                    maxRes = MAX_NONSEL_CURVE_RES)[1:-1]
 
                     objInterpLocs += interpLocs
                     objInterpCounts.append(len(interpLocs))
 
                 if(withBezPts):
-                    objSplineEndPts.append(mw @ pt.co)
+                    cnt = 1
+                    objSplineEndPts.append(wsData[i][j][1])#mw @ pt.co)
+                    if(wsDataSK != None):
+                        objSplineEndPts.append(wsDataSK[i][j][1])#mw @ pt.co)
+                        cnt += 1
+                    objBezPtCounts.append(cnt)
 
     selObjLocList = [] # For mapping after search returns
     selObjHdlList = [] # Better to create a new one, even if some redundancy
 
     segInterpLocs = []
     selObjInterpCounts = []
+    selObjHdlCounts = []
 
     hdls = []
 
     for selObj in selObjInfos.keys():
-        mw = selObj.matrix_world
+        wsDataSK = None
+        # Curve data with shape key value applied (if shape key exists)
+        wsData = getWSData(selObj, fromMix = True, updateDeps = True)
+        if(withShapeKey and selObj.active_shape_key != None): 
+            # active shape key data with value = 1
+            wsDataSK = getWSData(selObj, fromMix = False)
+
         info = selObjInfos[selObj]
         for splineIdx in info.keys():
-            spline = selObj.data.splines[splineIdx]
+            cyclic = selObj.data.splines[splineIdx].use_cyclic_u
             segIdxs = info[splineIdx][0]
             for segIdx in segIdxs:
                 selObjLocList.append([selObj, splineIdx, segIdx])
-                interpLocs = \
-                    getInterpSegPts(mw, spline, segIdx, res = DEF_CURVE_RES_2D * 5, \
-                        maxRes = maxSelObjRes)[1:-1]
+                interpLocs = getInterpSegPts(wsData, splineIdx, segIdx, cyclic, \
+                        res = DEF_CURVE_RES_2D * 5, maxRes = maxSelObjRes)[1:-1]
+                if(wsDataSK != None):
+                    interpLocs += \
+                        getInterpSegPts(wsDataSK, splineIdx, segIdx, cyclic, \
+                        res = DEF_CURVE_RES_2D * 5, maxRes = maxSelObjRes)[1:-1]
                 segInterpLocs += interpLocs
                 selObjInterpCounts.append(len(interpLocs))
 
@@ -5645,9 +5714,15 @@ def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, 
                 ptIdxs = info[splineIdx][1]
                 for ptIdx in ptIdxs:
                     selObjHdlList.append([selObj, splineIdx, ptIdx])
-                    wsData = getWSData(selObj)
-                    pt = wsData[splineIdx][ptIdx]
-                    hdls += [pt[0], pt[2]]
+                    hdlCnt = 2
+                    if(wsDataSK != None):
+                        pt = wsDataSK[splineIdx][ptIdx]
+                        hdls += [pt[0], pt[2]]
+                    else:
+                        pt = wsData[splineIdx][ptIdx]
+                        hdls += [pt[0], pt[2]]
+                        
+                    selObjHdlCounts.append(hdlCnt)
 
     searchPtsList = [[], [], [], [], [], []]
     retStr = [[], [], [], [], [], []]
@@ -5679,11 +5754,15 @@ def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, 
     retId = retStr[sr[0]]
 
     if(sr[0] == 0): # SelHandles
-        obj, splineIdx, ptIdx = selObjHdlList[int(idx / 2)]
+        listIdx = NestedListSearch.findListIdx(selObjHdlCounts, idx)
+        obj, splineIdx, ptIdx = selObjHdlList[listIdx]
+        # ~ obj, splineIdx, ptIdx = selObjHdlList[int(idx / 2)]
         return  retId, obj, splineIdx, ptIdx, 2 * (idx % 2)
 
     elif(sr[0]  == 1): # CurveBezPt
-        obj, splineIdx, ptIdx = objLocList[idx]
+        listIdx = NestedListSearch.findListIdx(objBezPtCounts, idx)
+        obj, splineIdx, ptIdx = objLocList[listIdx]
+        # ~ obj, splineIdx, ptIdx = objLocList[int(idx / ptIdxCnt)]
         return retId, obj, splineIdx, ptIdx, 1 # otherInfo = segIdx
 
     elif(sr[0] == 2): # SegLoc
@@ -5739,8 +5818,7 @@ class SelectCurveInfo:
     def __init__(self, obj, splineIdx):
         self.obj = obj
         self.splineIdx = splineIdx
-        wsData = getWSData(obj)
-        self.wsData = wsData[splineIdx] # Store worldspace coords
+        self.updateWSData()
 
         # User Selection (mouse click); format ptIdx: set(sel)...
         # where sel: -1->seg, 0->left hdl, 1->bezier pt, 2->right hdl
@@ -5761,12 +5839,37 @@ class SelectCurveInfo:
         # hdlIdx - {-1, 0, 1, 2} similar to sel in ptSels
         self.clickInfo = {}
 
+    def updateWSData(self):
+        self.hasShapeKey = (self.obj.active_shape_key != None)
+        self.shapeKeyIdx = self.obj.active_shape_key_index if self.hasShapeKey else -1
+        
+        # for shape keys
+        self.keyStartIdx = sum(len(self.obj.data.splines[i].bezier_points) \
+            for i in range(self.splineIdx))        
+
+        # WS Data of the shape key (if exists)
+        self.wsData = getWSData(self.obj, fromMix = False)[self.splineIdx]
+        
     # For convenience
     def getAdjIdx(self, ptIdx, offset = 1):
         return getAdjIdx(self.obj, self.splineIdx, ptIdx, offset)
 
     def getBezierPt(self, ptIdx):
         return self.obj.data.splines[self.splineIdx].bezier_points[ptIdx]
+
+    def getShapeKeyData(self, ptIdx, keyIdx = None):
+        if(not self.hasShapeKey): return None
+        if(keyIdx == None): keyIdx = self.obj.active_shape_key_index
+        keydata = self.obj.data.shape_keys.key_blocks[keyIdx].data
+        keyIdx = self.keyStartIdx + ptIdx
+        return keydata[keyIdx] if(keyIdx < len(keydata)) else None
+
+    def getAllShapeKeysData(self, ptIdx):
+        if(not self.hasShapeKey): return None
+        pts = []
+        for keyIdx in range(len(self.obj.data.shape_keys.key_blocks)):
+            pts.append(self.getShapeKeyData(ptIdx, keyIdx))
+        return pts
 
     def getSegPtsInfo(self, ptIdx):
         nextIdx = self.getAdjIdx(ptIdx)
@@ -5857,6 +5960,7 @@ class SelectCurveInfo:
         return None
 
     def subdivSeg(self):
+        if(self.hasShapeKey): return False
         if(self.subdivCnt > 1):
             invMw = self.obj.matrix_world.inverted()
             ts = []
@@ -5870,13 +5974,18 @@ class SelectCurveInfo:
                         [invMw @ v for v in vertCos], 'FREE')
                     addCnt += len(vertCos)
             self.subdivCnt = 0
-
+        return addCnt > 0
 
     def subdivMode(self, rv3d):
-        self.subdivCnt = 2
+        if(self.hasShapeKey): return False
+        changed = False
         for ptIdx in self.ptSels.keys():
-            self.interpPts[ptIdx] = getPtsAlongBezier3D(self.getSegPts(ptIdx), rv3d,
-                curveRes = 1000, minRes = 1000)
+            if(-1 in self.ptSels[ptIdx]):                
+                self.interpPts[ptIdx] = getPtsAlongBezier3D(self.getSegPts(ptIdx), rv3d,
+                    curveRes = 1000, minRes = 1000)
+                changed = True
+        if(changed): self.subdivCnt = 2
+        return changed
 
     def subdivDecr(self):
         if(self.subdivCnt > 2):
@@ -5889,41 +5998,15 @@ class SelectCurveInfo:
     def getLastSegIdx(self):
         return getLastSegIdx(self.obj, self.splineIdx)
 
-    def insertNode(self, handleType, select = True):
-        invMw = self.obj.matrix_world.inverted()
-        insertBezierPts(self.obj, self.splineIdx, \
-            self.clickInfo['ptIdx'], [invMw @ self.clickInfo['loc']], handleType)
-
-    def alignHandle(self):
-        invMw = self.obj.matrix_world.inverted()
-        for ptIdx in self.ptSels:
-            sels = self.ptSels[ptIdx]
-            for hdlIdx in sels:
-                if (hdlIdx == -1): continue
-                oppIdx = 2 - hdlIdx
-                pt = self.wsData[ptIdx]
-                diffV = (invMw @ pt[1] - invMw @ pt[oppIdx])
-
-                if(diffV.length):
-                    co = diffV * \
-                        ((invMw @ pt[1] - invMw @ pt[hdlIdx])).length / diffV.length
-
-                    bpt = self.getBezierPt(ptIdx)
-                    bpt.handle_right_type = 'FREE'
-                    bpt.handle_left_type = 'FREE'
-                    if(hdlIdx == 0):
-                        bpt.handle_left = bpt.co + co
-                    else:
-                        bpt.handle_right = bpt.co + co
-
     # Remove all selected segments
     # Returns map with spline index and seg index change after every seg removal
     def removeSegs(self):
+        changedSelMap = {}
+        if(self.hasShapeKey): return changedSelMap
         segSels = [p for p in self.ptSels if -1 in self.ptSels[p]]
         cumulSegIdxIncr = 0
         changedSplineIdx = self.splineIdx
         segIdxIncr = 0
-        changedSelMap = {}
 
         for segIdx in sorted(segSels):
             changedSegIdx = segIdx + cumulSegIdxIncr
@@ -5934,8 +6017,88 @@ class SelectCurveInfo:
             changedSelMap[segIdx] = [splineIdxIncr, segIdxIncr]
         return changedSelMap
 
-    # TODO: Separate functions for node and handles
+    def straightenHandle(self, ptIdx, hdlIdx, allShapekeys = False):
+        bpt = self.getBezierPt(ptIdx)
+        prevIdx = self.getAdjIdx(ptIdx, -1)
+        nextIdx = self.getAdjIdx(ptIdx)
+        prevPts = None
+        nextPts = None
+        if(self.hasShapeKey): 
+            if(allShapekeys):
+                pts = self.getAllShapeKeysData(ptIdx)
+                if(prevIdx): prevPts = self.getAllShapeKeysData(prevIdx)
+                if(nextIdx): nextPts = self.getAllShapeKeysData(nextIdx)
+            else:
+                pts = [self.getShapeKeyData(ptIdx)]
+                if(prevIdx): prevPts = [self.getShapeKeyData(prevIdx)]
+                if(nextIdx): nextPts = [self.getShapeKeyData(nextIdx)]
+                
+        else: 
+            pts = [bpt]
+            if(prevIdx): prevPts = self.getBezierPt(prevIdx)
+            if(nextIdx): nextPts = self.getBezierPt(nextIdx)
+
+        if(hdlIdx == 0):
+            if(bpt.handle_left_type != 'VECTOR'): bpt.handle_left_type = 'FREE'
+            for i in range(len(pts)):
+                pt = pts[i]
+                if(prevPts != None): diffV = (pt.co - prevPts[i].co)
+                else: diffV = (nextPts[i].co - pt.co)
+                pt.handle_left = pt.co - diffV / 3
+        elif(hdlIdx == 2):
+            if(bpt.handle_right_type != 'VECTOR'):  bpt.handle_right_type = 'FREE'
+            for i in range(len(pts)):
+                pt = pts[i]
+                if(nextPts != None): diffV = (nextPts[i].co - pt.co)
+                else: diffV = (pt.co - prevPts[i].co)
+                pt.handle_right = pt.co + diffV / 3
+
+    def straightenSelHandles(self):
+        changed = False
+        for ptIdx in self.ptSels:
+            for hdlIdx in self.ptSels[ptIdx]:
+                self.straightenHandle(ptIdx, hdlIdx)
+                changed = True
+        return changed
+
+    def alignHandle(self, ptIdx, hdlIdx, allShapekeys = False):
+        if (hdlIdx == -1): return False
+        oppIdx = 2 - hdlIdx
+        if(self.hasShapeKey): 
+            if(allShapekeys): pts = self.getAllShapeKeysData(ptIdx)
+            else: pts = [self.getShapeKeyData(ptIdx)]
+        else: pts = [self.getBezierPt(ptIdx)]
+        bpt = self.getBezierPt(ptIdx)
+        if(hdlIdx == 0 and bpt.handle_left_type != 'ALIGNED'): 
+            bpt.handle_left_type = 'FREE'
+        if(hdlIdx == 2 and bpt.handle_right_type != 'ALIGNED'): 
+            bpt.handle_right_type = 'FREE'
+
+        for pt in pts:
+            if(hdlIdx == 0): pt.handle_left = pt.co - (pt.handle_right - pt.co)
+            else: pt.handle_right = pt.co + (pt.co - pt.handle_left)
+        return True
+
+    def alignSelHandles(self):
+        changed = False
+        invMw = self.obj.matrix_world.inverted()
+        for ptIdx in self.ptSels:
+            sels = self.ptSels[ptIdx]
+            for hdlIdx in sels:
+                changed = changed or self.alignHandle(ptIdx, hdlIdx)
+        return changed
+
+    def insertNode(self, handleType, select = True):
+        if(self.hasShapeKey): return False
+        invMw = obj.matrix_world.inverted()
+        insertBezierPts(self.obj, self.splineIdx, \
+            self.clickInfo['ptIdx'], [invMw @ self.clickInfo['loc']], handleType)
+        return True
+
     def removeNode(self):
+        if(self.hasShapeKey): return False
+        changed = False
+
         toRemove = set() # Bezier points to remove from object
         toRemoveSel = set() # Selection entry to remove from ptSels
 
@@ -5946,43 +6109,19 @@ class SelectCurveInfo:
 
         if(len(nodeSels) > 0):
             removeBezierPts(self.obj, self.splineIdx, nodeSels)
+            changed = True
 
-        selIdxs = sorted(self.ptSels.keys())
-        cnt = 0
-        for ptIdx in nodeSels:
-            cIdxs = [i for i in selIdxs if i >= (ptIdx - cnt)]
-            for idx in cIdxs:
-                sels = self.ptSels.pop(idx - cnt)
-                self.ptSels[idx - cnt - 1] = sels
-            cnt += 1
+        if(changed):
+            selIdxs = sorted(self.ptSels.keys())
+            cnt = 0
+            for ptIdx in nodeSels:
+                cIdxs = [i for i in selIdxs if i >= (ptIdx - cnt)]
+                for idx in cIdxs:
+                    sels = self.ptSels.pop(idx - cnt)
+                    self.ptSels[idx - cnt - 1] = sels
+                cnt += 1
 
-        for ptIdx in self.ptSels:
-            for hdlIdx in self.ptSels[ptIdx]:
-                pt = self.getBezierPt(ptIdx)
-                pt.handle_right_type = 'FREE'
-                pt.handle_left_type = 'FREE'
-                if(hdlIdx == 0):
-                    prevIdx = self.getAdjIdx(ptIdx, -1)
-                    if(prevIdx != None):
-                        ppt = self.getBezierPt(prevIdx)
-                        diffV = (pt.co - ppt.co)
-                    else:
-                        diffV = (pt.handle_right - pt.co)
-                    if(diffV.length == 0):
-                        pt.handle_left = pt.co
-                    else:
-                        pt.handle_left = pt.co - .2 * diffV
-                else:
-                    nextIdx = self.getAdjIdx(ptIdx)
-                    if(nextIdx != None):
-                        npt = self.getBezierPt(nextIdx)
-                        diffV = (npt.co - pt.co)
-                    else:
-                        diffV = (pt.co - pt.handle_left)
-                    if(diffV.length == 0):
-                        pt.handle_right = pt.co
-                    else:
-                        pt.handle_right = pt.co + .2 * diffV
+        return changed
 
     def getDisplayInfos(self, hideHdls = False, newPos = None):
 
@@ -6117,7 +6256,7 @@ class EditCurveInfo(SelectCurveInfo):
     # Calculate both handle and adjacent pt handles in case of Vector type
     # TODO: AUTO has a separate logic set to ALIGNED for now
     def syncCtrlPtHdls(self, ptIdx, newLoc):
-        wsData = getWSData(self.obj)
+        wsData = getWSData(self.obj, fromMix = False)
         pt = wsData[self.splineIdx][ptIdx]
         prevIdx = self.getAdjIdx(ptIdx, -1)
         prevPt = None if prevIdx == None else wsData[self.splineIdx][prevIdx]
@@ -6181,7 +6320,7 @@ class EditCurveInfo(SelectCurveInfo):
         inf = self.clickInfo
         ptIdx = inf['ptIdx']
         hdlIdx = inf['hdlIdx']
-        wsData = getWSData(self.obj)
+        wsData = getWSData(self.obj, fromMix = False)
         pt = wsData[self.splineIdx][ptIdx]
 
         if(hdlIdx == -1): # Grab point on curve
@@ -6255,10 +6394,26 @@ class EditCurveInfo(SelectCurveInfo):
             bpt.handle_right_type = 'FREE'
             bpt.handle_left_type = 'FREE'
 
-        for i, bpt in enumerate(bpts):
-            bpt.handle_left = invMw @ pts[i][0]
-            bpt.co = invMw @ pts[i][1]
-            bpt.handle_right = invMw @ pts[i][2]
+        if(self.hasShapeKey):
+            for i, ptIdx in enumerate(ptIdxs):
+                keydata = self.getShapeKeyData(ptIdx)
+                keydata.handle_left = invMw @ pts[i][0]
+                keydata.co = invMw @ pts[i][1]
+                keydata.handle_right = invMw @ pts[i][2]
+                if(pts[i][3] == 'AUTO'): pts[i][3] = 'ALIGNED'
+                if(pts[i][4] == 'AUTO'): pts[i][4] = 'ALIGNED'
+                impIdxs = [ptIdx, self.getAdjIdx(ptIdx, -1), self.getAdjIdx(ptIdx, 1)]
+                for idx in impIdxs:
+                    if(idx == None): continue
+                    if(spline.bezier_points[idx].handle_left_type == 'AUTO'):
+                        spline.bezier_points[idx].handle_left_type = 'ALIGNED'
+                    if(spline.bezier_points[idx].handle_right_type == 'AUTO'):
+                        spline.bezier_points[idx].handle_right_type = 'ALIGNED'
+        else:
+            for i, bpt in enumerate(bpts):
+                bpt.handle_left = invMw @ pts[i][0]
+                bpt.co = invMw @ pts[i][1]
+                bpt.handle_right = invMw @ pts[i][2]
 
         for i, bpt in enumerate(bpts):
             bpt.handle_left_type = pts[i][3]
@@ -6405,7 +6560,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         ci.addSels((lastIdx - 1), set([-1]))
 
                 addObjNames.add(ci.objName)
-                ci.wsData = getWSData(ci.obj)[ci.splineIdx]
+                ci.updateWSData()
             else:
                 ciRemoveList.append(ci)
                 removeObjNames.add(ci.objName)
@@ -6415,7 +6570,6 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 self.selectCurveInfos.remove(c)
 
         self.updateSnapLocs(addObjNames, removeObjNames)
-
         self.refreshDisplaySelCurves()
 
     def subInvoke(self, context, event):
@@ -6521,6 +6675,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
     # Delete selected segments and synchronize remaining selections
     # TODO: Way too complicated, maybe there exists a much simpler way to do this
     def delSelSegs(self):
+        changed = False
         curveInfoList = sorted(self.selectCurveInfos, \
             key = lambda x: (x.objName, x.splineIdx))
 
@@ -6535,6 +6690,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             changedSelMap = c.removeSegs()
 
             if(len(changedSelMap) == 0): continue
+            changed = True
 
             # Shift all the splineIdxs after the changed one by spline incr count
             totalSplineIdxIncr = sum(x[0] for x in changedSelMap.values())
@@ -6644,41 +6800,74 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             except Exception as e:
                 c.resetPtSel()
 
+            return changed
+
     def mnSelect(self, opt):
         h = ModalFlexiEditBezierOp.h
         if(self.htlCurveInfo != None):
             self.selectCurveInfos.add(self.htlCurveInfo)
-            self.htlCurveInfo = None
-        for c in self.selectCurveInfos:
-            for ptIdx in range(len(c.wsData)):
-                if(opt[0] == 'miSelSegs'): c.addSel(ptIdx, -1)
-                if(opt[0] == 'miSelBezPts'): c.addSel(ptIdx, 1)
-                if(opt[0] == 'miSelHdls' and not h): c.addSels(ptIdx, {0, 2})
-                if(opt[0] == 'miSelAll'):
-                    c.addSels(ptIdx, {-1, 1}.union({0, 2} if not h else set()))
+            bpy.context.view_layer.objects.active = self.htlCurveInfo.obj
+        for i, c in enumerate(self.selectCurveInfos):
+            if(opt[0] == 'miSelObj'):
+                c.obj.select_set(True)
+                if(self.htlCurveInfo == None and i == len(self.selectCurveInfos)-1): 
+                    bpy.context.view_layer.objects.active = c.obj
+            else:
+                for ptIdx in range(len(c.wsData)):
+                    if(opt[0] == 'miSelSegs'): c.addSel(ptIdx, -1)
+                    if(opt[0] == 'miSelBezPts'): c.addSel(ptIdx, 1)
+                    if(opt[0] == 'miSelHdls' and not h): c.addSels(ptIdx, {0, 2})
+                    if(opt[0] == 'miSelAll'):
+                        c.addSels(ptIdx, {-1, 1}.union({0, 2} if not h else set()))
+        self.htlCurveInfo = None
 
     def mnDeselect(self, opt):
         h = ModalFlexiEditBezierOp.h
+        if(opt[0] == 'miDeselObj'):
+            if(self.htlCurveInfo != None):
+                self.htlCurveInfo.obj.select_set(False)
+                self.htlCurveInfo = None
         for c in self.selectCurveInfos:
-            for ptIdx in range(len(c.wsData)):
-                if(opt[0] == 'miDeselSegs'): c.removeSel(ptIdx, -1)
-                if(opt[0] == 'miDeselBezPts'): c.removeSel(ptIdx, 1)
-                if(opt[0] == 'miDeselHdls' and not h): c.removeSels(ptIdx, {0, 2})
-                if(opt[0] == 'miDeselInvert'):
-                    c.addSels(ptIdx, {-1, 1}.union({0, 2} if not h else set()), \
-                        toggle = True)
+            if(opt[0] == 'miDeselObj'):
+                c.obj.select_set(False)
+            else:
+                for ptIdx in range(len(c.wsData)):
+                    if(opt[0] == 'miDeselSegs'): c.removeSel(ptIdx, -1)
+                    if(opt[0] == 'miDeselBezPts'): c.removeSel(ptIdx, 1)
+                    if(opt[0] == 'miDeselHdls' and not h): c.removeSels(ptIdx, {0, 2})
+                    if(opt[0] == 'miDeselInvert'):
+                        c.addSels(ptIdx, {-1, 1}.union({0, 2} if not h else set()), \
+                            toggle = True)
 
     def mnSetHdlType(self, opt):
         if(ModalFlexiEditBezierOp.h): return
 
         hdlType = opt[1].upper()
         for c in self.selectCurveInfos:
+            # TODO: Support for Auto handles
+            if(hdlType == 'AUTO' and c.hasShapeKey): continue
             for ptIdx in c.ptSels:
                 sels = c.ptSels[ptIdx]
                 for sel in sels:
                     bpt = c.obj.data.splines[c.splineIdx].bezier_points[ptIdx]
-                    if(sel == 0): bpt.handle_left_type = hdlType
-                    if(sel == 2): bpt.handle_right_type = hdlType
+                    if(sel == 0): 
+                        bpt.handle_left_type = hdlType
+                        # Following manual alignment required for shape keys
+                        if(hdlType == 'ALIGNED'): 
+                            c.alignHandle(ptIdx, 0, allShapekeys = True)
+                        if(hdlType == 'VECTOR'): 
+                            c.straightenHandle(ptIdx, 0, allShapekeys = True)
+                            if(bpt.handle_right_type == 'ALIGNED'): 
+                                c.alignHandle(ptIdx, 2, allShapekeys = True)
+                    if(sel == 2): 
+                        bpt.handle_right_type = hdlType
+                        # Following manual alignment required for shape keys
+                        if(hdlType == 'ALIGNED'): 
+                            c.alignHandle(ptIdx, 2, allShapekeys = True)
+                        if(hdlType == 'VECTOR'): 
+                            c.straightenHandle(ptIdx, 2, allShapekeys = True)
+                            if(bpt.handle_right_type == 'ALIGNED'): 
+                                c.alignHandle(ptIdx, 0, allShapekeys = True)
         bpy.ops.ed.undo_push()
 
     def exclToolRegion(self):
@@ -6765,20 +6954,23 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         if(FTHotKeys.isHotKey(FTHotKeys.hkUniSubdiv, event.type, metakeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
-                    self.subdivMode = True
-                    for c in self.selectCurveInfos: c.subdivMode(rmInfo.rv3d)
-                    self.refreshDisplaySelCurves()
+                    changed = False
+                    for c in self.selectCurveInfos: 
+                        changed = changed or c.subdivMode(rmInfo.rv3d)
+                    self.subdivMode = changed
+                    if(changed): self.refreshDisplaySelCurves()
                 return {"RUNNING_MODAL"}
 
         confirmed = False
         if(not snapProc and event.type in {'SPACE', 'RET'}):
             if(self.subdivMode):
                 if(event.value == 'RELEASE'):
+                    changed = False
                     cis = list(self.selectCurveInfos)
                     for c in cis:
-                        c.subdivSeg()
+                        changed = changed or c.subdivSeg()
                         c.resetPtSel()
-                    bpy.ops.ed.undo_push()
+                    if(changed): bpy.ops.ed.undo_push()
                     self.subdivMode = False
                 return {"RUNNING_MODAL"}
             elif(self.editCurveInfo != None):
@@ -6807,20 +6999,25 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         if(FTHotKeys.isHotKey(FTHotKeys.hkDelPtSeg, event.type, metakeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
-                    self.delSelSegs()
-                    for c in self.selectCurveInfos:
+                    changed = self.delSelSegs()
+                    for c in self.selectCurveInfos:                        
                         c.resetHltInfo()
-                        c.removeNode() #selected node
-                    # will be taken care by depsgraph?
-                    self.updateAfterGeomChange()
-                    bpy.ops.ed.undo_push()
+                        changed = changed or c.removeNode()
+                        changed = changed or c.straightenSelHandles()
+
+                    if(changed):
+                        # will be taken care by depsgraph?
+                        self.updateAfterGeomChange()
+                        bpy.ops.ed.undo_push()
                 return {"RUNNING_MODAL"}
 
         if(FTHotKeys.isHotKey(FTHotKeys.hkAlignHdl, event.type, metakeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
-                    for c in self.selectCurveInfos: c.alignHandle() #selected node
-                    bpy.ops.ed.undo_push()
+                    changed = False
+                    for c in self.selectCurveInfos: 
+                        changed = changed or c.alignSelHandles() #selected node
+                    if(changed): bpy.ops.ed.undo_push()
                 return {"RUNNING_MODAL"}
 
         if(not snapProc and not self.capture \
@@ -6900,7 +7097,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         elif(alt): handleType = 'VECTOR'
                         else: handleType = 'FREE'
 
-                        ei.insertNode(handleType)
+                        changed = ei.insertNode(handleType)
                         bpy.ops.ed.undo_push()
                         ModalFlexiEditBezierOp.resetDisplay()
                         self.refreshDisplaySelCurves()
