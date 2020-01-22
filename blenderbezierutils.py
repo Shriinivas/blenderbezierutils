@@ -9,7 +9,7 @@
 # License: GPL (https://github.com/Shriinivas/blenderbezierutils/blob/master/LICENSE)
 #
 
-import bpy, bmesh, bgl, gpu
+import bpy, bmesh, bgl, blf, gpu
 from bpy.props import BoolProperty, IntProperty, EnumProperty, \
 FloatProperty, StringProperty, CollectionProperty, FloatVectorProperty
 from bpy.types import Panel, Operator, WorkSpaceTool, AddonPreferences, Menu
@@ -2447,6 +2447,10 @@ EVT_NOT_CONS = 0
 EVT_CONS = 1
 EVT_META_OR_SNAP = 2
 
+TOOL_TYPE_FLEXI_DRAW = 'Flexi Draw'
+TOOL_TYPE_FLEXI_GREASE = 'Flexi Grease'
+TOOL_TYPE_FLEXI_EDIT = 'Flexi Edit'
+
 class BptDisplayInfo:
     # handleNos: 0: seg1-left, 1: seg1-right
     # tipColors: leftHdl, pt, rightHdl
@@ -2634,13 +2638,17 @@ class FTHotKeys:
             'Deselect elements from existing spline selection'))
 
     # Common
+    hkToggleKeyMap = 'hkToggleKeyMap'
     hkSwitchOut = 'hkSwitchOut'
     # ~ hkTweakPos = 'hkTweakPos'
     hkToggleDrwEd = 'hkToggleDrwEd'
     hkReorient = 'hkReorient'
 
     commonHotkeys = []
-    commonHotkeys.append(FTHotKeyData(hkSwitchOut, 'F1', 'Switch Out', \
+    commonHotkeys.append(FTHotKeyData(hkToggleKeyMap, 'Ctrl+Shift+H', \
+        'Hide / Unhide Key Map', \
+            'Hide / Unhide Keymap Displayed When Flexi Tool Is Active'))
+    commonHotkeys.append(FTHotKeyData(hkSwitchOut, 'F1', 'Exit Flexi Tool', \
             'Switch out of the Flexi Tool mode'))
     # ~ commonHotkeys.append(FTHotKeyData(hkTweakPos, 'P', 'Tweak Position', \
             # ~ 'Tweak position or enter polar coordinates of the draw / edit point'))
@@ -2662,9 +2670,12 @@ class FTHotKeys:
     hkSnapAngleMeta = 'hkSnapAngleMeta'
 
     snapHotkeys = [] # Order important
-    snapHotkeys.append(FTHotKeyData(hkSnapVert, 'F5', 'Keyboard Key', 'Press key'))
-    snapHotkeys.append(FTHotKeyData(hkSnapGrid, 'F6', 'Keyboard Key', 'Press key'))
-    snapHotkeys.append(FTHotKeyData(hkSnapAngle, 'F7', 'Keyboard Key', 'Press key'))
+    snapHotkeys.append(FTHotKeyData(hkSnapVert, 'F5', 'Snap to Vert / Face', \
+        'Key pressed with mouse click for snapping to Vertex or Face'))
+    snapHotkeys.append(FTHotKeyData(hkSnapGrid, 'F6', 'Snap to Grid', \
+        'Key pressed with mouse click for snapping to Grid'))
+    snapHotkeys.append(FTHotKeyData(hkSnapAngle, 'F7', 'Snap to Angle', \
+        'Key pressed with mouse click for snapping to Angle Increment'))
 
     snapHotkeysMeta = [] # Order should be same as snapHotkeys
     # These keys are not event.type (they can have an entry 'KEY')
@@ -2680,11 +2691,11 @@ class FTHotKeys:
 
     # Metakeys not part of the map
     idDataMap = {h.id: h for h in \
-        [k for k in (drawHotkeys + editHotkeys + commonHotkeys + snapHotkeys)]}
+        drawHotkeys + editHotkeys + commonHotkeys + snapHotkeys}
 
     # Imp: Needs to update after every key selection change
     keyDataMap = {h.key: h for h in \
-        [k for k in (drawHotkeys + editHotkeys + commonHotkeys + snapHotkeys)]}
+        drawHotkeys + editHotkeys + commonHotkeys + snapHotkeys}
 
     exclKeys = {'RET', 'SPACE', 'ESC', 'X', 'Y', 'Z', 'P', \
         'ACCENT_GRAVE', 'COMMA', 'PERIOD', 'F2', 'F3'}
@@ -2943,6 +2954,39 @@ class FTHotKeys:
                 "description = '"+ description +"') \n"
         return retVal
 
+    def getHKDispLines(toolType):
+        hkData = FTHotKeys.commonHotkeys[:]
+        for i, hk in enumerate(FTHotKeys.snapHotkeysMeta):
+            if(hk.key == 'KEY'): hkData.append(FTHotKeys.snapHotkeys[i])
+            else: hkData.append(hk)
+        if(toolType in {TOOL_TYPE_FLEXI_DRAW, TOOL_TYPE_FLEXI_GREASE}): 
+            hkData += FTHotKeys.drawHotkeys[:]
+        if(toolType == TOOL_TYPE_FLEXI_EDIT): 
+            hkData += FTHotKeys.editHotkeys[:]
+
+        labels = []
+        config = []
+        keys = []
+        stdKeylabels = []
+        stdKeylabels.append(['Tweak Position', 'P'])
+        stdKeylabels.append(['Lock to YZ Plane', 'Shift+X'])
+        stdKeylabels.append(['Lock to XZ Plane', 'Shift+Y'])
+        stdKeylabels.append(['Lock to XY Plane', 'Shift+Z'])
+        stdKeylabels.append(['Lock to Z-Axis', 'Z'])
+        stdKeylabels.append(['Lock to Y-Axis', 'Y'])
+        stdKeylabels.append(['Lock to X-Axis', 'X'])
+        for k in hkData:
+            labels.append(k.label)
+            config.append(True)
+            keys.append(k.key)
+        for k in stdKeylabels:
+            labels.append(k[0])
+            config.append(False)
+            keys.append(k[1])
+
+        return config, labels, keys
+            
+
 # Flexi Tool Constants
 class FTProps:
     propUpdating = False
@@ -2962,7 +3006,7 @@ class FTProps:
             'colHdlFree', 'colHdlVector', 'colHdlAligned', 'colHdlAuto', 'colSelTip', \
             'colHltTip', 'colBezPt', 'colHdlPtTip', 'colAdjBezTip', 'colEditSubdiv', \
             'colGreaseSubdiv', 'colGreaseBezPt', 'snapDist', 'dispSnapInd', \
-            'dispAxes', 'snapPtSize']
+            'dispAxes', 'snapPtSize', 'showKeyMap']
 
             if(resetPrefs):
                 FTProps.initDefault()
@@ -3021,6 +3065,7 @@ class FTProps:
         FTProps.snapDist = 20
         FTProps.dispSnapInd = False
         FTProps.dispAxes = True
+        FTProps.showKeyMap = False
         FTProps.snapPtSize = 3
 
 class FTMenuData:
@@ -4094,7 +4139,8 @@ def getLineShades(lineCos, baseColor, start, end, mid = True):
 
 class ModalBaseFlexiOp(Operator):
     running = False
-    drawHandlerRef = None
+    drawHdlrRef = None
+    drawTxtHdlrRef = None
     drawFunc = None
     segBatch = None
     tipBatch = None
@@ -4104,15 +4150,69 @@ class ModalBaseFlexiOp(Operator):
 
     pointSize = 4 # For Draw (Marker is of diff size)
 
-    def addDrawHandler(drawHandler):
-        ModalBaseFlexiOp.drawHandlerRef = \
-            bpy.types.SpaceView3D.draw_handler_add(drawHandler, (), "WINDOW", "POST_VIEW")
+    def drawKeyMap(dummy, context):
+        if(ModalBaseFlexiOp.opObj == None or not FTProps.showKeyMap):
+            return
+        toolRegion = [r for r in context.area.regions if r.type == 'TOOLS'][0]
+        toolType = ModalBaseFlexiOp.opObj.getToolType()
+        config, labels, keys = FTHotKeys.getHKDispLines(toolType)
+        font_id = 0
+        blf.size(font_id, 12, 72)
 
-    def removeDrawHandler():
-        if(ModalBaseFlexiOp.drawHandlerRef != None):
-            bpy.types.SpaceView3D.draw_handler_remove(ModalBaseFlexiOp.drawHandlerRef, \
+        xOff1 = 5 + toolRegion.x + toolRegion.width
+        maxLabelWidth = max(blf.dimensions(font_id, l+'XXXXX')[0] for l in labels) # 200
+        xOff2 = xOff1 + maxLabelWidth
+        yOff = 10
+        lineHeight = 1.2 * max(blf.dimensions(font_id, l)[1] for l in labels) # 15
+
+        blf.position(font_id, xOff1, yOff, 0)
+        blf.color(0, 1.0, 0.0, 0.0, 1.0)
+        blf.draw(font_id, '*')
+        dim = blf.dimensions(font_id, '*')
+        blf.position(font_id, xOff1 + dim[0], yOff, 0)
+        blf.color(0, 1.0, 1.0, 1.0, 1.0)
+        blf.draw(font_id, ' Indicates Configurable Hot Keys')
+        yOff += 1.5 * lineHeight
+
+        for i, label in enumerate(labels):
+            blf.color(0, 1.0, 1.0, 1.0, 1.0)
+            blf.position(font_id, xOff1, yOff, 0)
+            blf.draw(font_id, label)
+            if(config[i]):
+                dim = blf.dimensions(font_id, label)
+                blf.color(0, 1.0, 0.0, 0.0, 1.0)
+                blf.position(font_id, xOff1 + dim[0], yOff, 0)
+                blf.draw(font_id, '*')
+            blf.color(0, 0.0, 1.0, 1.0, 1.0)
+            blf.position(font_id, xOff2, yOff, 0)
+            blf.draw(font_id, keys[i])
+            yOff += lineHeight
+
+        maxWidth = maxLabelWidth  + max(blf.dimensions(font_id, l)[0] for l in keys)
+        header = toolType.title() + ' Key Map'
+        headerX = xOff1 + (maxWidth - blf.dimensions(font_id, header)[0]) / 2
+        blf.position(font_id, headerX, yOff + lineHeight * .5, 0)
+        blf.color(0, 1.0, 1.0, 0.0, 1.0)
+        blf.draw(font_id, header)
+
+    def addDrawHandlers(context):
+        hdlr = ModalBaseFlexiOp.opObj.__class__.drawHandler
+        ModalBaseFlexiOp.drawHdlrRef = \
+            bpy.types.SpaceView3D.draw_handler_add(hdlr, (), "WINDOW", "POST_VIEW")
+        args = (None, context)
+        ModalBaseFlexiOp.drawTxtHdlrRef = \
+            bpy.types.SpaceView3D.draw_handler_add(ModalBaseFlexiOp.drawKeyMap, \
+                args, "WINDOW", "POST_PIXEL")
+
+    def removeDrawHandlers():
+        if(ModalBaseFlexiOp.drawHdlrRef != None):
+            bpy.types.SpaceView3D.draw_handler_remove(ModalBaseFlexiOp.drawHdlrRef, \
                 "WINDOW")
-            ModalBaseFlexiOp.drawHandlerRef = None
+            ModalBaseFlexiOp.drawHdlrRef = None
+        if(ModalBaseFlexiOp.drawTxtHdlrRef != None):
+            bpy.types.SpaceView3D.draw_handler_remove(ModalBaseFlexiOp.drawTxtHdlrRef, \
+                "WINDOW")
+            ModalBaseFlexiOp.drawTxtHdlrRef = None
 
     def drawHandlerBase():
         if(ModalBaseFlexiOp.shader != None):
@@ -4176,13 +4276,16 @@ class ModalBaseFlexiOp(Operator):
 
     @persistent
     def loadPreHandler(dummy):
-        ModalBaseFlexiOp.removeDrawHandler()
+        ModalBaseFlexiOp.removeDrawHandlers()
         if(ModalBaseFlexiOp.drawFunc != None):
             bpy.types.VIEW3D_HT_tool_header.draw = ModalBaseFlexiOp.drawFunc
 
     @classmethod
     def poll(cls, context):
         return not ModalBaseFlexiOp.running
+
+    def getToolType(self):
+        raise NotImplementedError('Call to abstract method.')
 
     def preInvoke(self, context, event):
         pass # place holder
@@ -4194,7 +4297,8 @@ class ModalBaseFlexiOp(Operator):
         ModalBaseFlexiOp.opObj = self
         ModalBaseFlexiOp.running = True
         self.preInvoke(context, event)
-        ModalBaseFlexiOp.addDrawHandler(self.__class__.drawHandler)
+        ModalBaseFlexiOp.addDrawHandlers(context)
+        
         ModalBaseFlexiOp.drawFunc = bpy.types.VIEW3D_HT_tool_header.draw
         bpy.types.VIEW3D_HT_tool_header.draw = drawSettingsFT
         context.space_data.show_region_tool_header = True
@@ -4247,6 +4351,16 @@ class ModalBaseFlexiOp(Operator):
         snapProc = self.snapper.procEvent(context, event)
         metakeys = self.snapper.getMetakeys()
 
+        if(FTHotKeys.isHotKey(FTHotKeys.hkToggleKeyMap, event.type, metakeys)):
+            if(event.value == 'RELEASE'):
+                try:
+                    prefs = context.preferences.addons[__name__].preferences
+                    prefs.showKeyMap = not prefs.showKeyMap
+                except Exception as e: 
+                    print(e)
+                    FTProps.showKeyMap = not FTProps.showKeyMap
+            return {'RUNNING_MODAL'}
+
         rmInfo = RegionMouseXYInfo.getRegionMouseXYInfo(event, self.exclToolRegion())
 
         ret = FTMenu.procMenu(self, context, event, rmInfo == None)
@@ -4290,7 +4404,7 @@ class ModalBaseFlexiOp(Operator):
         for a in bpy.context.screen.areas:
             if (a.type == 'VIEW_3D'): a.header_text_set(None)
 
-        ModalBaseFlexiOp.removeDrawHandler()
+        ModalBaseFlexiOp.removeDrawHandlers()
         ModalBaseFlexiOp.running = False
         bpy.types.VIEW3D_HT_tool_header.draw = ModalBaseFlexiOp.drawFunc
         self.snapper = None
@@ -4916,6 +5030,9 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         if(opObj != None and opObj.drawType != 'BEZIER'):
             opObj.drawObj.shapeSegCnt = params.drawSides
 
+    def getToolType(self):
+        return TOOL_TYPE_FLEXI_DRAW
+
     def resetDisplay(self):
         ModalDrawBezierOp.markerBatch = \
             getResetBatch(ModalBaseFlexiOp.shader, "POINTS")
@@ -5345,6 +5462,9 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
                 ModalFlexiDrawGreaseOp.subdivLineBatch.draw(ModalBaseFlexiOp.shader)
 
         ModalDrawBezierOp.drawHandler()
+
+    def getToolType(self):
+        return TOOL_TYPE_FLEXI_GREASE
 
     def resetDisplay(self):
         ModalFlexiDrawGreaseOp.subdivPtBatch = \
@@ -6452,6 +6572,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 for i in range(0, len(ptCos))]})
 
         ModalBaseFlexiOp.refreshDisplayBase(segDispInfos, bptDispInfos, snapper)
+
+    def getToolType(self):
+        return TOOL_TYPE_FLEXI_EDIT
 
     # Refresh display with existing curves (nonstatic)
     def refreshDisplaySelCurves(self, hltSegDispInfos = None, hltBptDispInfos = None, \
@@ -7683,6 +7806,13 @@ class BezierUtilsPreferences(AddonPreferences):
             update = FTProps.updateProps
     )
 
+    showKeyMap: BoolProperty(
+            name="Display Key Map", \
+            description='Display Key Map When Flexi Tool Is Active', \
+            default = False,
+            update = FTProps.updateProps
+    )
+
     colDrawSelSeg: bpy.props.FloatVectorProperty(
         name="Selected Draw / Edit  Segment", subtype="COLOR", size=4, min=0.0, max=1.0,\
         default=(.6, .8, 1, 1), \
@@ -7983,6 +8113,9 @@ class BezierUtilsPreferences(AddonPreferences):
             col = box.column().split()
             col.label(text='Orientation / Origin Axes:')
             col.prop(self, "dispAxes", text = '')
+            col = box.column().split()
+            col.label(text='Display Key Map:')
+            col.prop(self, "showKeyMap", text = '')
 
         ####################### Keymap #######################
 
