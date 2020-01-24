@@ -480,9 +480,12 @@ def updateCurveEndPtMap(endPtMap, addObjNames = None, removeObjNames = None):
 
 #Round to logarithmic scale .1, 0, 10, 100 etc.
 #(47.538, -1) -> 47.5; (47.538, 0) -> 48.0; (47.538, 1) -> 50.0; (47.538, 2) -> 0,
+# TODO: Rework after grid subdiv is enabled (in a version later than 2.8)
 def roundedVect(space3d, vect, rounding, axes):
     rounding += 1
     subdiv = getGridSubdiv(space3d)
+    # TODO: Separate logic for 1
+    if(subdiv == 1): subdiv = 10
     fact = ((subdiv ** rounding) / subdiv) / getUnitScale()
     retVect = vect.copy()
     # ~ Vector([round(vect[i] / fact) * fact for i in axes])
@@ -512,12 +515,16 @@ def get3dLoc(context, event, vec = None):
         vec = region_2d_to_vector_3d(region, rv3d, xy)
     return region_2d_to_location_3d(region, rv3d, xy, vec)
 
+# TODO: Rework after grid subdiv is enabled (in a version later than 2.8)
 def  getViewDistRounding(space3d, rv3d):
     viewDist = rv3d.view_distance * getUnitScale()
-    if(viewDist < 0.5):
-        return int(log(viewDist, getGridSubdiv(space3d))) - 2
-    else:
-        return int(log(viewDist, getGridSubdiv(space3d))) - 1
+    gridDiv = getGridSubdiv(space3d)
+    subFact = 1
+    # TODO: Separate logic for 1 
+    if(gridDiv == 1): gridDiv = 10
+    elif(gridDiv == 2): subFact = 5
+    elif(viewDist < 0.5): subFact = 2
+    return int(log(viewDist, gridDiv)) - subFact
 
 def getCoordFromLoc(region, rv3d, loc):
     coord = location_3d_to_region_2d(region, rv3d, loc)
