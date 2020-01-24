@@ -4159,17 +4159,25 @@ class ModalBaseFlexiOp(Operator):
 
     pointSize = 4 # For Draw (Marker is of diff size)
 
-    def drawKeyMap(dummy, context):
+    def drawKeyMap():
         if(ModalBaseFlexiOp.opObj == None or not FTProps.showKeyMap):
             return
-        toolRegion = [r for r in context.area.regions if r.type == 'TOOLS'][0]
+        regions = [r for area in bpy.context.screen.areas if  area.type == 'VIEW_3D' \
+            for r in area.regions if r.type == 'WINDOW']
+        maxArea = max(r.width * r.height for r in regions)
+        currRegion = [r for r in bpy.context.area.regions if r.type == 'WINDOW'][0]
+        
+        # Only display in window with max area
+        if(currRegion.width * currRegion.height < maxArea): return
+
+        toolRegion = [r for r in bpy.context.area.regions if r.type == 'TOOLS'][0]
         toolType = ModalBaseFlexiOp.opObj.getToolType()
         config, labels, keys = FTHotKeys.getHKDispLines(toolType)
         font_id = 0
         blf.size(font_id, FTProps.keyMapFontSize, 72)
 
         if(FTProps.keyMapNextToTool):
-            xOff1 = 5 + toolRegion.x + toolRegion.width
+            xOff1 = 10 + toolRegion.width
         else:
             xOff1 = FTProps.keyMapLocX 
         maxLabelWidth = max(blf.dimensions(font_id, l+'XXXXX')[0] for l in labels)
@@ -4213,10 +4221,9 @@ class ModalBaseFlexiOp(Operator):
         hdlr = ModalBaseFlexiOp.opObj.__class__.drawHandler
         ModalBaseFlexiOp.drawHdlrRef = \
             bpy.types.SpaceView3D.draw_handler_add(hdlr, (), "WINDOW", "POST_VIEW")
-        args = (None, context)
         ModalBaseFlexiOp.drawTxtHdlrRef = \
             bpy.types.SpaceView3D.draw_handler_add(ModalBaseFlexiOp.drawKeyMap, \
-                args, "WINDOW", "POST_PIXEL")
+                (), "WINDOW", "POST_PIXEL")
 
     def removeDrawHandlers():
         if(ModalBaseFlexiOp.drawHdlrRef != None):
