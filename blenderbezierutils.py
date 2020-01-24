@@ -2588,12 +2588,13 @@ def updateMetaBtns(caller, event, keymap = None):
 unitMap = {'FEET': "'", 'METERS':'m'}
 
 class FTHotKeyData:
-    def __init__(self, id, key, label, description):
+    def __init__(self, id, key, label, description, exclTools = None):
         self.id = id
         self.key = key
         self.label = label
         self.description = description
         self.default = key
+        self.exclTools = exclTools if(exclTools != None) else []
 
 class FTHotKeys:
 
@@ -2646,14 +2647,15 @@ class FTHotKeys:
 
     commonHotkeys = []
     commonHotkeys.append(FTHotKeyData(hkToggleKeyMap, 'Ctrl+Shift+H', \
-        'Hide / Unhide Key Map', \
+        'Hide / Unhide Keymap', \
             'Hide / Unhide Keymap Displayed When Flexi Tool Is Active'))
     commonHotkeys.append(FTHotKeyData(hkSwitchOut, 'F1', 'Exit Flexi Tool', \
             'Switch out of the Flexi Tool mode'))
     # ~ commonHotkeys.append(FTHotKeyData(hkTweakPos, 'P', 'Tweak Position', \
             # ~ 'Tweak position or enter polar coordinates of the draw / edit point'))
     commonHotkeys.append(FTHotKeyData(hkToggleDrwEd, 'E', 'Toggle Draw / Edit', \
-            'Toggle between Draw & Edit Flexi Tools'))
+            'Toggle between Draw & Edit Flexi Tools', \
+                exclTools = {TOOL_TYPE_FLEXI_GREASE}))
     commonHotkeys.append(FTHotKeyData(hkReorient, 'U', \
         'Origin to Active Face', \
             'Move origin / orientation to face under mouse cursor \" + \
@@ -2955,14 +2957,16 @@ class FTHotKeys:
         return retVal
 
     def getHKDispLines(toolType):
-        hkData = FTHotKeys.commonHotkeys[:]
+        hkData = [k for k in FTHotKeys.commonHotkeys if toolType not in k.exclTools]
         for i, hk in enumerate(FTHotKeys.snapHotkeysMeta):
-            if(hk.key == 'KEY'): hkData.append(FTHotKeys.snapHotkeys[i])
-            else: hkData.append(hk)
+            if(hk.key == 'KEY' and toolType not in hk.exclTools): 
+                hkData.append(FTHotKeys.snapHotkeys[i])
+            else: 
+                hkData.append(hk)
         if(toolType in {TOOL_TYPE_FLEXI_DRAW, TOOL_TYPE_FLEXI_GREASE}): 
-            hkData += FTHotKeys.drawHotkeys[:]
+            hkData += [k for k in FTHotKeys.drawHotkeys if toolType not in k.exclTools]
         if(toolType == TOOL_TYPE_FLEXI_EDIT): 
-            hkData += FTHotKeys.editHotkeys[:]
+            hkData += [k for k in FTHotKeys.editHotkeys if toolType not in k.exclTools]
 
         labels = []
         config = []
@@ -3006,7 +3010,8 @@ class FTProps:
             'colHdlFree', 'colHdlVector', 'colHdlAligned', 'colHdlAuto', 'colSelTip', \
             'colHltTip', 'colBezPt', 'colHdlPtTip', 'colAdjBezTip', 'colEditSubdiv', \
             'colGreaseSubdiv', 'colGreaseBezPt', 'snapDist', 'dispSnapInd', \
-            'dispAxes', 'snapPtSize', 'showKeyMap']
+            'dispAxes', 'snapPtSize', 'showKeyMap', 'keyMapFontSize', 'keyMapLocX', \
+            'keyMapLocY', 'keyMapNextToTool']
 
             if(resetPrefs):
                 FTProps.initDefault()
@@ -3066,6 +3071,10 @@ class FTProps:
         FTProps.dispSnapInd = False
         FTProps.dispAxes = True
         FTProps.showKeyMap = False
+        FTProps.keyMapFontSize = 10
+        FTProps.keyMapLocX = 10
+        FTProps.keyMapLocY = 10
+        FTProps.keyMapNextToTool = True
         FTProps.snapPtSize = 3
 
 class FTMenuData:
@@ -4157,13 +4166,18 @@ class ModalBaseFlexiOp(Operator):
         toolType = ModalBaseFlexiOp.opObj.getToolType()
         config, labels, keys = FTHotKeys.getHKDispLines(toolType)
         font_id = 0
-        blf.size(font_id, 12, 72)
+        blf.size(font_id, FTProps.keyMapFontSize, 72)
 
-        xOff1 = 5 + toolRegion.x + toolRegion.width
-        maxLabelWidth = max(blf.dimensions(font_id, l+'XXXXX')[0] for l in labels) # 200
+        if(FTProps.keyMapNextToTool):
+            xOff1 = 5 + toolRegion.x + toolRegion.width
+        else:
+            xOff1 = FTProps.keyMapLocX 
+        maxLabelWidth = max(blf.dimensions(font_id, l+'XXXXX')[0] for l in labels)
         xOff2 = xOff1 + maxLabelWidth
-        yOff = 10
-        lineHeight = 1.2 * max(blf.dimensions(font_id, l)[1] for l in labels) # 15
+
+        yOff = 10 if(FTProps.keyMapNextToTool) else FTProps.keyMapLocY
+
+        lineHeight = 1.2 * max(blf.dimensions(font_id, l)[1] for l in labels)
 
         blf.position(font_id, xOff1, yOff, 0)
         blf.color(0, 1.0, 0.0, 0.0, 1.0)
@@ -4189,7 +4203,7 @@ class ModalBaseFlexiOp(Operator):
             yOff += lineHeight
 
         maxWidth = maxLabelWidth  + max(blf.dimensions(font_id, l)[0] for l in keys)
-        header = toolType.title() + ' Key Map'
+        header = toolType.title() + ' Keymap'
         headerX = xOff1 + (maxWidth - blf.dimensions(font_id, header)[0]) / 2
         blf.position(font_id, headerX, yOff + lineHeight * .5, 0)
         blf.color(0, 1.0, 1.0, 0.0, 1.0)
@@ -4325,8 +4339,9 @@ class ModalBaseFlexiOp(Operator):
 
     def modal(self, context, event):
 
+        snapper = self.snapper
         if(event.type == 'WINDOW_DEACTIVATE' and event.value == 'PRESS'):
-            self.snapper.initialize()
+            snapper.initialize()
             return {'PASS_THROUGH'}
 
         if(not self.isToolSelected(context)): # Subclass
@@ -4348,8 +4363,8 @@ class ModalBaseFlexiOp(Operator):
                 self.pressT = None
 
 
-        snapProc = self.snapper.procEvent(context, event)
-        metakeys = self.snapper.getMetakeys()
+        snapProc = snapper.procEvent(context, event)
+        metakeys = snapper.getMetakeys()
 
         if(FTHotKeys.isHotKey(FTHotKeys.hkToggleKeyMap, event.type, metakeys)):
             if(event.value == 'RELEASE'):
@@ -4361,17 +4376,26 @@ class ModalBaseFlexiOp(Operator):
                     FTProps.showKeyMap = not FTProps.showKeyMap
             return {'RUNNING_MODAL'}
 
+        # Special condition for case where user has configured a different snap key
+        # In such case, pass through mouse clicks, if there's a meta key held down...
+        # to allow e.g. alt + LMB to rotate view
+        if(not snapProc and any(metakeys) and \
+            not any([snapper.angleSnap, snapper.gridSnap, snapper.vertSnap]) and \
+                ((event.type == 'LEFTMOUSE' and event.value in {'PRESS', 'RELEASE'}) \
+                    or event.type == 'MOUSEMOVE')):
+            return {'PASS_THROUGH'}
+
         rmInfo = RegionMouseXYInfo.getRegionMouseXYInfo(event, self.exclToolRegion())
 
         ret = FTMenu.procMenu(self, context, event, rmInfo == None)
         if(ret):
             # Menu displayed on release, so retain metakeys till release
             if(event.value == 'RELEASE'):
-                self.snapper.resetMetakeys()
-                self.snapper.resetSnapKeys()
+                snapper.resetMetakeys()
+                snapper.resetSnapKeys()
             return {'RUNNING_MODAL'}
 
-        if((self.isEditing() or self.snapper.customAxis.inDrawAxis) \
+        if((self.isEditing() or snapper.customAxis.inDrawAxis) \
             and self.rmInfo != rmInfo):
             return {'RUNNING_MODAL'}
         if(rmInfo == None):
@@ -4379,7 +4403,7 @@ class ModalBaseFlexiOp(Operator):
 
         self.rmInfo = rmInfo
 
-        ret = self.snapper.customAxis.procDrawEvent(context, event, self.snapper, rmInfo)
+        ret = snapper.customAxis.procDrawEvent(context, event, snapper, rmInfo)
         evtCons = (ret or snapProc == EVT_CONS)
 
         # Ignore all PRESS events if consumed, since action is taken only on RELEASE...
@@ -5086,7 +5110,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
     def confirm(self, context, event, location = None):
         metakeys = self.snapper.getMetakeys()
-        shift = metakeys[2]
+        shift = self.snapper.angleSnap # Overloaded key op
         autoclose = (self.drawType == 'BEZIER' and shift and \
             (event.type == 'SPACE' or event.type == 'RET'))
         self.save(context, event, autoclose, location)
@@ -5398,9 +5422,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 [x for y in self.getSnapObjs(context, [self.curvePts[0][1],
                     self.curvePts[-1][1]]) for x in y]
 
-            metakeys = self.snapper.getMetakeys()
-            ctrl = metakeys[1]
-            shift = metakeys[2]
+            ctrl = self.snapper.gridSnap # Overloaded key op
 
             # ctrl pressed and there IS a snapped end obj,
             # so user does not want connection
@@ -7807,9 +7829,43 @@ class BezierUtilsPreferences(AddonPreferences):
     )
 
     showKeyMap: BoolProperty(
-            name="Display Key Map", \
-            description='Display Key Map When Flexi Tool Is Active', \
+            name="Display Keymap", \
+            description='Display Keymap When Flexi Tool Is Active', \
             default = False,
+            update = FTProps.updateProps
+    )
+
+    keyMapNextToTool: BoolProperty(
+            name="Display Next to Toolbar", \
+            description='Display Keymap Next to Toolbar', \
+            default = True,
+            update = FTProps.updateProps
+    )
+
+    keyMapFontSize: IntProperty(
+            name = "Keymap Font Size",
+            description = "Font size of keymap text",
+            default = 10,
+            min = 1,
+            max = 2000,
+            update = FTProps.updateProps
+    )
+
+    keyMapLocX: IntProperty(
+            name = "Keymap Location X",
+            description = "Horizontal starting position of keymap display",
+            default = 10,
+            min = 1,
+            max = 2000,
+            update = FTProps.updateProps
+    )
+
+    keyMapLocY: IntProperty(
+            name = "Keymap Font Size",
+            description = "Vertical starting position of keymap display",
+            default = 10,
+            min = 1,
+            max = 2000,
             update = FTProps.updateProps
     )
 
@@ -8111,11 +8167,28 @@ class BezierUtilsPreferences(AddonPreferences):
             col.label(text='Snap Point Size:')
             col.prop(self, "snapPtSize", text = '')
             col = box.column().split()
-            col.label(text='Orientation / Origin Axes:')
+            col.label(text='Display Orientation / Origin Axes:')
             col.prop(self, "dispAxes", text = '')
+            
+            box = box.box()
             col = box.column().split()
-            col.label(text='Display Key Map:')
+            col.label(text='Display Keymap:')
             col.prop(self, "showKeyMap", text = '')
+            if(self.showKeyMap):
+                col = box.column().split()
+                col.label(text='Font Size:')
+                col.prop(self, "keyMapFontSize", text = '')
+                col = box.column().split()
+                col.label(text='Display Next To Toolbar:')
+                col.prop(self, "keyMapNextToTool", text = '')
+                if(not self.keyMapNextToTool):
+                    col = box.column().split()
+                    col.label(text='Location X:')
+                    col.prop(self, "keyMapLocX", text = '')
+                    col = box.column().split()
+                    col.label(text='Location Y:')
+                    col.prop(self, "keyMapLocY", text = '')
+                
 
         ####################### Keymap #######################
 
