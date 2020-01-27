@@ -4393,7 +4393,7 @@ class ModalBaseFlexiOp(Operator):
         # Special condition for case where user has configured a different snap key
         # In such case, pass through mouse clicks, if there's a meta key held down...
         # to allow e.g. alt + LMB to rotate view
-        if(not snapProc and any(metakeys) and \
+        if(snapProc != EVT_CONS and any(metakeys) and \
             not any([snapper.angleSnap, snapper.gridSnap, snapper.vertSnap]) and \
                 ((event.type == 'LEFTMOUSE' and event.value in {'PRESS', 'RELEASE'}) \
                     or event.type == 'MOUSEMOVE')):
@@ -4630,6 +4630,25 @@ class PrimitiveDraw:
         return refLine[0] if len(refLine) > 0 else None
 
 
+class RectangleDraw(PrimitiveDraw):
+    def __init__(self, parent, star = False):
+        super(RectangleDraw, self).__init__(parent)
+
+    def getShapePts(self, mode, numSegs, bbStart, bbEnd, center2d, startAngle, \
+        theta, axisIdxs, z):
+        idx0, idx1, idx2 = axisIdxs
+        pt0 = complex(bbStart[idx0], bbStart[idx1])
+        pt1 = complex(bbEnd[idx0], bbStart[idx1])
+        pt2 = complex(bbEnd[idx0], bbEnd[idx1])
+        pt3 = complex(bbStart[idx0], bbEnd[idx1])
+
+        curvePts = []
+        for pt2d in [pt0, pt1, pt2, pt3, pt0]:
+            pt = get3DVector(pt2d, axisIdxs, z)
+            curvePts.append([pt, pt, pt, 'VECTOR', 'VECTOR'])
+
+        return curvePts
+
 class PolygonDraw(PrimitiveDraw):
 
     def updateParam1(self, event, rmInfo):
@@ -4653,7 +4672,7 @@ class PolygonDraw(PrimitiveDraw):
         self.star = star
 
     def getShapePts(self, mode, numSegs, bbStart, bbEnd, center2d, startAngle, \
-        theta, axisIdxs, z, star = True):
+        theta, axisIdxs, z):
         params = bpy.context.window_manager.bezierToolkitParams
         params.drawSides = numSegs
         idx0, idx1, idx2 = axisIdxs
@@ -5088,12 +5107,14 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
     def subInvoke(self, context, event):
         self.bezierDrawObj = BezierDraw(self)
+        self.rectangleDrawObj = RectangleDraw(self)
         self.ellipseDrawObj = EllipseDraw(self)
         self.polygonDrawObj = PolygonDraw(self)
         self.starDrawObj = PolygonDraw(self, star = True)
 
         ModalDrawBezierOp.drawObjMap = \
         {'BEZIER': self.bezierDrawObj, \
+         'RECTANGLE': self.rectangleDrawObj, \
          'ELLIPSE': self.ellipseDrawObj, \
          'POLYGON': self.polygonDrawObj, \
          'STAR': self.starDrawObj, \
@@ -6246,7 +6267,7 @@ class SelectCurveInfo:
 
     def insertNode(self, handleType, select = True):
         if(self.hasShapeKey): return False
-        invMw = obj.matrix_world.inverted()
+        invMw = self.obj.matrix_world.inverted()
         insertBezierPts(self.obj, self.splineIdx, \
             self.clickInfo['ptIdx'], [invMw @ self.clickInfo['loc']], handleType)
         return True
@@ -7430,8 +7451,9 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
 
     drawObjType: EnumProperty(name = "Draw Shape", \
         items = (('BEZIER', 'Bezier Curve', 'Draw Bezier Curve'),
+            ('RECTANGLE', 'Rectangle', 'Draw Rectangle'),
             ('ELLIPSE', 'Ellipse / Circle', 'Draw Ellipse or Circle'),
-            ('POLYGON', 'Polygon', 'Draw polygon'),
+            ('POLYGON', 'Polygon', 'Draw regular polygon'),
             ('STAR', 'Star', 'Draw Star')),
         description = 'Type of shape to draw', default = 'BEZIER',
         update = ModalDrawBezierOp.updateDrawType)
@@ -7562,7 +7584,8 @@ def drawSettingsFT(self, context):
                 self.layout.prop(params, "drawSides", text = '')
             if(params.drawObjType == 'STAR'):
                 self.layout.prop(params, "drawStarOffset", text = '')
-            self.layout.prop(params, "drawAngleSweep", text = '')
+            if(params.drawObjType != 'RECTANGLE'):
+                self.layout.prop(params, "drawAngleSweep", text = '')
 
     self.layout.prop(params, "snapOrient", text = '')
     self.layout.prop(params, "snapOrigin", text = '')
