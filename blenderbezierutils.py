@@ -6212,8 +6212,8 @@ class SelectCurveInfo:
                 
         else: 
             pts = [bpt]
-            if(prevIdx): prevPts = self.getBezierPt(prevIdx)
-            if(nextIdx): nextPts = self.getBezierPt(nextIdx)
+            if(prevIdx): prevPts = [self.getBezierPt(prevIdx)]
+            if(nextIdx): nextPts = [self.getBezierPt(nextIdx)]
 
         if(hdlIdx == 0):
             if(bpt.handle_left_type != 'VECTOR'): bpt.handle_left_type = 'FREE'
