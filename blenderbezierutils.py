@@ -14,7 +14,7 @@ from bpy.props import BoolProperty, IntProperty, EnumProperty, \
 FloatProperty, StringProperty, CollectionProperty, FloatVectorProperty
 from bpy.types import Panel, Operator, WorkSpaceTool, AddonPreferences, Menu
 from mathutils import Vector, Matrix, geometry, kdtree
-from math import log, atan, tan, sin, cos, pi, radians, degrees, sqrt, pi, acos
+from math import log, atan, tan, sin, cos, pi, radians, degrees, sqrt, pi, acos, ceil
 from bpy_extras.view3d_utils import region_2d_to_vector_3d, region_2d_to_location_3d, \
 region_2d_to_origin_3d
 from bpy_extras.view3d_utils import location_3d_to_region_2d
@@ -25,7 +25,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 85),
+    "version": (0, 9, 87),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -243,49 +243,73 @@ def getBBoxCenter(obj):
     return obj.matrix_world @ Vector(((bbox[0][0] + bbox[4][0]) / 2, \
         (bbox[0][1] + bbox[3][1]) / 2, (bbox[0][2] + bbox[1][2]) / 2))
 
-def shiftOrigin(curve, origin):
-    oLoc = curve.location.copy()
-    mw = curve.matrix_world
+# Only mesh and Bezier curve
+def shiftOrigin(obj, origin):
+    oLoc = obj.location.copy()
+    mw = obj.matrix_world
     invMw = mw.inverted()
-    for s in curve.data.splines:
-        bpts = s.bezier_points
-        for bpt in bpts:
-            lht = bpt.handle_left_type
-            rht = bpt.handle_right_type
-            bpt.handle_left_type = 'FREE'
-            bpt.handle_right_type = 'FREE'
+    if(obj.type == 'MESH'):
+        for vert in obj.data.vertices:
+            vert.co += invMw @ oLoc - invMw @ origin
+    elif(obj.type == 'CURVE'):
+        for s in obj.data.splines:
+            bpts = s.bezier_points
+            for bpt in bpts:
+                lht = bpt.handle_left_type
+                rht = bpt.handle_right_type
+                bpt.handle_left_type = 'FREE'
+                bpt.handle_right_type = 'FREE'
 
-            bpt.co += invMw @ oLoc - invMw @ origin
-            bpt.handle_left += invMw @ oLoc - invMw @ origin
-            bpt.handle_right += invMw @ oLoc - invMw @ origin
+                bpt.co += invMw @ oLoc - invMw @ origin
+                bpt.handle_left += invMw @ oLoc - invMw @ origin
+                bpt.handle_right += invMw @ oLoc - invMw @ origin
 
-            bpt.handle_left_type = lht
-            bpt.handle_right_type = rht
+                bpt.handle_left_type = lht
+                bpt.handle_right_type = rht
 
-    curve.location = origin
+    obj.location = origin
 
-def shiftMatrixWorld(curve, mw):
+# Only mesh and Bezier curve; depsgraph not updated
+def shiftMatrixWorld(obj, mw):
     invMw = mw.inverted()
-    omw = curve.matrix_world
+    omw = obj.matrix_world
 
-    loc = mw.translation.copy()
-    oLoc = omw.translation.copy()
+    if(obj.type == 'MESH'):
+        for vert in obj.data.vertices:
+            vert.co = invMw @ (omw @ vert.co)
+    elif(obj.type == 'CURVE'):
+        for s in obj.data.splines:
+            bpts = s.bezier_points
+            for bpt in bpts:
+                lht = bpt.handle_left_type
+                rht = bpt.handle_right_type
+                bpt.handle_left_type = 'FREE'
+                bpt.handle_right_type = 'FREE'
+                bpt.co = invMw @ (omw @ bpt.co)
+                bpt.handle_left = invMw @ (omw @ bpt.handle_left)
+                bpt.handle_right = invMw @ (omw @ bpt.handle_right)
 
-    for s in curve.data.splines:
-        bpts = s.bezier_points
-        for bpt in bpts:
-            lht = bpt.handle_left_type
-            rht = bpt.handle_right_type
-            bpt.handle_left_type = 'FREE'
-            bpt.handle_right_type = 'FREE'
-            bpt.co = invMw @ (omw @ bpt.co)
-            bpt.handle_left = invMw @ (omw @ bpt.handle_left)
-            bpt.handle_right = invMw @ (omw @ bpt.handle_right)
+                bpt.handle_left_type = lht
+                bpt.handle_right_type = rht
 
-            bpt.handle_left_type = lht
-            bpt.handle_right_type = rht
+    obj.matrix_world = mw
 
-    curve.matrix_world = mw
+# Also shifts origin; depsgraph not updated
+def alignToNormal(curve):
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    depsgraph.update()
+    loc = curve.location.copy()
+    mw = curve.matrix_world.copy()
+    normals = []
+    for spline in curve.data.splines:
+        bpts = spline.bezier_points
+        normals.append(geometry.normal(mw @ bpts[i].co for i in range(len(bpts))))
+    cnt = len(normals)
+    if(cnt > 0):
+        normal =  Vector([sum(normals[i][j] for i in range(cnt)) \
+            for j in range(3)]) / cnt
+    quatMat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
+    shiftMatrixWorld(curve, quatMat)
 
 def reverseCurve(curve):
     cp = curve.data.copy()
@@ -1102,6 +1126,102 @@ def removeDupliVert(curve):
     else:
         bpy.data.curves.remove(newCurveData)
 
+def convertToFace(curve, remeshRes, perSeg, fillType, optimized):
+    bptData = getBptData(curve, local = True)
+    bm = bmesh.new()
+    splineLens = [spline.calc_length() for spline in curve.data.splines]
+    maxSplineLen = max(splineLens)
+    centers = []
+    normals = []
+
+    for splineIdx, spline in enumerate(curve.data.splines):
+        bpts = spline.bezier_points
+        verts = []
+        addLastVert = spline.use_cyclic_u or fillType != 'NONE'
+        if(not perSeg and remeshRes > 0):
+            segPts = [bptData[splineIdx][x] for x in range(len(bpts))]
+            if(addLastVert): segPts.append(segPts[0])
+            numSegs = int(remeshRes * splineLens[splineIdx] / maxSplineLen)
+            if(numSegs <= 2): 
+                vertCos = [bpts[0].co, bpts[-1].co]
+            else:
+                pts = getInterpBezierPts(segPts, subdivPerUnit = 100, segLens = None)
+                vertCos = getInterpolatedVertsCo(pts, numSegs)
+            for co in vertCos: 
+                verts.append(bm.verts.new(co))
+        else:
+            if(remeshRes > 0):
+                segPtPairs = [getSegPtsInSpline(bptData, splineIdx, \
+                    ptIdx, addLastVert) for ptIdx in range(len(bpts))]
+                if(not addLastVert): segPtPairs.pop()
+                segs = [[segPts[0][1], segPts[0][2], segPts[1][0], segPts[1][1]] \
+                    for segPts in segPtPairs]
+                segLens = [getSegLen(seg) for seg in segs]
+                maxLen = max(segLens)
+                for i, segPts in enumerate(segPtPairs):
+                    if(optimized and isStraightSeg(segPts)):
+                        verts.append(bm.verts.new(segPts[0][1]))
+                        verts.append(bm.verts.new(segPts[1][1]))
+                    else:
+                        pts = getInterpBezierPts(segPts, subdivPerUnit = 100, \
+                            segLens = [segLens[i]])
+                        numSegs = ceil(remeshRes * segLens[i] / maxLen)
+                        vertCos = getInterpolatedVertsCo(pts, numSegs)
+                        for j, co in enumerate(vertCos):
+                            if(j == 0 and i > 0): continue
+                            verts.append(bm.verts.new(co))
+            else:
+                for ptIdx, bpt in enumerate(bpts):
+                    verts.append(bm.verts.new(bpts[ptIdx].co))
+                if(addLastVert): 
+                    verts.append(bm.verts.new(bpts[0].co))
+        if(len(verts) < 2):
+            pass
+        elif(len(verts) == 2):
+            bm.edges.new(verts)
+        else:
+            if(spline.use_cyclic_u): 
+                bm.verts.remove(verts[-1])
+                verts.pop()
+
+            vertCos = [v.co for v in verts]
+            center =  Vector([sum(vertCos[i][j] for i in range(len(vertCos))) \
+                for j in range(3)]) / len(vertCos)
+            normal = geometry.normal(vertCos)
+
+            centers.append(center)
+            normals.append(normal)
+
+            if(fillType == 'NGON'):
+                face = bm.faces.new(verts)
+                
+            elif(fillType == 'NONE'):
+                for i in range(1, len(verts)):
+                    bm.edges.new([verts[i-1], verts[i]])
+                if(spline.use_cyclic_u): bm.edges.new([verts[-1], verts[0]])
+            elif(fillType == 'FAN'):
+                centerVert = bm.verts.new(center)
+                for i in range(1, len(verts)):
+                    bm.faces.new([centerVert, verts[i-1], verts[i]])
+                if(spline.use_cyclic_u): bm.faces.new([centerVert, verts[-1], verts[0]])
+    cnt = len(centers)
+    if(cnt > 0):
+        center =  Vector([sum(centers[i][j] for i in range(cnt)) \
+            for j in range(3)]) / cnt
+        normal =  Vector([sum(normals[i][j] for i in range(cnt)) \
+            for j in range(3)]) / cnt
+    else:
+        center =  None
+        normal =  None
+    m = bpy.data.meshes.new(curve.data.name)
+    bm.to_mesh(m)
+    meshObj = bpy.data.objects.new(curve.name, m)
+    collections = curve.users_collection
+    for c in collections:
+        c.objects.link(meshObj)
+
+    return meshObj, center, normal
+
 def convertToMesh(curve):
     mt = curve.to_mesh()#Can't be used directly
     bm = bmesh.new()
@@ -1350,8 +1470,8 @@ class CloseSplinesOp(Operator):
 
         for curve in curves:
             for spline in curve.data.splines:
-                spline.bezier_points[0].handle_left_type = 'ALIGNED'
-                spline.bezier_points[-1].handle_right_type = 'ALIGNED'
+                # ~ spline.bezier_points[0].handle_left_type = 'ALIGNED'
+                # ~ spline.bezier_points[-1].handle_right_type = 'ALIGNED'
                 spline.use_cyclic_u = True
 
         return {'FINISHED'}
@@ -1410,7 +1530,7 @@ class RemoveDupliVertCurveOp(Operator):
         return {'FINISHED'}
 
 
-class convertTo2DMeshOp(Operator):
+class convertToMeshOp(Operator):
     bl_idname = "object.convert_2d_mesh"
     bl_label = "Convert"
     bl_description = "Convert 2D curve to mesh with quad faces"
@@ -1419,21 +1539,40 @@ class convertTo2DMeshOp(Operator):
     def execute(self, context):
         curves = [o for o in bpy.data.objects \
             if o in bpy.context.selected_objects and isBezier(o)]
+        params = bpy.context.window_manager.bezierToolkitParams
+        remeshDepth = params.remeshDepth
+        unsubdivide = params.unsubdivide
+        fillType = params.fillType
+        optimized = params.remeshOptimized
+        remeshRes = params.remeshRes
+        perSeg = (params.remeshApplyTo == 'PERSEG')
+
         for curve in curves:
-            for spline in curve.data.splines:
-                spline.use_cyclic_u = True
-            curve.data.dimensions = '2D'
-            curve.data.fill_mode = 'BOTH'
-            meshObj = convertToMesh(curve)
+            center, normal = None, None
+            if(fillType == 'QUAD'):
+                for spline in curve.data.splines:
+                    spline.use_cyclic_u = True
+                curve.data.dimensions = '2D'
+                curve.data.fill_mode = 'BOTH'
+                meshObj = convertToMesh(curve)
 
-            remeshDepth = bpy.context.window_manager.bezierToolkitParams.remeshDepth
-            unsubdivide = bpy.context.window_manager.bezierToolkitParams.unsubdivide
-            applyMeshModifiers(meshObj, remeshDepth)
+                applyMeshModifiers(meshObj, remeshDepth)
 
-            if(unsubdivide):
-                unsubdivideObj(meshObj)
+                if(unsubdivide):
+                    unsubdivideObj(meshObj)
+            else:
+                meshObj, center, normal = \
+                    convertToFace(curve, remeshRes, perSeg, fillType, optimized)
 
             meshObj.matrix_world = curve.matrix_world.copy()
+            meshObj.select_set(True)
+            if(center != None and normal != None):
+                newOrig = meshObj.matrix_world @ center
+                shiftOrigin(meshObj, newOrig)
+                quatMat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
+                tm = meshObj.matrix_world @ quatMat
+                shiftMatrixWorld(meshObj, tm)
+                meshObj.location = newOrig # Location not from tm
 
             safeRemoveObj(curve)
 
@@ -1768,15 +1907,13 @@ class BezierUtilsPanel(Panel):
             row.label(text="Split Bezier Curves", icon = 'UNLINKED')
 
             if params.splitExpanded:
-                col = layout.column()
+                box = layout.box()
+                col = box.column().split()
                 col.operator('object.separate_splines')
-                col = layout.column()
+                col = box.column().split()
                 col.operator('object.separate_segments')
-                col = layout.column()
+                col = box.column().split()
                 col.operator('object.separate_points')
-
-            col = layout.column()
-            col.separator()
 
             row = layout.row()
             row.prop(params, "joinExpanded",
@@ -1786,15 +1923,13 @@ class BezierUtilsPanel(Panel):
             row.label(text="Join Bezier Curves", icon = 'LINKED')
 
             if params.joinExpanded:
-                col = layout.column()
+                box = layout.box()
+                col = box.column().split()
                 col.prop(params, 'straight')
-                col = layout.column()
+                col = box.column().split()
                 col.prop(params, 'optimized')
-                col = layout.column()
+                col = box.column().split()
                 col.operator('object.join_curves')
-
-            col = layout.column()
-            col.separator()
 
             row = layout.row()
             row.prop(params, "alignToFaceExpanded",
@@ -1804,15 +1939,13 @@ class BezierUtilsPanel(Panel):
             row.label(text="Align to Face", icon = 'FCURVE')
 
             if params.alignToFaceExpanded:
-                col = layout.column()
+                box = layout.box()
+                col = box.column().split()
                 col.prop(params, 'alignToFaceOrig')
-                col = layout.column()
+                col = box.column().split()
                 col.prop(params, 'alignToFaceLoc')
-                col = layout.column()
+                col = box.column().split()
                 col.operator('object.align_to_face')
-
-            col = layout.column()
-            col.separator()
 
             row = layout.row()
             row.prop(params, "selectExpanded",
@@ -1821,15 +1954,13 @@ class BezierUtilsPanel(Panel):
             )
             row.label(text='Select Objects In Collection', icon='RESTRICT_SELECT_OFF')
             if params.selectExpanded:
-                col = layout.column()
+                box = layout.box()
+                col = box.column().split()
                 row = col.row()
                 row.prop(params, 'selectIntrvl')
                 row.operator('object.select_in_collection')
-                col = layout.column()
+                col = box.column().split()
                 col.operator('object.invert_sel_in_collection')
-
-            col = layout.column()
-            col.separator()
 
             row = layout.row()
             row.prop(params, "convertExpanded",
@@ -1839,15 +1970,25 @@ class BezierUtilsPanel(Panel):
             row.label(text='Convert Curve to Mesh', icon='MESH_DATA')
 
             if params.convertExpanded:
-                col = layout.column()
-                row = col.row()
-                row.prop(params, 'remeshDepth')
-                row.prop(params, 'unsubdivide')
-                col = layout.column()
+                box = layout.box()
+                col = box.column().split()
+                col.prop(params, 'fillType')
+                if(params.fillType == 'QUAD'):
+                    col = box.column().split()
+                    row = col.row()
+                    row.prop(params, 'remeshDepth')
+                    row.prop(params, 'unsubdivide')
+                else:
+                    col = box.column().split()
+                    row = col.row()
+                    row.prop(params, 'remeshRes')
+                    row.prop(params, 'remeshApplyTo')
+                    if(params.remeshApplyTo == 'PERSEG'):
+                        col = box.column().split()
+                        row = col.row()
+                        row.prop(params, 'remeshOptimized')
+                col = box.column().split()
                 col.operator('object.convert_2d_mesh')
-
-            col = layout.column()
-            col.separator()
 
             row = layout.row()
             row.prop(params, "handleTypesExpanded",
@@ -1857,16 +1998,15 @@ class BezierUtilsPanel(Panel):
             row.label(text='Set Handle Type', icon='MOD_CURVE')
 
             if params.handleTypesExpanded:
-                col = layout.column()
+                box = layout.box()
+                col = box.column().split()
                 row = col.row()
+                col = row.column()
                 col.prop(params, 'handleType')
-                col = layout.column()
+                col = box.column().split()
                 col.operator('object.set_handle_types')
 
             ######## Curve Color #########
-
-            col = layout.column()
-            col.separator()
 
             row = layout.row()
             row.prop(params, "curveColorExpanded",
@@ -1876,19 +2016,17 @@ class BezierUtilsPanel(Panel):
             row.label(text='Set Curve Colors', icon='MATERIAL')
 
             if params.curveColorExpanded:
-                col = layout.column()
+                box = layout.box()
+                col = box.column().split()
                 row = col.row()
                 row.prop(params, "curveColorPick", text = 'Curve Color')
                 row.operator('object.set_curve_color')
                 row.operator('object.remove_curve_color')
+                col = box.column().split()
                 row = col.row()
                 row.prop(params, 'applyCurveColor', toggle = True)
-                col = layout.column()
 
             ######## Other Tools #########
-
-            col = layout.column()
-            col.separator()
 
             row = layout.row()
             row.prop(params, "otherExpanded",
@@ -1898,15 +2036,16 @@ class BezierUtilsPanel(Panel):
             row.label(text='Other Tools', icon='TOOL_SETTINGS')
 
             if params.otherExpanded:
-                col = layout.column()
+                box = layout.box()
+                col = box.column().split()
                 col.operator('object.paste_length')
-                col = layout.column()
+                col = box.column().split()
                 col.operator('object.close_splines')
-                col = layout.column()
+                col = box.column().split()
                 col.operator('object.close_straight')
-                col = layout.column()
+                col = box.column().split()
                 col.operator('object.open_splines')
-                col = layout.column()
+                col = box.column().split()
                 col.operator('object.remove_dupli_vert_curve')
 
         else:
@@ -2061,6 +2200,15 @@ def getSegLen(pts, error = DEF_ERR_MARGIN, start = None, end = None, t1 = 0, t2 
                 getSegLen(pts, error, mid, end, t1_5, t2))
     return l2
 
+def isStraightSeg(segPts):
+    if(len(segPts) != 2): return False
+    if(vectCmpWithMargin((segPts[0][2]-segPts[0][1]).normalized(), \
+        (segPts[1][1] - segPts[1][0]).normalized())):
+        return True
+    if(len(segPts[0]) < 5 or len(segPts[1]) < 5 ): return False
+    if(segPts[0][4] == 'VECTOR' and segPts[1][3] == 'VECTOR' ): return True
+    return False
+
 # Get pt coords along curve defined by the four control pts (segPts)
 # subdivPerUnit: No of subdivisions per unit length
 # (which is the same as no of pts excluding the end pts)
@@ -2087,7 +2235,7 @@ def getPtsAlongBezier3D(segPts, rv3d, curveRes, minRes = 200):
 
     viewDist = rv3d.view_distance
 
-    # (the smaller the view dist (higher zoom level),
+    # The smaller the view dist (higher zoom level),
     # the higher the num of subdivisions
     curveRes = curveRes / viewDist
 
@@ -3222,7 +3370,7 @@ class FTMenuOptionOp(Operator):
     bl_label = "Set FT Menu Options"
     bl_description = "Set option"
 
-    optIdx = IntProperty()
+    optIdx : IntProperty()
 
     def execute(self, context):
         FTMenu.resetMenuOptions()
@@ -3658,7 +3806,7 @@ class Snapper():
                 tm = (selObj.matrix_world @ quat).inverted()
 
         if(custAxis != None and params.axisScale == 'AXIS'):
-            unitD = custAxis.length() / 10
+            unitD = custAxis.length() / (custAxis.snapCnt + 1)
             tm = Matrix.Scale(1 / unitD, 4) @ tm
             invTm = tm.inverted()
 
@@ -3825,7 +3973,7 @@ class Snapper():
         return tm, invTm, orig
 
     def get3dLocSnap(self, rmInfo, vec = None, refreshStatus = True, \
-        snapToAxisLine = True, xyDelta = [0, 0], enableSnap = True):
+        snapToAxisLine = True, xyDelta = [0, 0], enableSnap = True, lastCo1Axis = False):
 
         if(enableSnap):
             vertSnap = self.vertSnap
@@ -3951,7 +4099,7 @@ class Snapper():
                         self.lastSnapTypes.add('axis2')
 
                     if(len(freeAxesC) == 1 and len(refLine) > 0):
-
+                        if(lastCo1Axis): refCo = self.lastSelCo #TODO: More testing
                         axis = freeAxesC[0]
                         # Any one point on axis
                         ptOnAxis = refCo.copy()
@@ -4409,8 +4557,7 @@ class ModalBaseFlexiOp(Operator):
                 snapper.resetSnapKeys()
             return {'RUNNING_MODAL'}
 
-        if((self.isEditing() or snapper.customAxis.inDrawAxis) \
-            and self.rmInfo != rmInfo):
+        if(self.isEditing() and self.rmInfo != rmInfo):
             return {'RUNNING_MODAL'}
         if(rmInfo == None):
             return {'PASS_THROUGH'}
@@ -4425,6 +4572,7 @@ class ModalBaseFlexiOp(Operator):
         # ...refresh is needed even on press
         # TODO: Simplify the condition (Maybe return EVT values from all proc methods)
         if(evtCons and event.value == 'PRESS' and \
+            event.type != 'MOUSEMOVE' and \
             not event.type.startswith('WHEEL') and (snapProc != EVT_META_OR_SNAP)):
             return {'RUNNING_MODAL'}
 
@@ -4492,13 +4640,9 @@ class PrimitiveDraw:
         center2d = complex(cX, cY)
 
         snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
-        if(snapOrigin == 'REFERENCE'):
-            orig = complex(bbStart[idx0], bbStart[idx1])
-            self.curveObjOrigin = tm.inverted() @ \
-                get3DVector(orig + center2d, axisIdxs, z)
-        else:
-            self.curveObjOrigin = self.parent.snapper.orig \
-                if self.parent.snapper.orig != None else Vector()
+        orig = complex(bbStart[idx0], bbStart[idx1])
+        # ~ self.curveObjOrigin = tm.inverted() @ \
+            # ~ get3DVector(orig + center2d, axisIdxs, z)
 
         curvePts = self.getShapePts(mode, numSegs, bbStart, bbEnd, center2d, \
             startAngle, sweep, axisIdxs, z)
@@ -4533,7 +4677,6 @@ class PrimitiveDraw:
         else:
             self.parent.curvePts = [[self.bbStart, self.bbStart, self.bbStart], \
                 [self.bbEnd, self.bbEnd, self.bbEnd]]
-            self.curveObjOrigin = self.bbStart
 
     def procDrawEvent(self, context, event, snapProc):
         parent = self.parent
@@ -4596,7 +4739,7 @@ class PrimitiveDraw:
             return {'RUNNING_MODAL'}
 
         if(not snapProc and event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
-            loc = parent.snapper.get3dLocSnap(rmInfo)
+            loc = parent.snapper.get3dLocSnap(rmInfo, lastCo1Axis = True)
             if(self.bbStart == None):
                 self.bbStart = loc
                 self.bbEnd = loc
@@ -4604,11 +4747,11 @@ class PrimitiveDraw:
             else:
                 self.bbEnd = loc
                 self.updateCurvePts()
-                parent.confirm(context, event, location = self.curveObjOrigin)
+                parent.confirm(context, event)
             return {"RUNNING_MODAL"}
         if (snapProc or event.type == 'MOUSEMOVE'):
             if(self.bbStart != None):
-                self.bbEnd = parent.snapper.get3dLocSnap(rmInfo)
+                self.bbEnd = parent.snapper.get3dLocSnap(rmInfo, lastCo1Axis = True)
                 self.updateCurvePts()
             parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
             return {"RUNNING_MODAL"}
@@ -5143,12 +5286,12 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
     def postUndoRedo(self, scene, dummy = None): # signature different in 2.8 and 2.81?
         self.updateSnapLocs() # subclass method
 
-    def confirm(self, context, event, location = None):
+    def confirm(self, context, event):
         metakeys = self.snapper.getMetakeys()
         shift = self.snapper.angleSnap # Overloaded key op
         autoclose = (self.drawType == 'BEZIER' and shift and \
             (event.type == 'SPACE' or event.type == 'RET'))
-        self.save(context, event, autoclose, location)
+        self.save(context, event, autoclose)
         self.curvePts = []
         self.capture = False
         self.resetDisplay()
@@ -5301,7 +5444,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         spline.bezier_points[i].handle_left_type = handleType
         spline.bezier_points[i].handle_right_type = handleType
 
-    def createObjFromPts(self, context, autoclose, location = None):
+    def createObjFromPts(self, context, autoclose):
         data = bpy.data.curves.new('BezierCurve', 'CURVE')
         data.dimensions = '3D'
         obj = bpy.data.objects.new('BezierCurve', data)
@@ -5309,13 +5452,12 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         if(collection == None):
             collection = context.scene.collection
         collection.objects.link(obj)
-        if(location != None): obj.location = location
-        else: obj.location = context.scene.cursor.location
+        # ~ obj.location = context.scene.cursor.location
 
-        depsgraph = context.evaluated_depsgraph_get()
-        depsgraph.update()
+        # ~ depsgraph = context.evaluated_depsgraph_get()
+        # ~ depsgraph.update()
 
-        invM = obj.matrix_world.inverted()
+        # ~ invM = obj.matrix_world.inverted()
 
         spline = data.splines.new('BEZIER')
         spline.use_cyclic_u = False
@@ -5331,8 +5473,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         prevPt = None
         for i, pt in enumerate(self.curvePts):
             currPt = spline.bezier_points[i]
-            currPt.co = invM @ pt[1]
-            currPt.handle_right = invM @ pt[2]
+            currPt.co = pt[1]
+            currPt.handle_right = pt[2]
             if(prevPt != None and prevPt.handle_right == prevPt.co \
                 and pt[0] == pt[1] and currPt.co != prevPt.co): # straight line
                     if(prevPt.handle_left_type != 'VECTOR'):
@@ -5343,7 +5485,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
             else:
                 currPt.handle_left_type = 'FREE'
                 currPt.handle_right_type = 'FREE'
-                currPt.handle_left = invM @ pt[0]
+                currPt.handle_left = pt[0]
                 ldiffV = (pt[1] - pt[0])
                 rdiffV = (pt[2] - pt[1])
                 if(vectCmpWithMargin(ldiffV, rdiffV) and \
@@ -5361,13 +5503,13 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 if(bpts[0].handle_right_type != 'VECTOR'):
                     bpts[0].handle_right_type = 'FREE'
                 bpts[0].handle_left_type = 'VECTOR'
+
         return obj
 
     def createCurveObj(self, context, startObj = None, \
-        startSplineIdx = None, endObj = None, endSplineIdx = None, \
-            autoclose = False, location = None):
+        startSplineIdx = None, endObj = None, endSplineIdx = None, autoclose = False):
         # First create the new curve
-        obj = self.createObjFromPts(context, autoclose, location)
+        obj = self.createObjFromPts(context, autoclose)
 
         # Undo stack in case the user does not want to join
         if(endObj != None or startObj != None):
@@ -5449,7 +5591,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                             return retVals
         return retVals
 
-    def save(self, context, event, autoclose, location = None):
+    def save(self, context, event, autoclose, align = True):
 
         if(len(self.curvePts) > 1):
 
@@ -5464,13 +5606,21 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
             # (no option to only connect to starting curve when end object exists)
             if(ctrl and endObj != None):
-                obj = self.createCurveObj(context, autoclose = False, location = location)
+                obj = self.createCurveObj(context, autoclose = False)
             else:
                 startObjName = startObj.name if(startObj != None) else ''
                 endObjName = endObj.name if(endObj != None) else ''
 
                 obj = self.createCurveObj(context, startObj, startSplineIdx, endObj, \
-                    endSplineIdx, autoclose, location)
+                    endSplineIdx, autoclose)
+
+            if(align and startObj == None and endObj == None):
+                alignToNormal(obj)
+                bpy.context.evaluated_depsgraph_get().update()
+                bbCenter = getBBoxCenter(obj)
+                shiftOrigin(obj, bbCenter)
+                obj.location = bbCenter
+                bpy.context.evaluated_depsgraph_get().update()
 
             #TODO: Why try?
             try:
@@ -5690,7 +5840,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
                         if(len(s.points) > 0): # Shouldn't be needed, but anyway...
                             self.snapLocs += [mw @ s.points[0].co, mw @ s.points[-1].co]
 
-    def save(self, context, event, autoclose, location = None):
+    def save(self, context, event, autoclose):
         layer = self.gpencil.data.layers.active
         if(layer == None):
             layer = self.gpencil.data.layers.new('GP_Layer', set_active = True)
@@ -5721,12 +5871,12 @@ class EditSegDisplayInfo(SegDisplayInfo):
         self.subdivCos = subdivCos
 
 # fromMix True: points after shape key value / eval_time applied
-def getWSData(obj, withShapeKey = True, shapeKeyIdx = None, fromMix = True, \
-    updateDeps = False):
+def getBptData(obj, withShapeKey = True, shapeKeyIdx = None, fromMix = True, \
+    updateDeps = False, local = False):
     # Less readable but more convenient than class
     # Format: [handle_left, co, handle_right, handle_left_type, handle_right_type]
     worldSpaceData = []
-    mw = obj.matrix_world
+    mw = Matrix() if local else obj.matrix_world
 
     keydata = None
     dataIdx = 0
@@ -5776,7 +5926,7 @@ def getAdjIdx(obj, splineIdx, startIdx, offset = 1):
 
 def getBezierDataForSeg(obj, splineIdx, segIdx, withShapeKey = True, shapeKeyIdx = None, \
     fromMix = True, updateDeps = False):
-    wsData = getWSData(obj, withShapeKey, shapeKeyIdx, fromMix, updateDeps)
+    wsData = getBptData(obj, withShapeKey, shapeKeyIdx, fromMix, updateDeps)
     pt0 = wsData[splineIdx][segIdx]
     segEndIdx = getAdjIdx(obj, splineIdx, segIdx)
     if(segEndIdx == None):
@@ -5784,14 +5934,23 @@ def getBezierDataForSeg(obj, splineIdx, segIdx, withShapeKey = True, shapeKeyIdx
     pt1 = wsData[splineIdx][segEndIdx]
     return [pt0, pt1]
 
-def getInterpSegPts(wsData, splineIdx, ptIdx, cyclic, res, maxRes):
+def getSegPtsInSpline(wsData, splineIdx, ptIdx, cyclic):
     splinePts = wsData[splineIdx]
     if(ptIdx < (len(splinePts) - 1) ): ptRange = [ptIdx, ptIdx + 1]
-    elif(ptIdx == (len(splinePts) - 1)  and cyclic): ptRange = [-1, 0]
+    elif(ptIdx == (len(splinePts) - 1)  and cyclic): 
+        ptRange = [-1, 0]
+        if(splinePts[-1][4] == 'VECTOR'):
+            splinePts[-1][2] = (splinePts[-1][1] + \
+                1/3 * (splinePts[-1][1] - splinePts[0][1]))
+        if(splinePts[0][3] == 'VECTOR'):
+            splinePts[0][0] = (splinePts[0][1] + \
+                1/3 * (splinePts[0][1] - splinePts[-1][1]))
     else: return []
 
-    segPts = [[splinePts[x][0], splinePts[x][1], splinePts[x][2]] for x in ptRange]
+    return [[splinePts[x][i] for i in range(5)] for x in ptRange]
 
+def getInterpSegPts(wsData, splineIdx, ptIdx, cyclic, res, maxRes):
+    segPts = getSegPtsInSpline(wsData, splineIdx, ptIdx, cyclic)
     areaRegionInfo = getAllAreaRegions() # TODO: To be passed from caller
 
     return getPtsAlongBezier2D(segPts, areaRegionInfo, res, maxRes)
@@ -5826,10 +5985,10 @@ def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, 
 
         wsDataSK = None
         # Curve data with shape key value applied (if shape key exists)
-        wsData = getWSData(obj, fromMix = True, updateDeps = True)
+        wsData = getBptData(obj, fromMix = True, updateDeps = True)
         if(withShapeKey and obj.active_shape_key != None):
             # active shape key data with value = 1
-            wsDataSK = getWSData(obj, fromMix = False)
+            wsDataSK = getBptData(obj, fromMix = False)
 
         for i, spline in enumerate(obj.data.splines):
             for j, pt in enumerate(spline.bezier_points):
@@ -5867,10 +6026,10 @@ def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, 
     for selObj in selObjInfos.keys():
         wsDataSK = None
         # Curve data with shape key value applied (if shape key exists)
-        wsData = getWSData(selObj, fromMix = True, updateDeps = True)
+        wsData = getBptData(selObj, fromMix = True, updateDeps = True)
         if(withShapeKey and selObj.active_shape_key != None): 
             # active shape key data with value = 1
-            wsDataSK = getWSData(selObj, fromMix = False)
+            wsDataSK = getBptData(selObj, fromMix = False)
 
         info = selObjInfos[selObj]
         for splineIdx in info.keys():
@@ -6025,7 +6184,7 @@ class SelectCurveInfo:
             for i in range(self.splineIdx))        
 
         # WS Data of the shape key (if exists)
-        self.wsData = getWSData(self.obj, fromMix = False)[self.splineIdx]
+        self.wsData = getBptData(self.obj, fromMix = False)[self.splineIdx]
         
     # For convenience
     def getAdjIdx(self, ptIdx, offset = 1):
@@ -6433,7 +6592,7 @@ class EditCurveInfo(SelectCurveInfo):
     # Calculate both handle and adjacent pt handles in case of Vector type
     # TODO: AUTO has a separate logic set to ALIGNED for now
     def syncCtrlPtHdls(self, ptIdx, newLoc):
-        wsData = getWSData(self.obj, fromMix = False)
+        wsData = getBptData(self.obj, fromMix = False)
         pt = wsData[self.splineIdx][ptIdx]
         prevIdx = self.getAdjIdx(ptIdx, -1)
         prevPt = None if prevIdx == None else wsData[self.splineIdx][prevIdx]
@@ -6497,7 +6656,7 @@ class EditCurveInfo(SelectCurveInfo):
         inf = self.clickInfo
         ptIdx = inf['ptIdx']
         hdlIdx = inf['hdlIdx']
-        wsData = getWSData(self.obj, fromMix = False)
+        wsData = getBptData(self.obj, fromMix = False)
         pt = wsData[self.splineIdx][ptIdx]
 
         if(hdlIdx == -1): # Grab point on curve
@@ -7391,6 +7550,27 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
          ('FREE', 'Free', 'Left and right independent')], \
         description = 'Handle type of the control points',
         default = 'ALIGNED')
+
+    fillType: EnumProperty(name="Fill Type", items = \
+        [("NONE", 'Nothing', "Don't fill at all"),
+         ("QUAD", 'Quads', "Fill with quad faces (with Remesh Modifier)"), \
+         ("NGON", 'Ngon', "Fill with single ngon face"), \
+         ('FAN', 'Triangle Fan', 'File with triangles emanating from center')], \
+        description = 'Fill type for converted mesh', default = 'NGON')
+
+    remeshRes: IntProperty(name="Resolution", \
+        description='Segment resolution (0 for straight edges)', \
+        default = 0, min = 0, max = 1000)
+
+    remeshApplyTo: EnumProperty(name="Apply To", items = \
+        [("PERSEG", 'Segment', "Apply resolution to segment separately"), \
+         ('PERSPLINE', 'Spline', 'Apply resolution to entire spline')], \
+        description = 'Apply remesh resolution to segment or spline',
+        default = 'PERSEG')
+        
+    remeshOptimized: BoolProperty(name="Optimized", \
+        description="Don't subdivide straight segments", \
+        default = False)
 
     remeshDepth: IntProperty(name="Remesh Depth", \
         description='Remesh depth for converting to mesh', \
@@ -8309,7 +8489,7 @@ classes = [
     CloseStraightOp,
     OpenSplinesOp,
     RemoveDupliVertCurveOp,
-    convertTo2DMeshOp,
+    convertToMeshOp,
     SetHandleTypesOp,
     SetCurveColorOp,
     PasteLengthOp,
