@@ -303,13 +303,15 @@ def alignToNormal(curve):
     normals = []
     for spline in curve.data.splines:
         bpts = spline.bezier_points
-        normals.append(geometry.normal(mw @ bpts[i].co for i in range(len(bpts))))
+        bptCnt = len(bpts)
+        if(bptCnt > 2):
+            normals.append(geometry.normal(mw @ bpts[i].co for i in range(bptCnt)))
     cnt = len(normals)
     if(cnt > 0):
         normal =  Vector([sum(normals[i][j] for i in range(cnt)) \
             for j in range(3)]) / cnt
-    quatMat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
-    shiftMatrixWorld(curve, quatMat)
+        quatMat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
+        shiftMatrixWorld(curve, quatMat)
 
 def reverseCurve(curve):
     cp = curve.data.copy()
