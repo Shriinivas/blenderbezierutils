@@ -7130,7 +7130,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             except Exception as e:
                 c.resetPtSel()
 
-            return changed
+        return changed
 
     def mnSelect(self, opt):
         h = ModalFlexiEditBezierOp.h
