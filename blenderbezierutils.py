@@ -6170,7 +6170,6 @@ class SelectCurveInfo:
         # obj.name gives exception if obj is not in bpy.data.objects collection,
         # so keep a copy
         self.objName = obj.name
-        self.subdivCnt = 0
         self.interpPts = {}
 
         # Format 'ptIdx': segIdx, 'hdlIdx': hdlIdx, 'loc':loc, 't':t
@@ -6297,24 +6296,23 @@ class SelectCurveInfo:
 
         return None
 
-    def subdivSeg(self):
+    def subdivSeg(self, subdivCnt):
         if(self.hasShapeKey): return False
-        if(self.subdivCnt > 1):
+        if(subdivCnt > 1):
             invMw = self.obj.matrix_world.inverted()
             ts = []
             addCnt = 0
             for ptIdx in sorted(self.ptSels.keys()):
                 if(-1 in self.ptSels[ptIdx]):
                     vertCos = getInterpolatedVertsCo(self.interpPts[ptIdx], \
-                        self.subdivCnt)[1:-1]
+                        subdivCnt)[1:-1]
                     changedIdx = ptIdx + addCnt
                     insertBezierPts(self.obj, self.splineIdx, changedIdx, \
                         [invMw @ v for v in vertCos], 'FREE')
                     addCnt += len(vertCos)
-            self.subdivCnt = 0
         return addCnt > 0
 
-    def subdivMode(self, rv3d):
+    def initSubdivMode(self, rv3d):
         if(self.hasShapeKey): return False
         changed = False
         for ptIdx in self.ptSels.keys():
@@ -6322,16 +6320,7 @@ class SelectCurveInfo:
                 self.interpPts[ptIdx] = getPtsAlongBezier3D(self.getSegPts(ptIdx), rv3d,
                     curveRes = 1000, minRes = 1000)
                 changed = True
-        if(changed): self.subdivCnt = 2
         return changed
-
-    def subdivDecr(self):
-        if(self.subdivCnt > 2):
-            self.subdivCnt -= 1
-
-    def subdivIncr(self):
-        if(self.subdivCnt < 100):
-            self.subdivCnt += 1
 
     def getLastSegIdx(self):
         return getLastSegIdx(self.obj, self.splineIdx)
@@ -6423,7 +6412,7 @@ class SelectCurveInfo:
         for ptIdx in self.ptSels:
             sels = self.ptSels[ptIdx]
             for hdlIdx in sels:
-                changed = changed or self.alignHandle(ptIdx, hdlIdx)
+                changed = self.alignHandle(ptIdx, hdlIdx) or changed
         return changed
 
     def insertNode(self, handleType, select = True):
@@ -6461,7 +6450,7 @@ class SelectCurveInfo:
 
         return changed
 
-    def getDisplayInfos(self, hideHdls = False, newPos = None):
+    def getDisplayInfos(self, hideHdls = False, subdivCnt = 0, newPos = None):
 
         # Making long short
         cHltTip = FTProps.colHltTip
@@ -6528,9 +6517,9 @@ class SelectCurveInfo:
                         bptDispInfos[nextIdx].handleNos = handleNos
 
                     vertCos = []
-                    if(self.subdivCnt > 1):
+                    if(subdivCnt > 1):
                         vertCos = getInterpolatedVertsCo(self.interpPts[ptIdx], \
-                            self.subdivCnt)[1:-1]
+                            subdivCnt)[1:-1]
 
                     selSegDispInfo = EditSegDisplayInfo(segPts, \
                         FTProps.colDrawSelSeg, vertCos)
@@ -6810,7 +6799,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             else:
                 newPos = None
             info1, info2 = c.getDisplayInfos(hideHdls = ModalFlexiEditBezierOp.h, \
-                newPos = newPos)
+                subdivCnt = self.subdivCnt, newPos = newPos)
             segDispInfos += info1
             bptDispInfos += info2
 
@@ -6921,7 +6910,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         self.editCurveInfo = None
         self.htlCurveInfo = None
         self.selectCurveInfos = set()
-        self.subdivMode = False
+        self.subdivCnt = 0
 
         # For double click (TODO: remove; same as editCurveInfo == None?)
         self.capture = False
@@ -7297,36 +7286,39 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 if(event.value == 'RELEASE'):
                     changed = False
                     for c in self.selectCurveInfos: 
-                        changed = changed or c.subdivMode(rmInfo.rv3d)
-                    self.subdivMode = changed
-                    if(changed): self.refreshDisplaySelCurves()
+                        changed = c.initSubdivMode(rmInfo.rv3d) or changed
+                    if(changed): 
+                        self.subdivCnt = 2
+                        self.refreshDisplaySelCurves()
                 return {"RUNNING_MODAL"}
 
         confirmed = False
         if(not snapProc and event.type in {'SPACE', 'RET'}):
-            if(self.subdivMode):
+            if(self.subdivCnt > 0):
                 if(event.value == 'RELEASE'):
                     changed = False
                     cis = list(self.selectCurveInfos)
                     for c in cis:
-                        changed = changed or c.subdivSeg()
+                        changed = c.subdivSeg(self.subdivCnt) or changed
                         c.resetPtSel()
                     if(changed): bpy.ops.ed.undo_push()
-                    self.subdivMode = False
+                    self.subdivCnt = 0
                 return {"RUNNING_MODAL"}
             elif(self.editCurveInfo != None):
                 confirmed = True
 
         elif(not snapProc and event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', \
             'NUMPAD_PLUS', 'NUMPAD_MINUS','PLUS', 'MINUS'}):
-            if(len(self.selectCurveInfos) > 0 and self.subdivMode):
+            if(len(self.selectCurveInfos) > 0 and self.subdivCnt > 0):
                 if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
                     and event.value == 'PRESS'):
                     return {'RUNNING_MODAL'}
                 elif(event.type =='WHEELDOWNMOUSE' or event.type.endswith('MINUS')):
-                    for c in self.selectCurveInfos: c.subdivDecr()
+                    if(self.subdivCnt > 2):
+                        self.subdivCnt -= 1
                 elif(event.type =='WHEELUPMOUSE' or event.type.endswith('PLUS')):
-                    for c in self.selectCurveInfos: c.subdivIncr()
+                    if(self.subdivCnt < 100):
+                        self.subdivCnt += 1
                 self.refreshDisplaySelCurves()
                 return {'RUNNING_MODAL'}
 
@@ -7343,8 +7335,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     changed = self.delSelSegs()
                     for c in self.selectCurveInfos:                        
                         c.resetHltInfo()
-                        changed = changed or c.removeNode()
-                        changed = changed or c.straightenSelHandles()
+                        changed = c.removeNode() or changed
+                        changed = c.straightenSelHandles() or changed
 
                     if(changed):
                         # will be taken care by depsgraph?
@@ -7357,7 +7349,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 if(event.value == 'RELEASE'):
                     changed = False
                     for c in self.selectCurveInfos: 
-                        changed = changed or c.alignSelHandles() #selected node
+                        changed = c.alignSelHandles() or changed #selected node
                     if(changed): bpy.ops.ed.undo_push()
                 return {"RUNNING_MODAL"}
 
@@ -7497,11 +7489,15 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         locOnCurve = otherInfo
                     if(ci == None):
                         ci = SelectCurveInfo(obj, splineIdx)
-                        ci.setHltInfo(hltType = resType, ptIdx = segIdx, hltIdx = otherInfo)
-                        segDispInfos, bptDispInfos = ci.getDisplayInfos(ModalFlexiEditBezierOp.h)
+                        ci.setHltInfo(hltType = resType, ptIdx = segIdx, \
+                            hltIdx = otherInfo)
+                        segDispInfos, bptDispInfos = \
+                            ci.getDisplayInfos(ModalFlexiEditBezierOp.h, \
+                                subdivCnt = self.subdivCnt)
                         self.htlCurveInfo = ci
                     else:
-                        ci.setHltInfo(hltType = resType, ptIdx = segIdx, hltIdx = otherInfo)
+                        ci.setHltInfo(hltType = resType, ptIdx = segIdx, \
+                            hltIdx = otherInfo)
             self.refreshDisplaySelCurves(segDispInfos, bptDispInfos, \
                 locOnCurve, refreshPos = True)
 
