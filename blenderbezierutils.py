@@ -7237,8 +7237,12 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             # 3) Reset selection if captured and position already reset (not2)
             if(event.value == 'RELEASE'):
                 if(self.editCurveInfo == None):
-                    self.reset()
-                    ModalFlexiEditBezierOp.resetDisplay()
+                    if(self.subdivCnt > 0):
+                        self.subdivCnt = 0
+                        self.refreshDisplaySelCurves()
+                    else:
+                        self.reset()
+                        ModalFlexiEditBezierOp.resetDisplay()
                 else:
                     if(self.capture and self.snapper.lastSelCo != None and
                         not vectCmpWithMargin(self.snapper.lastSelCo, \
