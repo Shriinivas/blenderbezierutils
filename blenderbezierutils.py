@@ -25,7 +25,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 87),
+    "version": (0, 9, 88),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -2108,7 +2108,7 @@ class BezierUtilsPanel(Panel):
                             if(segPts == None):
                                 continue
                             pts = getPtsAlongBezier2D(segPts, getAllAreaRegions(), \
-                                DEF_CURVE_RES_2D, maxRes = MAX_NONSEL_CURVE_RES)
+                                FTProps.dispCurveRes, maxRes = MAX_NONSEL_CURVE_RES)
                             linePts = getLinesFromPts(pts)
                             lineCos += linePts
                             lineColors += [colorVal for i in range(0, len(linePts))]
@@ -2204,11 +2204,12 @@ def getSegLen(pts, error = DEF_ERR_MARGIN, start = None, end = None, t1 = 0, t2 
 
 def isStraightSeg(segPts):
     if(len(segPts) != 2): return False
+    if((len(segPts[0]) == 5 or len(segPts[1]) == 5) and \
+        segPts[0][4] == 'VECTOR' and segPts[1][3] == 'VECTOR'):
+            return True
     if(vectCmpWithMargin((segPts[0][2]-segPts[0][1]).normalized(), \
         (segPts[1][1] - segPts[1][0]).normalized())):
         return True
-    if(len(segPts[0]) < 5 or len(segPts[1]) < 5 ): return False
-    if(segPts[0][4] == 'VECTOR' and segPts[1][3] == 'VECTOR' ): return True
     return False
 
 # Get pt coords along curve defined by the four control pts (segPts)
@@ -2593,7 +2594,7 @@ def getWSDataForSegs(segs):
 
 # Some global constants
 
-DEF_CURVE_RES_2D = .5 # Per pixel seg divisions (.5 is one div per 2 pixel units)
+SEARCH_CURVE_RES = .5 # Per pixel seg divisions (.5 is one div per 2 pixel units)
 DBL_CLK_DURN = 0.25
 SNGL_CLK_DURN = 0.3
 
@@ -2660,32 +2661,150 @@ class RegionMouseXYInfo:
         return self.area == other.area and self.region == other.region and \
             self.rv3d == other.rv3d
 
-def getSubdivBatches(shader, subdivCos, showSubdivPts):
-        ptSubDivCos = [] if(not showSubdivPts) else subdivCos
-        ptBatch = batch_for_shader(ModalDrawBezierOp.shader, \
-            "POINTS", {"pos": ptSubDivCos, "color": [FTProps.colGreaseSubdiv \
-                for i in range(0, len(ptSubDivCos))]})
+def getLineShades(lineCos, baseColor, start, end, mid = True):
+    if(len(lineCos) == 0 ): return [], []
+    if(len(lineCos) == 1 ): return lineCos[0], [baseColor]
+    if(mid): midPt = lineCos[0] + (lineCos[1] - lineCos[0]) / 2
+    col1 = [start * c for c in baseColor]
+    col2 = [end * c for c in baseColor]
+    if(mid): return [lineCos[0], midPt, midPt, lineCos[1]], [col1, col2, col2, col1]
+    else: return [lineCos[0], lineCos[1]], [col1, col2]
 
-        lineCos = getLinesFromPts(subdivCos)
-        lineBatch = batch_for_shader(ModalDrawBezierOp.shader, \
-            "LINES", {"pos": lineCos, "color": [FTProps.colGreaseNonHltSeg \
-                for i in range(0, len(lineCos))]})
 
-        return ptBatch, lineBatch
+class BGLDrawInfo:
+    def __init__(self, size, color, pts):
+        self.size = size
+        self.color = color
+        self.pts = pts
+
+
+class BGLDrawInfoLine(BGLDrawInfo):
+    def __init__(self, size, color, pts, \
+        gradientStart = None, gradientEnd = None, mid = True):
+        super(BGLDrawInfoLine, self).__init__(size, color, pts)
+        self.gradientStart = gradientStart
+        self.gradientEnd = gradientEnd
+        self.mid = mid
+
+
+class BGLDrawMgr:
+    def __init__(self, shader):
+        self.lineInfoMap = {}
+        self.ptInfoMap = {}
+        self.shader = shader
+
+    def addLineInfo(self, infoId, size, color, pts, \
+        gradientStart = None, gradientEnd = None, mid = True):
+        self.lineInfoMap[infoId] = BGLDrawInfoLine(size, color, pts, \
+            gradientStart, gradientEnd, mid)
+
+    def addPtInfo(self, infoId, size, color, pts):
+        self.ptInfoMap[infoId] = BGLDrawInfo(size, color, pts)
+
+    def redraw(self):
+        lineInfos = sorted(self.lineInfoMap.values(), key = lambda x: (x.size)) 
+        pos = []
+        col = []
+        batches = []
+        for i, info in enumerate(lineInfos):
+            if(i == 0 or info.size != lineInfos[i-1].size):
+                if(i > 0):
+                    bgl.glLineWidth(lineInfos[i-1].size)
+                    batch = batch_for_shader(self.shader, \
+                        'LINES', {"pos": pos, "color": col})
+                    batch.draw(self.shader)
+                pos = []
+                col = []
+                
+            if(info.gradientEnd != None and info.gradientStart != None):
+                if(len(info.pts) != 2 and len(info.color) != 1):
+                    raise ValueError('Exactly two ' + \
+                        'coordinates and one color for gradient line')
+                linePos, lineCols = getLineShades(info.pts, info.color[0], \
+                    info.gradientStart, info.gradientEnd, info.mid)
+            else:
+                if(len(info.pts) == 0): continue
+                linePos = info.pts[:]
+                lineCols = info.color[:]
+                diff = len(linePos) - len(lineCols)
+                if(diff >= 0):
+                    for j in range(diff):
+                        lineCols.append(info.color[-1])
+                else:
+                    for j in range(-diff):
+                        lineCols.pop()
+            pos += linePos
+            col += lineCols
+
+        if(len(pos) > 0):
+            bgl.glLineWidth(lineInfos[-1].size)
+            batch = batch_for_shader(self.shader, \
+                'LINES', {"pos": pos, "color": col})
+            batch.draw(self.shader)
+            
+        ptInfos = sorted(self.ptInfoMap.values(), key = lambda x: (x.size)) 
+        for i, info in enumerate(ptInfos):
+            if(i == 0 or info.size != ptInfos[i-1].size):
+                if(i > 0):
+                    bgl.glPointSize(ptInfos[i-1].size)
+                    batch = batch_for_shader(self.shader, \
+                        'POINTS', {"pos": pos, "color": col})
+                    batch.draw(self.shader)
+                pos = []
+                col = []
+
+            if(len(info.pts) == 0): continue
+            ptCols = info.color[:]
+            diff = len(info.pts) - len(info.color)
+            if(diff >= 0):
+                for j in range(diff):
+                    ptCols.append(info.color[-1])
+            else:
+                for j in range(-diff):
+                    ptCols.pop()
+                
+            pos += info.pts[:]
+            col += ptCols
+
+        if(len(pos) > 0):
+            bgl.glPointSize(ptInfos[-1].size)
+            batch = batch_for_shader(self.shader, \
+                'POINTS', {"pos": pos, "color": col})
+            batch.draw(self.shader)
+
+    def resetLineInfo(self, infoId):
+        drawInfo = self.lineInfoMap.get(infoId)
+        if(drawInfo != None):
+            drawInfo.pts = []
+
+    def resetPtInfo(self, infoId):
+        drawInfo = self.ptInfoMap.get(infoId)
+        if(drawInfo != None):
+            drawInfo.pts = []
+
+    def reset(self):
+        for key in list(self.ptInfoMap.keys()):
+            self.ptInfoMap[key].pts = []
+        for key in list(self.lineInfoMap.keys()):
+            self.lineInfoMap[key].pts = []
 
 # Return line batch for bezier line segments and handles and point batch for handle tips
-def getBezierBatches(shader, segDispInfos, bptDispInfos, areaRegionInfo, \
+def updateBezierBatches(bglDrawMgr, segDispInfos, bptDispInfos, areaRegionInfo, \
         defHdlType = 'ALIGNED'):
 
     lineCos = [] #segment is also made up of lines
     lineColors = []
     for i, info in enumerate(segDispInfos):
         segPts = info.segPts
-        pts = getPtsAlongBezier2D(segPts, areaRegionInfo, \
-            DEF_CURVE_RES_2D, maxRes = MAX_NONSEL_CURVE_RES)
-        segLineCos = getLinesFromPts(pts)
-        lineCos += segLineCos
-        lineColors += [info.segColor for j in range(0, len(segLineCos))]
+        if(isStraightSeg(segPts)):
+            lineCos += [segPts[0][1], segPts[1][1]]
+            lineColors += [info.segColor, info.segColor]
+        else:
+            pts = getPtsAlongBezier2D(segPts, areaRegionInfo, \
+                FTProps.dispCurveRes, maxRes = MAX_NONSEL_CURVE_RES)
+            segLineCos = getLinesFromPts(pts)
+            lineCos += segLineCos
+            lineColors += [info.segColor for j in range(0, len(segLineCos))]
 
     tipCos = []
     tipColors = []
@@ -2709,10 +2828,8 @@ def getBezierBatches(shader, segDispInfos, bptDispInfos, areaRegionInfo, \
                 tipCos.append(pt[j])
                 tipColors.append(tipColor)
 
-    lineBatch = batch_for_shader(shader, "LINES", {"pos": lineCos, "color": lineColors})
-    tipBatch = batch_for_shader(shader, "POINTS", {"pos": tipCos, "color": tipColors})
-
-    return lineBatch, tipBatch
+    bglDrawMgr.addLineInfo('bezLineBatch', FTProps.lineWidth, lineColors, lineCos)
+    bglDrawMgr.addPtInfo('bezTipBatch', FTProps.drawPtSize, tipColors, tipCos)
 
 def resetToolbarTool():
     win = bpy.context.window
@@ -3167,8 +3284,8 @@ class FTProps:
             'colHdlFree', 'colHdlVector', 'colHdlAligned', 'colHdlAuto', 'colSelTip', \
             'colHltTip', 'colBezPt', 'colHdlPtTip', 'colAdjBezTip', 'colEditSubdiv', \
             'colGreaseSubdiv', 'colGreaseBezPt', 'snapDist', 'dispSnapInd', \
-            'dispAxes', 'snapPtSize', 'showKeyMap', 'keyMapFontSize', 'keyMapLocX', \
-            'keyMapLocY', 'keyMapNextToTool']
+            'dispAxes', 'snapPtSize', 'dispCurveRes', 'showKeyMap', 'keyMapFontSize', \
+            'keyMapLocX', 'keyMapLocY', 'keyMapNextToTool']
 
             if(resetPrefs):
                 FTProps.initDefault()
@@ -3233,6 +3350,7 @@ class FTProps:
         FTProps.keyMapLocY = 10
         FTProps.keyMapNextToTool = True
         FTProps.snapPtSize = 3
+        FTProps.dispCurveRes = .4
 
 class FTMenuData:
 
@@ -4208,12 +4326,11 @@ class Snapper():
     def setStatus(self, area, text): #TODO Global
         area.header_text_set(text)
 
-    def getGuideBatches(self, shader):
+    def updateGuideBatches(self, bglDrawMgr):
         rmInfo = self.rmInfo
         if(rmInfo == None): return []
         refLine = self.getRefLine()
         refLineOrig = self.getRefLineOrig()
-        batches = []
         freeAxesC = self.getFreeAxesCombined()
         freeAxesN = self.getFreeAxesNormalized()
 
@@ -4224,12 +4341,11 @@ class Snapper():
 
         tm, invTm, orig = self.getTMInfoAndOrig(rmInfo)
 
-        lineCo = []
         if(FTProps.dispAxes and ((refLineOrig != None or transType == 'VIEW' \
             or len(freeAxesC) == 1) or (len(freeAxesN) > 0 \
                 and origType != 'REFERENCE'))):
             colors = [(.6, 0.2, 0.2, 1), (0.2, .6, 0.2, 1), (0.2, 0.4, .6, 1)]
-            l = 10 * rmInfo.rv3d.view_distance
+            l = 2 * rmInfo.rv3d.view_distance
 
             if (self.lastSelCo != None and len(freeAxesC) == 1): orig = self.lastSelCo
 
@@ -4241,52 +4357,52 @@ class Snapper():
                 pt2 = refCo.copy()
                 pt1[axis] = l + refCo[axis]
                 pt2[axis] = -l + refCo[axis]
-                slineCo, slineCol = getLineShades([invTm @ pt1, invTm @ pt2], col, .2, .9)
-                batches.append(batch_for_shader(shader, \
-                    "LINES", {"pos": slineCo, "color": slineCol}))
-
+                slineCo = [invTm @ pt1, invTm @ pt2]
+                bglDrawMgr.addLineInfo('snapAxis'+str(axis), FTProps.axisLineWidth, \
+                    [col], slineCo, .2, .9)
+        else:
+            for axis in freeAxesN[:2]:
+                bglDrawMgr.resetLineInfo('snapAxis'+str(axis))
+            
+        slineCo = []
+        slineCol = []
         if(refLineOrig != None and self.lastSelCo != None and \
             (self.angleSnap or ('keyboard' in self.lastSnapTypes \
                 and self.snapDigits.polar))):
 
             slineCo = [orig, self.lastSelCo]
-            slineCol = [(.4, .4, .4, 1)] * 2
-            batches.append(batch_for_shader(shader, \
-                "LINES", {"pos": slineCo, "color": slineCol}))
-            batches.append(batch_for_shader(shader, \
-                "POINTS", {"pos": lineCo, \
-                    "color": [(1, 1, 1, 1) for i in range(0, len(lineCo))]}))
+            slineCol = [(.4, .4, .4, 1)]
+            ptCol = (1, 1, 1, 1)
+        bglDrawMgr.addLineInfo('SnapLine', FTProps.axisLineWidth, slineCol, slineCo)
+        # ~ bglDrawMgr.addPtInfo('SnapLinePt', snapPtSize, [ptCol], lineCo)
 
-        if(self.customAxis.length() != 0 and \
-            (self.customAxis.inDrawAxis == True or \
-                'AXIS' in {transType, origType, axisScale})):
+        ptCo = []
+        ptCol = []
+        lineCo = []
+        lineCol = []
+        gradStart = None
+        gradEnd = None
+        if(self.customAxis.length() != 0 and (self.customAxis.inDrawAxis == True or \
+            'AXIS' in {transType, origType, axisScale})):
             apts = self.customAxis.axisPts
             lineCo = [apts[0], apts[1]]
             ptCo = self.customAxis.getSnapPts()
-        else: ptCo = []
+            lineCol = [(1, 1, 1, 1)]
+            ptCol = [(1, .4, 0, 1)]
+            gradStart = .9
+            gradEnd = .3
 
+        bglDrawMgr.addLineInfo('CustAxisLine', FTProps.axisLineWidth, \
+            lineCol, lineCo, gradStart, gradEnd, mid = False)
+        bglDrawMgr.addPtInfo('CustAxisPt', FTProps.snapPtSize, ptCol, ptCo)
+
+        ptCol = []
+        ptCo = []
         if(FTProps.dispSnapInd and self.snapCo != None):
-            ptCo.append(self.snapCo)
+            ptCo = [self.snapCo]
+            ptCol = [(1, .4, 0, 1)]            
 
-        # Axis Line
-        slineCo, slineCol = getLineShades(lineCo, (1, 1, 1, 1), .9, .3, mid = False)
-        batches.append(batch_for_shader(shader, \
-            "LINES", {"pos": slineCo, "color": slineCol}))
-
-        batches.append(batch_for_shader(shader, \
-            "POINTS", {"pos": ptCo, \
-                "color": [(1, .4, 0, 1) for i in range(0, len(ptCo))]}))
-
-        return batches
-
-def getLineShades(lineCos, baseColor, start, end, mid = True):
-    if(len(lineCos) == 0 ): return [], []
-    if(len(lineCos) == 1 ): return lineCos[0], [baseColor]
-    if(mid): midPt = lineCos[0] + (lineCos[1] - lineCos[0]) / 2
-    col1 = [start * c for c in baseColor]
-    col2 = [end * c for c in baseColor]
-    if(mid): return [lineCos[0], midPt, midPt, lineCos[1]], [col1, col2, col2, col1]
-    else: return [lineCos[0], lineCos[1]], [col1, col2]
+        bglDrawMgr.addPtInfo('SnapPt', FTProps.snapPtSize, ptCol, ptCo)
 
 
 ################################## Flexi Tool Classes ##################################
@@ -4308,10 +4424,8 @@ class ModalBaseFlexiOp(Operator):
     drawHdlrRef = None
     drawTxtHdlrRef = None
     drawFunc = None
-    segBatch = None
-    tipBatch = None
     shader = None
-    snapperBatches = []
+    bglDrawMgr = None
     opObj = None
 
     pointSize = 4 # For Draw (Marker is of diff size)
@@ -4394,19 +4508,7 @@ class ModalBaseFlexiOp(Operator):
 
     def drawHandlerBase():
         if(ModalBaseFlexiOp.shader != None):
-
-            bgl.glLineWidth(FTProps.axisLineWidth)
-            bgl.glPointSize(FTProps.snapPtSize)
-            for batch in ModalBaseFlexiOp.snapperBatches:
-                batch.draw(ModalBaseFlexiOp.shader)
-
-            bgl.glLineWidth(FTProps.lineWidth)
-            if(ModalBaseFlexiOp.segBatch != None):
-                ModalBaseFlexiOp.segBatch.draw(ModalBaseFlexiOp.shader)
-
-            bgl.glPointSize(FTProps.drawPtSize)
-            if(ModalDrawBezierOp.tipBatch != None):
-                ModalDrawBezierOp.tipBatch.draw(ModalBaseFlexiOp.shader)
+            ModalBaseFlexiOp.bglDrawMgr.redraw()
 
     def tagRedraw():
         areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
@@ -4424,25 +4526,17 @@ class ModalBaseFlexiOp(Operator):
                                 'AUTO': FTProps.colHdlAuto}
 
     def resetDisplayBase():
-        ModalBaseFlexiOp.segBatch = getResetBatch(ModalBaseFlexiOp.shader, "LINES")
-        ModalBaseFlexiOp.tipBatch = getResetBatch(ModalBaseFlexiOp.shader, "POINTS")
-        ModalBaseFlexiOp.snapperBatches = \
-            [getResetBatch(ModalBaseFlexiOp.shader, "LINES"), \
-                getResetBatch(ModalBaseFlexiOp.shader, "POINTS")]
+        ModalBaseFlexiOp.bglDrawMgr.reset()
         ModalBaseFlexiOp.tagRedraw()
 
     def refreshDisplayBase(segDispInfos, bptDispInfos, snapper):
         areaRegionInfo = getAllAreaRegions()
 
-        ModalBaseFlexiOp.segBatch, ModalBaseFlexiOp.tipBatch = \
-            getBezierBatches(ModalDrawBezierOp.shader, segDispInfos, bptDispInfos, \
-                areaRegionInfo)
+        updateBezierBatches(ModalDrawBezierOp.bglDrawMgr, segDispInfos, \
+            bptDispInfos, areaRegionInfo)
 
         if(snapper != None):
-            ModalBaseFlexiOp.snapperBatches = \
-                snapper.getGuideBatches(ModalBaseFlexiOp.shader)
-        else:
-            ModalBaseFlexiOp.snapperBatches = []
+            snapper.updateGuideBatches(ModalBaseFlexiOp.bglDrawMgr)
 
         ModalBaseFlexiOp.tagRedraw()
 
@@ -4487,6 +4581,8 @@ class ModalBaseFlexiOp(Operator):
         self.rmInfo = None
 
         ModalBaseFlexiOp.shader = gpu.shader.from_builtin('3D_SMOOTH_COLOR')
+        ModalBaseFlexiOp.bglDrawMgr = BGLDrawMgr(ModalBaseFlexiOp.shader)
+
         # ~ ModalBaseFlexiOp.shader.bind()
         context.window_manager.modal_handler_add(self)
 
@@ -4643,8 +4739,8 @@ class PrimitiveDraw:
 
         snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
         orig = complex(bbStart[idx0], bbStart[idx1])
-        # ~ self.curveObjOrigin = tm.inverted() @ \
-            # ~ get3DVector(orig + center2d, axisIdxs, z)
+        self.curveObjOrigin = tm.inverted() @ \
+            get3DVector(orig + center2d, axisIdxs, z)
 
         curvePts = self.getShapePts(mode, numSegs, bbStart, bbEnd, center2d, \
             startAngle, sweep, axisIdxs, z)
@@ -4660,6 +4756,7 @@ class PrimitiveDraw:
         self.parent = parent
         self.initialize()
         self.shapeSegCnt = 4
+        self.curveObjOrigin = None
 
     def initialize(self):
         self.bbStart = None
@@ -4729,7 +4826,7 @@ class PrimitiveDraw:
         if(self.bbStart != None and (event.type == 'RET' or event.type == 'SPACE')):
             if(event.value == 'RELEASE'):
                 self.updateCurvePts()
-                self.parent.confirm(context, event)
+                self.parent.confirm(context, event, self.curveObjOrigin)
                 self.parent.snapper.resetSnap()
                 self.parent.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
@@ -4749,7 +4846,7 @@ class PrimitiveDraw:
             else:
                 self.bbEnd = loc
                 self.updateCurvePts()
-                parent.confirm(context, event)
+                parent.confirm(context, event, self.curveObjOrigin)
             return {"RUNNING_MODAL"}
         if (snapProc or event.type == 'MOUSEMOVE'):
             if(self.bbStart != None):
@@ -5201,7 +5298,6 @@ class BezierDraw:
 class ModalDrawBezierOp(ModalBaseFlexiOp):
 
     # Static members shared by flexi draw and flexi grease
-    markerBatch = None
     markerSize = 8
     h = False
 
@@ -5209,12 +5305,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
     #static method
     def drawHandler():
-        if(ModalBaseFlexiOp.shader != None):
-            bgl.glPointSize(ModalDrawBezierOp.markerSize)
-            if(ModalDrawBezierOp.markerBatch != None):
-                ModalDrawBezierOp.markerBatch.draw(ModalBaseFlexiOp.shader)
-
-            ModalBaseFlexiOp.drawHandlerBase()
+        ModalBaseFlexiOp.drawHandlerBase()
 
     def updateDrawType(dummy, context):
         params = bpy.context.window_manager.bezierToolkitParams
@@ -5236,9 +5327,6 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         return TOOL_TYPE_FLEXI_DRAW
 
     def resetDisplay(self):
-        ModalDrawBezierOp.markerBatch = \
-            getResetBatch(ModalBaseFlexiOp.shader, "POINTS")
-
         ModalBaseFlexiOp.resetDisplayBase()
 
     def __init__(self, curveDispRes):
@@ -5288,12 +5376,12 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
     def postUndoRedo(self, scene, dummy = None): # signature different in 2.8 and 2.81?
         self.updateSnapLocs() # subclass method
 
-    def confirm(self, context, event):
+    def confirm(self, context, event, location = None):
         metakeys = self.snapper.getMetakeys()
         shift = self.snapper.angleSnap # Overloaded key op
         autoclose = (self.drawType == 'BEZIER' and shift and \
             (event.type == 'SPACE' or event.type == 'RET'))
-        self.save(context, event, autoclose)
+        self.save(context, event, autoclose, location)
         self.curvePts = []
         self.capture = False
         self.resetDisplay()
@@ -5318,8 +5406,8 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         markerLoc = self.snapper.get3dLocSnap(rmInfo)
 
         self.resetDisplay()
-        ModalDrawBezierOp.markerBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
-            "POINTS", {"pos": [markerLoc], "color": [colMarker]})
+        self.bglDrawMgr.addPtInfo('drawMarker', ModalDrawBezierOp.markerSize, \
+            [colMarker], [markerLoc])
 
         ModalBaseFlexiOp.refreshDisplayBase(segDispInfos = [], bptDispInfos = [], \
             snapper = self.snapper)
@@ -5333,7 +5421,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             self.refreshMarkerPos(rmInfo)
             return
 
-        ModalDrawBezierOp.markerBatch = getResetBatch(ModalBaseFlexiOp.shader, 'POINTS')
+        self.bglDrawMgr.resetPtInfo('drawMarker')
 
         colMap = self.getColorMap()
         colSelSeg = colMap['SEL_SEG_COLOR']
@@ -5593,7 +5681,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                             return retVals
         return retVals
 
-    def save(self, context, event, autoclose, align = True):
+    def save(self, context, event, autoclose, location, align = True):
 
         if(len(self.curvePts) > 1):
 
@@ -5619,9 +5707,11 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
             if(align and startObj == None and endObj == None):
                 alignToNormal(obj)
                 bpy.context.evaluated_depsgraph_get().update()
-                bbCenter = getBBoxCenter(obj)
-                shiftOrigin(obj, bbCenter)
-                obj.location = bbCenter
+                if(location == None): location = getBBoxCenter(obj)
+
+            if(location != None): 
+                shiftOrigin(obj, location)
+                obj.location = location
                 bpy.context.evaluated_depsgraph_get().update()
 
             #TODO: Why try?
@@ -5657,31 +5747,10 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
     bl_label = "Flexi Draw Grease Bezier Curves"
     bl_options = {'REGISTER', 'UNDO'}
 
-    subdivPtBatch = None
-    subdivLineBatch = None
     h = False
-
-    def drawHandler():
-        if(ModalBaseFlexiOp.shader != None):
-            bgl.glPointSize(FTProps.greaseSubdivPtSize)
-            if(ModalFlexiDrawGreaseOp.subdivPtBatch != None):
-                ModalFlexiDrawGreaseOp.subdivPtBatch.draw(ModalBaseFlexiOp.shader)
-
-            if(ModalFlexiDrawGreaseOp.subdivLineBatch != None):
-                ModalFlexiDrawGreaseOp.subdivLineBatch.draw(ModalBaseFlexiOp.shader)
-
-        ModalDrawBezierOp.drawHandler()
 
     def getToolType(self):
         return TOOL_TYPE_FLEXI_GREASE
-
-    def resetDisplay(self):
-        ModalFlexiDrawGreaseOp.subdivPtBatch = \
-            getResetBatch(ModalBaseFlexiOp.shader, "POINTS")
-        ModalFlexiDrawGreaseOp.subdivLineBatch = \
-            getResetBatch(ModalBaseFlexiOp.shader, "LINES")
-
-        super(ModalFlexiDrawGreaseOp, self).resetDisplay()
 
     def __init__(self):
         # ~ curveDispRes = 200
@@ -5730,9 +5799,13 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
         ptCnt = len(self.curvePts)
         subdivCos = self.subdivCos if ptCnt > 1 else []
-        showSubdivPts = not ModalFlexiDrawGreaseOp.h
-        ModalFlexiDrawGreaseOp.subdivPtBatch, ModalFlexiDrawGreaseOp.subdivLineBatch = \
-            getSubdivBatches(ModalBaseFlexiOp.shader, subdivCos, showSubdivPts)
+        self.bglDrawMgr.addLineInfo('gpSubdivLines', FTProps.lineWidth, \
+            [FTProps.colGreaseNonHltSeg], getLinesFromPts(subdivCos))
+        if(ModalFlexiDrawGreaseOp.h):
+            self.bglDrawMgr.resetPtInfo('gpSubdivPts')
+        else: 
+            self.bglDrawMgr.addPtInfo('gpSubdivPts', \
+                FTProps.greaseSubdivPtSize, [FTProps.colGreaseSubdiv], subdivCos)
 
         if(self.drawType != 'BEZIER' and len(self.curvePts) > 0):
             ModalBaseFlexiOp.refreshDisplayBase(segDispInfos = [], bptDispInfos = [], \
@@ -5802,7 +5875,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         return clen
 
     def updateSubdivCos(self, clen = None):
-        if(self.drawType in {'POLYGON', 'STAR'}):
+        if(self.drawType in {'POLYGON', 'STAR', 'RECTANGLE'}):
             self.subdivCos = [p[0] for p in self.curvePts]
         elif(self.interpPts != []):
             if(clen == None): clen = sum(self.getCurveSegLens())
@@ -5842,7 +5915,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
                         if(len(s.points) > 0): # Shouldn't be needed, but anyway...
                             self.snapLocs += [mw @ s.points[0].co, mw @ s.points[-1].co]
 
-    def save(self, context, event, autoclose):
+    def save(self, context, event, autoclose, location):
         layer = self.gpencil.data.layers.active
         if(layer == None):
             layer = self.gpencil.data.layers.new('GP_Layer', set_active = True)
@@ -5998,11 +6071,11 @@ def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, 
                 if(withObjs):
                     interpLocs = \
                         getInterpSegPts(wsData, i, j, spline.use_cyclic_u, \
-                            res = DEF_CURVE_RES_2D, maxRes = MAX_NONSEL_CURVE_RES)[1:-1]
+                            res = SEARCH_CURVE_RES, maxRes = MAX_NONSEL_CURVE_RES)[1:-1]
                     if(wsDataSK != None):
                         interpLocs += \
                             getInterpSegPts(wsDataSK, i, j, spline.use_cyclic_u, \
-                                res = DEF_CURVE_RES_2D, \
+                                res = SEARCH_CURVE_RES, \
                                     maxRes = MAX_NONSEL_CURVE_RES)[1:-1]
 
                     objInterpLocs += interpLocs
@@ -6040,11 +6113,11 @@ def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, 
             for segIdx in segIdxs:
                 selObjLocList.append([selObj, splineIdx, segIdx])
                 interpLocs = getInterpSegPts(wsData, splineIdx, segIdx, cyclic, \
-                        res = DEF_CURVE_RES_2D * 5, maxRes = maxSelObjRes)[1:-1]
+                        res = SEARCH_CURVE_RES * 5, maxRes = maxSelObjRes)[1:-1]
                 if(wsDataSK != None):
                     interpLocs += \
                         getInterpSegPts(wsDataSK, splineIdx, segIdx, cyclic, \
-                        res = DEF_CURVE_RES_2D * 5, maxRes = maxSelObjRes)[1:-1]
+                        res = SEARCH_CURVE_RES * 5, maxRes = maxSelObjRes)[1:-1]
                 segInterpLocs += interpLocs
                 selObjInterpCounts.append(len(interpLocs))
 
@@ -6540,8 +6613,10 @@ class SelectCurveInfo:
         return [segDispInfos, bptDispInfos]
 
 class EditCurveInfo(SelectCurveInfo):
-    def __init__(self, obj, splineIdx):
+    def __init__(self, obj, splineIdx, ptSels = None):
         super(EditCurveInfo, self).__init__(obj, splineIdx)
+        if(ptSels != None):
+            self.ptSels = ptSels
 
     def syncAlignedHdl(self, pt, ctrlPLoc, hdlIdx):
         typeIdx = 3 if hdlIdx == 0 else 4
@@ -6752,18 +6827,12 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
     bl_label = "Flexi Edit Curve"
     bl_options = {'REGISTER', 'UNDO'}
 
-    ptBatch = None
     h = False
 
     def drawHandler():
-        if(ModalBaseFlexiOp.shader != None):
-            ModalBaseFlexiOp.drawHandlerBase()
-            bgl.glPointSize(FTProps.editSubdivPtSize)
-            if(ModalFlexiEditBezierOp.ptBatch != None):
-                ModalFlexiEditBezierOp.ptBatch.draw(ModalBaseFlexiOp.shader)
+        ModalBaseFlexiOp.drawHandlerBase()
 
     def resetDisplay():
-        ModalFlexiEditBezierOp.ptBatch = getResetBatch(ModalBaseFlexiOp.shader, "POINTS")
         ModalBaseFlexiOp.resetDisplayBase()
 
     # static method
@@ -6774,9 +6843,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         # ~ if(locOnCurve != None): ptCos.append(locOnCurve) # For debugging
 
-        ModalFlexiEditBezierOp.ptBatch = batch_for_shader(ModalBaseFlexiOp.shader, \
-            "POINTS", {"pos": ptCos, "color": [FTProps.colEditSubdiv \
-                for i in range(0, len(ptCos))]})
+        ModalBaseFlexiOp.bglDrawMgr.addPtInfo('editSubdiv', FTProps.editSubdivPtSize, \
+            [FTProps.colEditSubdiv], ptCos)
 
         ModalBaseFlexiOp.refreshDisplayBase(segDispInfos, bptDispInfos, snapper)
 
@@ -7384,7 +7452,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     self.selectCurveInfos.add(ci)
                 elif(type(ci) != EditCurveInfo):
                     self.selectCurveInfos.remove(ci)
-                    ci = EditCurveInfo(obj, splineIdx)
+                    ci = EditCurveInfo(obj, splineIdx, ci.ptSels)
                     self.selectCurveInfos.add(ci)
 
                 ptIdx = segIdx
@@ -7437,7 +7505,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         changed = ei.insertNode(handleType)
                         bpy.ops.ed.undo_push()
                         ModalFlexiEditBezierOp.resetDisplay()
-                        self.refreshDisplaySelCurves()
+                        # ~ self.refreshDisplaySelCurves()
 
                     # Gib dem Benutzer Zeit zum Atmen!
                     else:
@@ -7449,15 +7517,16 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         hdlIdx = ei.clickInfo['hdlIdx']
                         ei.addSel(ptIdx, hdlIdx, toggle = True)
                         self.selectCurveInfos.add(ei)
-                        self.refreshDisplaySelCurves()
+                        # ~ self.refreshDisplaySelCurves()
                 else:
                     ei.moveSeg(self.getNewPos(refreshStatus = False))
-                    self.updateAfterGeomChange() # TODO: Really needed?
+                    # ~ self.updateAfterGeomChange() # TODO: Really needed?
                     bpy.ops.ed.undo_push()
 
                 self.capture = False
-                self.snapper.resetSnap()
                 self.editCurveInfo = None
+                self.refreshDisplaySelCurves()
+                self.snapper.resetSnap()
 
             # ~ self.pressT = None
             return {"RUNNING_MODAL"}
@@ -8024,6 +8093,15 @@ class BezierUtilsPreferences(AddonPreferences):
             update = FTProps.updateProps
     )
 
+    dispCurveRes: FloatProperty(
+            name = "Display Curve Resolution",
+            description = "Segment divisions per pixel",
+            default = .4,
+            min = 0.001,
+            max = 1,
+            update = FTProps.updateProps
+    )
+
     snapDist: FloatProperty(
             name = "Snap Distance",
             description = "Snapping distance (range) in pixels",
@@ -8385,6 +8463,9 @@ class BezierUtilsPreferences(AddonPreferences):
             col = box.column().split()
             col.label(text='Snap Point Size:')
             col.prop(self, "snapPtSize", text = '')
+            col = box.column().split()
+            col.label(text='Display Curve Resolution:')
+            col.prop(self, "dispCurveRes", text = '')
             col = box.column().split()
             col.label(text='Display Orientation / Origin Axes:')
             col.prop(self, "dispAxes", text = '')
