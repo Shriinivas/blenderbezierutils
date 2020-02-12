@@ -25,7 +25,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 88),
+    "version": (0, 9, 90),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -2131,6 +2131,12 @@ def getPtFromT(p0, p1, p2, p3, t):
         3 * c * (t ** 2) * p2 + (t ** 3) * p3
     return pt
 
+def getTangentAtT(p0, p1, p2, p3, t):
+    c = (1 - t)
+    tangent = -3 * (c * c) * p0 + 3 * c * c * p1 - 6 * t * c * p1 - \
+        3 * t * t * p2 + 6 * t * c * p2 + 3 * t * t * p3
+    return tangent
+ 
 # iterative brute force, not optimized, some iterations maybe redundant
 def getTsForPt(p0, p1, p2, p3, co, coIdx, tolerance = 0.000001, maxItr = 1000):
     ts = set()
@@ -2201,6 +2207,15 @@ def getSegLen(pts, error = DEF_ERR_MARGIN, start = None, end = None, t1 = 0, t2 
         return (getSegLen(pts, error, start, mid, t1, t1_5) +
                 getSegLen(pts, error, mid, end, t1_5, t2))
     return l2
+
+def hasAlignedHandles(pt):
+    if(len(pt) == 5 and 'ALIGNED' in {pt[3], pt[4]} and 'FREE' not in {pt[3], pt[4]}):
+        return True
+    diffV1 = pt[1] - pt[0]
+    diffV2 = pt[2] - pt[1]
+    if(vectCmpWithMargin(diffV1.normalized(), diffV2.normalized())):
+        return True
+    return False
 
 def isStraightSeg(segPts):
     if(len(segPts) != 2): return False
@@ -2886,6 +2901,7 @@ class FTHotKeys:
 
     # Edit
     hkUniSubdiv = 'hkUniSubdiv'
+    hkBevelPt = 'hkBevelPt'
     hkAlignHdl = 'hkAlignHdl'
     hkDelPtSeg = 'hkDelPtSeg'
     hkToggleHdl = 'hkToggleHdl'
@@ -2897,6 +2913,8 @@ class FTHotKeys:
     editHotkeys = []
     editHotkeys.append(FTHotKeyData(hkUniSubdiv, 'W', 'Segment Uniform Subdivide', \
             'Hotkey to initiate Segment Uniform Subdiv op'))
+    editHotkeys.append(FTHotKeyData(hkBevelPt, 'Ctrl+B', 'Bevel Selected Points', \
+            'Hotkey to initiate Bevel op'))
     editHotkeys.append(FTHotKeyData(hkAlignHdl, 'K', 'Align Handle', \
             'Hotkey to align one handle with the other'))
     editHotkeys.append(FTHotKeyData(hkDelPtSeg, 'DEL', 'Delete Point / Seg', \
@@ -3253,6 +3271,7 @@ class FTHotKeys:
         stdKeylabels.append(['Lock to Z-Axis', 'Z'])
         stdKeylabels.append(['Lock to Y-Axis', 'Y'])
         stdKeylabels.append(['Lock to X-Axis', 'X'])
+        stdKeylabels.append(['Confirm Operation', 'Space / Enter'])
         for k in hkData:
             labels.append(k.label)
             config.append(True)
@@ -3285,7 +3304,8 @@ class FTProps:
             'colHltTip', 'colBezPt', 'colHdlPtTip', 'colAdjBezTip', 'colEditSubdiv', \
             'colGreaseSubdiv', 'colGreaseBezPt', 'snapDist', 'dispSnapInd', \
             'dispAxes', 'snapPtSize', 'dispCurveRes', 'showKeyMap', 'keyMapFontSize', \
-            'keyMapLocX', 'keyMapLocY', 'keyMapNextToTool']
+            'keyMapLocX', 'keyMapLocY', 'keyMapNextToTool', 'defBevelFact', \
+            'maxBevelFact', 'minBevelFact', 'bevelIncr']
 
             if(resetPrefs):
                 FTProps.initDefault()
@@ -3351,6 +3371,10 @@ class FTProps:
         FTProps.keyMapNextToTool = True
         FTProps.snapPtSize = 3
         FTProps.dispCurveRes = .4
+        FTProps.defBevelFact = 4
+        FTProps.maxBevelFact = 15
+        FTProps.minBevelFact = -15
+        FTProps.bevelIncr = .5
 
 class FTMenuData:
 
@@ -5470,6 +5494,10 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
     def __init__(self):
         pass
 
+    # For some curve-changing ops (like reset rotation); possible in draw
+    def updateAfterGeomChange(self, scene = None, dummy = None): # 3 params in 2.81
+        self.updateSnapLocs()
+
     def isToolSelected(self, context):
         if(context.mode != 'OBJECT'):
             return False
@@ -5500,6 +5528,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         # Not used right now (maybe in case of large no of curves)
         self.snapInfos = {}
         self.updateSnapLocs()
+        bpy.app.handlers.depsgraph_update_post.append(self.updateAfterGeomChange)
 
     def subModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
@@ -5991,9 +6020,11 @@ def getBptData(obj, withShapeKey = True, shapeKeyIdx = None, fromMix = True, \
         if(updateDeps): bpy.context.evaluated_depsgraph_get().update()
     return worldSpaceData
 
-def getAdjIdx(obj, splineIdx, startIdx, offset = 1):
+#TODO: splineIdx not needed if ptCnt given
+def getAdjIdx(obj, splineIdx, startIdx, offset = 1, ptCnt = None):
     spline = obj.data.splines[splineIdx]
-    ptCnt = len(spline.bezier_points)
+    if(ptCnt == None): 
+        ptCnt = len(spline.bezier_points)
     if(not spline.use_cyclic_u and
         ((startIdx + offset) >= ptCnt or (startIdx + offset) < 0)):
             return None
@@ -6385,6 +6416,28 @@ class SelectCurveInfo:
                     addCnt += len(vertCos)
         return addCnt > 0
 
+    def bevelPts(self, bevelCnt, deltaPos):
+        if(self.hasShapeKey): return False
+        pts, ptSels = self.getBevelPts(bevelCnt, self.wsData, deltaPos)
+        spline = self.obj.data.splines[self.splineIdx]
+        newPtCnt = len(pts) - len(self.wsData)
+        spline.bezier_points.add(newPtCnt)
+        for pt in spline.bezier_points:
+            pt.handle_left_type = 'FREE'
+            pt.handle_right_type = 'FREE'
+
+        invMw = self.obj.matrix_world.inverted()
+        for i, pt in enumerate(spline.bezier_points):
+            pt.handle_left = invMw @ pts[i][0]
+            pt.co = invMw @ pts[i][1]
+            pt.handle_right = invMw @ pts[i][2]
+            pt.handle_left_type = pts[i][3]
+            pt.handle_right_type = pts[i][4]
+
+        self.updateWSData()
+        self.ptSels = ptSels
+        return True
+
     def initSubdivMode(self, rv3d):
         if(self.hasShapeKey): return False
         changed = False
@@ -6395,6 +6448,19 @@ class SelectCurveInfo:
                 changed = True
         return changed
 
+    def initBevelMode(self, rv3d):
+        if(self.hasShapeKey): return False
+        changed = False
+        for ptIdx in self.ptSels.keys():
+            nextIdx = self.getAdjIdx(ptIdx)
+            prevIdx = self.getAdjIdx(ptIdx, -1)
+            if((1 in self.ptSels[ptIdx] or -1 in self.ptSels[ptIdx]) and \
+             nextIdx != None and prevIdx != None and \
+                not hasAlignedHandles(self.wsData[ptIdx])):
+                    changed = True
+                    break
+        return changed
+ 
     def getLastSegIdx(self):
         return getLastSegIdx(self.obj, self.splineIdx)
 
@@ -6475,8 +6541,10 @@ class SelectCurveInfo:
             bpt.handle_right_type = 'FREE'
 
         for pt in pts:
-            if(hdlIdx == 0): pt.handle_left = pt.co - (pt.handle_right - pt.co)
-            else: pt.handle_right = pt.co + (pt.co - pt.handle_left)
+            if(hdlIdx == 0): pt.handle_left = pt.co - \
+                (pt.co - pt.handle_left).length * (pt.handle_right - pt.co).normalized()
+            else: pt.handle_right = pt.co + \
+                (pt.co - pt.handle_right).length * (pt.co - pt.handle_left).normalized()
         return True
 
     def alignSelHandles(self):
@@ -6523,7 +6591,111 @@ class SelectCurveInfo:
 
         return changed
 
-    def getDisplayInfos(self, hideHdls = False, subdivCnt = 0, newPos = None):
+    def getBevelPts(self, bevelCnt, pts, deltaPos):
+        deltaLen = deltaPos.length
+        if(floatCmpWithMargin(deltaLen, DEF_ERR_MARGIN)):
+            return pts, self.ptSels
+
+        # http://launchpadlibrarian.net/12692602/rcp.svg
+        kFact = (bevelCnt/3) * (sqrt(2) - 1)
+        maxT = .5
+
+        # Deep copy
+        pts = [[p if isinstance(p, str) else p.copy() for p in pt] for pt in pts]
+
+        newPts = []
+        newSelPtIdxs = []
+
+        # Add both points of the selected segments in selection
+        bevelPtIdxs = set()
+        for ptIdx in self.ptSels.keys():
+            if(1 in self.ptSels[ptIdx]): bevelPtIdxs.add(ptIdx)
+            if(-1 in self.ptSels[ptIdx]):
+                adjIdx = self.getAdjIdx(ptIdx)
+                bevelPtIdxs.add(ptIdx)
+                bevelPtIdxs.add(adjIdx)
+
+        ptSels = {k:self.ptSels[k].copy() for k in self.ptSels.keys()}
+
+        for ptIdx in bevelPtIdxs:
+            if(ptSels.get(ptIdx) == None): ptSels[ptIdx] = {1}
+            else: ptSels[ptIdx].add(1)
+
+        for ptIdx, pt in enumerate(pts):
+            nextIdx = self.getAdjIdx(ptIdx)
+            prevIdx = self.getAdjIdx(ptIdx, -1)
+            if(prevIdx != None and nextIdx != None and \
+                ptIdx in bevelPtIdxs and not hasAlignedHandles(pt)):
+                prevPt = pts[prevIdx][:] #if(len(newPts) == 0) else newPts[-1]
+                diffV = (pt[1] - prevPt[1])
+                segLen = diffV.length
+                if(segLen < .001):
+                    newPts.append(pt)
+                else:
+                    t = deltaLen / segLen
+                    if(t > maxT): 
+                        t = maxT
+                        k = kFact * (segLen / 2)
+                    else:
+                        k = kFact * deltaLen
+
+                    seg = [pts[prevIdx][1], pts[prevIdx][2], pt[0], pt[1]]
+                    partialSeg = getPartialSeg(seg, t0 = 0, t1 = 1 - t)
+                    newPt = partialSeg[3]
+
+                    tangent0 = getTangentAtT(pts[prevIdx][1], pts[prevIdx][2], \
+                        pt[0], pt[1], 1 - t)
+                    pt0_2 = newPt + k * (tangent0.normalized())
+
+                    pt0 = [partialSeg[2], newPt, pt0_2, 'FREE', 'FREE']
+                    newPts.append(pt0)
+
+                    prevPt[2] = partialSeg[1]
+
+                nextPt = pts[nextIdx][:] #if(nextIdx > 0) else newPts[0]
+                diffV = (nextPt[1] - pt[1])
+                segLen = diffV.length
+                if(floatCmpWithMargin(segLen, 0)):
+                    newPts.append(pt)
+                else:
+                    t = deltaLen / segLen
+                    if(t > maxT): 
+                        t = maxT
+                        k = kFact * (segLen / 2)
+                    else:
+                        k = kFact * deltaLen
+
+                    seg = [pt[1], pt[2], pts[nextIdx][0], pts[nextIdx][1]]
+                    partialSeg = getPartialSeg(seg, t0 = t, t1 = 1)
+                    newPt = partialSeg[0]
+
+                    tangent1 = getTangentAtT(pt[1], pt[2], \
+                        pts[nextIdx][0], pts[nextIdx][1], t)
+                        
+                    pt1_0 = newPt - k * (tangent1.normalized())
+                    pt1 = [pt1_0, newPt, partialSeg[1], 'FREE', 'FREE']
+
+                    newPts.append(pt1)
+
+                    nextPt[0] = partialSeg[2]
+                
+                newSelPtIdxs.append(ptIdx)
+            else:
+                newPts.append(pt)
+        
+        newPtSels = {}
+        cnt = 0
+        for ptIdx in sorted(ptSels.keys()):
+            newPtSels[ptIdx + cnt] = ptSels[ptIdx].copy()
+            if(ptIdx in newSelPtIdxs):
+                newPtSels[ptIdx + cnt].add(-1)
+                newPtSels[ptIdx + cnt + 1] = {1}
+                cnt += 1
+
+        return newPts, newPtSels
+
+    def getDisplayInfos(self, hideHdls = False, subdivCnt = 0, \
+        bevelCnt = 0, newPos = None, deltaPos = None):
 
         # Making long short
         cHltTip = FTProps.colHltTip
@@ -6535,13 +6707,15 @@ class SelectCurveInfo:
         segDispInfos = []
         bptDispInfos = []
 
-        if(newPos != None): nPtIdxs, nPts = self.getOffsetSegPts(newPos)
-        else: nPtIdxs, nPts= [], []
-
-        pts = [pt for pt in self.wsData]
-
-        # Update list with new position (editing)
-        for i, ptIdx in enumerate(nPtIdxs): pts[ptIdx] = nPts[i]
+        pts = self.wsData[:]
+        ptSels = self.ptSels
+        if(newPos != None):
+            # TODO: This method is in EditCurveInfo
+            nPtIdxs, nPts = self.getOffsetSegPts(newPos)
+            # Update list with new position (editing)
+            for i, ptIdx in enumerate(nPtIdxs): pts[ptIdx] = nPts[i]
+        elif(deltaPos != None):
+            pts, ptSels = self.getBevelPts(bevelCnt, pts, deltaPos)
 
         # Default display of spline
         for i, pt in enumerate(pts):
@@ -6565,9 +6739,8 @@ class SelectCurveInfo:
             bptDispInfos[nextIdx].tipColors[1] = cBezPt
 
         # Process selections
-        for ptIdx in sorted(self.ptSels.keys()):
-
-            sels = self.ptSels[ptIdx]
+        for ptIdx in sorted(ptSels.keys()):
+            sels = ptSels[ptIdx]
 
             if(hideHdls):
                 tipColors = [None, cBezPt, None]
@@ -6581,11 +6754,11 @@ class SelectCurveInfo:
 
             for hdlIdx in sorted(sels): # Start with seg selection i. e. -1
                 if(hdlIdx == -1):
-                    nextIdx = getAdjIdx(self.obj, self.splineIdx, ptIdx)
+                    nextIdx = getAdjIdx(self.obj, self.splineIdx, ptIdx, ptCnt = len(pts))
                     segPts = [pts[ptIdx], pts[nextIdx]]
 
                     # process next only if there are no selection pts with that idx
-                    if(nextIdx not in self.ptSels.keys()):
+                    if(nextIdx not in ptSels.keys()):
                         bptDispInfos[nextIdx].tipColors = tipColors[:]
                         bptDispInfos[nextIdx].handleNos = handleNos
 
@@ -6861,13 +7034,18 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         # ~ curveInfos = self.selectCurveInfos.copy()
         # ~ if(self.editCurveInfo != None):
             # ~ curveInfos.add(self.editCurveInfo)
+        if(self.bevelMode):
+            deltaPos = self.getNewDeltaPos(refreshStatus = True)
+        else:
+            deltaPos = None
         for c in self.selectCurveInfos:
             if(refreshPos and c == self.editCurveInfo):
                 newPos = self.getNewPos(refreshStatus = True)
             else:
                 newPos = None
             info1, info2 = c.getDisplayInfos(hideHdls = ModalFlexiEditBezierOp.h, \
-                subdivCnt = self.subdivCnt, newPos = newPos)
+                subdivCnt = self.subdivCnt, bevelCnt = self.bevelCnt, newPos = newPos, \
+                    deltaPos = deltaPos)
             segDispInfos += info1
             bptDispInfos += info2
 
@@ -6979,10 +7157,13 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         self.htlCurveInfo = None
         self.selectCurveInfos = set()
         self.subdivCnt = 0
+        self.bevelCnt = 4
+        self.bevelMode = False
 
         # For double click (TODO: remove; same as editCurveInfo == None?)
         self.capture = False
         self.xyPress = None # ...to avoid jerky movement at the beginning
+        self.xyLoc = None # for bevel
 
         self.snapInfos = {}
         self.updateSnapLocs()
@@ -7277,6 +7458,13 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
     def hasSelection(self):
         return len(self.selectCurveInfos) > 0
 
+    def getNewDeltaPos(self, refreshStatus):
+        if(self.xyLoc != None):
+            loc = self.snapper.get3dLocSnap(self.rmInfo, enableSnap = False)
+            return loc - self.xyLoc
+        else:
+            return Vector()
+
     def getNewPos(self, refreshStatus):
         selCo = self.editCurveInfo.getSelCo()
         xySel = getCoordFromLoc(self.rmInfo.region, self.rmInfo.rv3d, selCo)
@@ -7288,25 +7476,52 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             return self.snapper.get3dLocSnap(self.rmInfo, \
                 vec = selCo, refreshStatus = refreshStatus)
 
+    def confirmCurveOp(self):
+        if(self.bevelMode or self.subdivCnt > 0):
+            changed = False
+            for c in self.selectCurveInfos:
+                if(self.bevelMode):
+                    changed = c.bevelPts(self.bevelCnt, self.getNewDeltaPos(False)) \
+                        or changed
+                else:
+                    changed = c.subdivSeg(self.subdivCnt) or changed
+                    c.resetPtSel()
+            if(changed): bpy.ops.ed.undo_push()
+            self.bevelMode = False
+            self.subdivCnt = 0
+            self.xyLoc = None
+            self.bglDrawMgr.resetLineInfo('bevelLine')
+            bpy.context.window.cursor_set("DEFAULT")
+            self.refreshDisplaySelCurves()
+            return True
+        return False
+        
     def subModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
         metakeys = self.snapper.getMetakeys()
         alt = metakeys[0]
         ctrl = metakeys[1]
         shift = metakeys[2]
+        opMode = self.bevelMode or self.subdivCnt > 0
 
         if(snapProc): retVal = {"RUNNING_MODAL"}
         else: retVal = {'PASS_THROUGH'}
 
         if(not snapProc and event.type == 'ESC'):
             # Escape processing sequence:
-            # 1) Come out of snapper / snapdigits
-            # 2) Reset position if captured (double click) (not 1)
-            # 3) Reset selection if captured and position already reset (not2)
+            # 1) Come out bevel mode
+            # 2) Come out of snapper / snapdigits (not 1)
+            # 3) Reset position if captured (double click) (not 2)
+            # 4) Reset selection if captured and position already reset (not 3)
             if(event.value == 'RELEASE'):
                 if(self.editCurveInfo == None):
                     if(self.subdivCnt > 0):
                         self.subdivCnt = 0
+                        self.refreshDisplaySelCurves()
+                    elif(self.bevelMode):
+                        self.bevelMode = False
+                        self.bglDrawMgr.resetLineInfo('bevelLine')
+                        bpy.context.window.cursor_set("DEFAULT")
                         self.refreshDisplaySelCurves()
                     else:
                         self.reset()
@@ -7323,13 +7538,14 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     self.refreshDisplaySelCurves()
             return {"RUNNING_MODAL"}
 
-        if(ctrl and (self.editCurveInfo == None or \
-            (self.pressT != None and not self.click))):
+        if(self.bevelMode or (ctrl and (self.editCurveInfo == None or \
+            (self.pressT != None and not self.click)))):
             bpy.context.window.cursor_set("CROSSHAIR")
         else:
             bpy.context.window.cursor_set("DEFAULT")
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkSplitAtSel, event.type, metakeys)):
+        if(not opMode and \
+            FTHotKeys.isHotKey(FTHotKeys.hkSplitAtSel, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 selPtMap = {}
                 for c in self.selectCurveInfos:
@@ -7346,14 +7562,31 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         self.selectCurveInfos.add(SelectCurveInfo(o, i))
             return {"RUNNING_MODAL"}
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metakeys)):
+        if(not opMode and \
+            FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
                 self.reset()
                 bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
             return {"RUNNING_MODAL"}
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkUniSubdiv, event.type, metakeys)):
+        if(not opMode and FTHotKeys.isHotKey(FTHotKeys.hkBevelPt, event.type, metakeys)):
+            if(len(self.selectCurveInfos) > 0):
+                if(event.value == 'RELEASE'):
+                    changed = False
+                    for c in self.selectCurveInfos: 
+                        changed = changed or c.initBevelMode(rmInfo.rv3d)
+                    self.bevelMode = changed
+                    if(changed):
+                        self.xyPress = rmInfo.xy[:]
+                        self.xyLoc = self.snapper.get3dLocSnap(rmInfo, enableSnap = False)
+                        bpy.context.window.cursor_set("CROSSHAIR")
+                        self.bevelCnt = FTProps.defBevelFact
+                        self.refreshDisplaySelCurves()
+                return {"RUNNING_MODAL"}
+
+        if(not opMode and \
+            FTHotKeys.isHotKey(FTHotKeys.hkUniSubdiv, event.type, metakeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     changed = False
@@ -7366,30 +7599,29 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         confirmed = False
         if(not snapProc and event.type in {'SPACE', 'RET'}):
-            if(self.subdivCnt > 0):
+            if(self.bevelMode or self.subdivCnt > 0):
                 if(event.value == 'RELEASE'):
-                    changed = False
-                    cis = list(self.selectCurveInfos)
-                    for c in cis:
-                        changed = c.subdivSeg(self.subdivCnt) or changed
-                        c.resetPtSel()
-                    if(changed): bpy.ops.ed.undo_push()
-                    self.subdivCnt = 0
+                    self.confirmCurveOp()
                 return {"RUNNING_MODAL"}
             elif(self.editCurveInfo != None):
                 confirmed = True
 
         elif(not snapProc and event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', \
             'NUMPAD_PLUS', 'NUMPAD_MINUS','PLUS', 'MINUS'}):
-            if(len(self.selectCurveInfos) > 0 and self.subdivCnt > 0):
+            if(len(self.selectCurveInfos) > 0 and \
+                (self.subdivCnt > 0 or self.bevelMode)):
                 if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
                     and event.value == 'PRESS'):
                     return {'RUNNING_MODAL'}
                 elif(event.type =='WHEELDOWNMOUSE' or event.type.endswith('MINUS')):
-                    if(self.subdivCnt > 2):
+                    if(self.bevelMode and self.bevelCnt > FTProps.minBevelFact):
+                        self.bevelCnt -= FTProps.bevelIncr
+                    elif(self.subdivCnt > 2):
                         self.subdivCnt -= 1
                 elif(event.type =='WHEELUPMOUSE' or event.type.endswith('PLUS')):
-                    if(self.subdivCnt < 100):
+                    if(self.bevelMode and self.bevelCnt < FTProps.maxBevelFact):
+                        self.bevelCnt += FTProps.bevelIncr
+                    elif(self.subdivCnt < 100 and self.subdivCnt > 0):
                         self.subdivCnt += 1
                 self.refreshDisplaySelCurves()
                 return {'RUNNING_MODAL'}
@@ -7401,7 +7633,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     self.refreshDisplaySelCurves()
                 return {"RUNNING_MODAL"}
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkDelPtSeg, event.type, metakeys)):
+        if(not opMode and \
+            FTHotKeys.isHotKey(FTHotKeys.hkDelPtSeg, event.type, metakeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     changed = self.delSelSegs()
@@ -7416,7 +7649,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         bpy.ops.ed.undo_push()
                 return {"RUNNING_MODAL"}
 
-        if(FTHotKeys.isHotKey(FTHotKeys.hkAlignHdl, event.type, metakeys)):
+        if(not opMode and \
+            FTHotKeys.isHotKey(FTHotKeys.hkAlignHdl, event.type, metakeys)):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     changed = False
@@ -7427,6 +7661,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         if(not snapProc and not self.capture \
             and event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
+
+            if(self.subdivCnt > 0 or self.bevelMode): 
+                return {'RUNNING_MODAL'}
 
             for ci in self.selectCurveInfos.copy():
                 if(len(ci.ptSels) == 0): self.selectCurveInfos.remove(ci)
@@ -7486,6 +7723,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         if(confirmed or self.snapper.digitsConfirmed or \
             (event.type == 'LEFTMOUSE' and event.value == 'RELEASE')):
+            if(self.confirmCurveOp()):
+                return {"RUNNING_MODAL"}
 
             if(self.editCurveInfo == None):
                 return retVal
@@ -7536,9 +7775,18 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             bptDispInfos = None
             ei = self.editCurveInfo
             locOnCurve = None # For debug
+            loc = self.snapper.get3dLocSnap(rmInfo, enableSnap = False)
+
+            if(self.bevelMode):
+                lineCol = (1, 1, 0, 1)
+                self.bglDrawMgr.addLineInfo('bevelLine', 1, [lineCol], \
+                    [self.xyLoc, loc])
+
+            elif(self.subdivCnt > 0):
+                pass
 
             # ei != None taken care by refreshDisplaySelCurves(refreshPos = True)
-            if(ei == None):
+            elif(ei == None):
 
                 # ~ coFind = Vector(rmInfo.xy).to_3d()
                 coFind = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, \
@@ -7566,7 +7814,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                             hltIdx = otherInfo)
                         segDispInfos, bptDispInfos = \
                             ci.getDisplayInfos(ModalFlexiEditBezierOp.h, \
-                                subdivCnt = self.subdivCnt)
+                                subdivCnt = self.subdivCnt, bevelCnt = self.bevelCnt)
                         self.htlCurveInfo = ci
                     else:
                         ci.setHltInfo(hltType = resType, ptIdx = segIdx, \
@@ -7576,7 +7824,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
             return retVal
 
-        if(snapProc):
+        if(snapProc or opMode):
             self.refreshDisplaySelCurves(refreshPos = True)
             return {'RUNNING_MODAL'}
         else:
@@ -8093,6 +8341,34 @@ class BezierUtilsPreferences(AddonPreferences):
             update = FTProps.updateProps
     )
 
+    defBevelFact: FloatProperty(
+            name = "Default Bevel Factor",
+            description = "Initial factor used for beveling points",
+            default = 4,
+            update = FTProps.updateProps
+    )
+
+    maxBevelFact: FloatProperty(
+            name = "Maximum Bevel Factor",
+            description = "Maximum bevel factor",
+            default = 15,
+            update = FTProps.updateProps
+    )
+
+    minBevelFact: FloatProperty(
+            name = "Minimum Bevel Factor",
+            description = "Minimum bevel factor",
+            default = -15,
+            update = FTProps.updateProps
+    )
+
+    bevelIncr: FloatProperty(
+            name = "Bevel Factor Step",
+            description = "Increment / decrement step of bevel factor",
+            default = .5,
+            update = FTProps.updateProps
+    )
+
     dispCurveRes: FloatProperty(
             name = "Display Curve Resolution",
             description = "Segment divisions per pixel",
@@ -8313,16 +8589,18 @@ class BezierUtilsPreferences(AddonPreferences):
         exec(FTHotKeys.getHKFieldStr(keydata, addMeta = False))
         expStr = keydata.id + 'Exp'
         exec(expStr + ': BoolProperty(name="' + expStr + '", default = True)')
-    hkSnapExp: BoolProperty(name="Snap Hotkey Expanded State", default = False)
+    hkSnapExp: BoolProperty(name="Snap Hotkey", default = False)
 
-    colSizeExp: BoolProperty(name="Col Size Exp", default = False)
-    keymapExp: BoolProperty(name="Keymap Exp", default = False)
-    othPrefExp: BoolProperty(name="Other Exp", default = False)
+    colSizeExp: BoolProperty(name="Color & Size", default = False)
+    keymapExp: BoolProperty(name="Keymap", default = False)
+    snapOptExp: BoolProperty(name="Snapping", default = False)
+    bevelingExp: BoolProperty(name="Beveling", default = False)
+    othPrefExp: BoolProperty(name="Other Options", default = False)
 
-    elemDimsExp: BoolProperty(name="Draw Elem Exp", default = False)
-    drawColExp: BoolProperty(name="Draw Col Exp", default = False)
-    greaseColExp: BoolProperty(name="Grease Col Exp", default = False)
-    handleColExp: BoolProperty(name="Handle Col Exp", default = False)
+    elemDimsExp: BoolProperty(name="Draw Dimensions", default = False)
+    drawColExp: BoolProperty(name="Draw Colors", default = False)
+    greaseColExp: BoolProperty(name="Grease Pencil Colors", default = False)
+    handleColExp: BoolProperty(name="Handle Colors", default = False)
 
     def draw(self, context):
         layout = self.layout
@@ -8448,11 +8726,11 @@ class BezierUtilsPreferences(AddonPreferences):
         ####################### Snapping Options #######################
 
         row = layout.row()
-        row.prop(self, "othPrefExp", icon = "TRIA_DOWN" \
-            if self.othPrefExp else "TRIA_RIGHT",  icon_only = True, emboss = False)
-        row.label(text = "Snapping & Other Options:") # Snapping & Other
+        row.prop(self, "snapOptExp", icon = "TRIA_DOWN" \
+            if self.snapOptExp else "TRIA_RIGHT",  icon_only = True, emboss = False)
+        row.label(text = "Snapping:")
 
-        if self.othPrefExp:
+        if self.snapOptExp:
             box = layout.box()
             col = box.column().split()
             col.label(text='Snap Distance:')
@@ -8463,6 +8741,38 @@ class BezierUtilsPreferences(AddonPreferences):
             col = box.column().split()
             col.label(text='Snap Point Size:')
             col.prop(self, "snapPtSize", text = '')
+
+        ####################### Beveling Options #######################
+
+        row = layout.row()
+        row.prop(self, "bevelingExp", icon = "TRIA_DOWN" \
+            if self.bevelingExp else "TRIA_RIGHT",  icon_only = True, emboss = False)
+        row.label(text = "Beveling:")
+
+        if self.bevelingExp:
+            box = layout.box()
+            col = box.column().split()
+            col.label(text='Default Bevel Factor:')
+            col.prop(self, "defBevelFact", text = '')
+            col = box.column().split()
+            col.label(text='Maximum Bevel Factor:')
+            col.prop(self, "maxBevelFact", text = '')
+            col = box.column().split()
+            col.label(text='Minimum Bevel Factor:')
+            col.prop(self, "minBevelFact", text = '')
+            col = box.column().split()
+            col.label(text='Bevel Factor Step:')
+            col.prop(self, "bevelIncr", text = '')
+
+        ####################### Other Options #######################
+
+        row = layout.row()
+        row.prop(self, "othPrefExp", icon = "TRIA_DOWN" \
+            if self.othPrefExp else "TRIA_RIGHT",  icon_only = True, emboss = False)
+        row.label(text = "Other Options:")
+
+        if self.othPrefExp:
+            box = layout.box()
             col = box.column().split()
             col.label(text='Display Curve Resolution:')
             col.prop(self, "dispCurveRes", text = '')
