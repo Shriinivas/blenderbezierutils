@@ -11,7 +11,7 @@
 
 import bpy, bmesh, bgl, blf, gpu
 from bpy.props import BoolProperty, IntProperty, EnumProperty, \
-FloatProperty, StringProperty, CollectionProperty, FloatVectorProperty
+FloatProperty, StringProperty, CollectionProperty, FloatVectorProperty, PointerProperty
 from bpy.types import Panel, Operator, WorkSpaceTool, AddonPreferences, Menu
 from mathutils import Vector, Matrix, geometry, kdtree
 from math import log, atan, tan, sin, cos, pi, radians, degrees, sqrt, pi, acos, ceil
@@ -312,6 +312,46 @@ def alignToNormal(curve):
             for j in range(3)]) / cnt
         quatMat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
         shiftMatrixWorld(curve, quatMat)
+
+def copyProperties(srcObj, destCurve):
+    if(srcObj == None or destCurve == None):
+        return
+
+    destData = destCurve.data
+    srcData = srcObj.data
+
+    # If object is bezier curve copy curve properties and material
+    if(isBezier(srcObj)):
+        # Copying just a few attributes        
+        destData.dimensions = srcData.dimensions
+
+        destData.resolution_u = srcData.resolution_u
+        destData.render_resolution_u = srcData.render_resolution_u    
+        destData.fill_mode = srcData.fill_mode
+        
+        destData.use_fill_deform = srcData.use_fill_deform
+        destData.use_radius = srcData.use_radius
+        destData.use_stretch = srcData.use_stretch
+        destData.use_deform_bounds = srcData.use_deform_bounds
+
+        destData.twist_smooth = srcData.twist_smooth
+        destData.twist_mode = srcData.twist_mode
+        
+        destData.offset = srcData.offset
+        destData.extrude = srcData.extrude
+        destData.bevel_depth = srcData.bevel_depth
+        destData.bevel_resolution = srcData.bevel_resolution
+        destData.bevel_object = srcData.bevel_object
+
+    if(hasattr(srcData, 'materials') and len(srcData.materials) > 0):
+        mat = srcData.materials[srcObj.active_material_index]
+        if(len(destData.materials) == 0 or mat.name not in destData.materials):
+            destData.materials.append(mat)
+            activeIdx = -1 #Last
+        else:
+            activeIdx = copyData.materials.find(mat.name)
+
+        destCurve.active_material_index = activeIdx
 
 def reverseCurve(curve):
     cp = curve.data.copy()
@@ -5743,6 +5783,9 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 obj.location = location
                 bpy.context.evaluated_depsgraph_get().update()
 
+            params = bpy.context.window_manager.bezierToolkitParams
+            copyProperties(params.copyPropsObj, obj)
+
             #TODO: Why try?
             try:
                 obj.select_set(True)
@@ -8023,6 +8066,13 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
 
     customAxisSnapCnt: IntProperty(default = 3, min = 0)
 
+    copyPropsObj : PointerProperty(
+            name = 'Copy Object Properties', 
+            description = "Copy properties (Material, Bevel Depth etc.) from object",
+            type = bpy.types.Object)
+        
+    
+
     ############################ Menu ###############################
 
     for menudata in FTMenu.editMenus:
@@ -8097,6 +8147,9 @@ def drawSettingsFT(self, context):
         self.layout.prop(params, "snapToPlane")
 
     self.layout.prop(params, "axisScale", text = '')
+
+    if((context.mode == 'OBJECT' and toolObj.idname  == 'flexi_bezier.draw_tool')):
+        self.layout.prop(params, "copyPropsObj", text = '')
 
 @ToolDef.from_fn
 def toolFlexiDraw():
