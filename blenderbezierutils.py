@@ -4200,7 +4200,7 @@ class Snapper():
         if(unit == None): unit = ''
 
         digitsValid = True
-        freeAxesC = self.getFreeAxesCombined()
+        # ~ freeAxesC = self.getFreeAxesCombined()
         freeAxesN = self.getFreeAxesNormalized()
         freeAxesG = self.getFreeAxesGlobal()
 
@@ -4258,10 +4258,10 @@ class Snapper():
                     self.lastSnapTypes.add('keyboard')
                 else:
                     # Special condition for lock to single axis
-                    if(len(freeAxesC) == 1 and refLineOrig != None):
+                    if(len(freeAxesN) == 1 and refLineOrig != None):
                         refCo = tm @ refLineOrig
-                    if(len(freeAxesC) == 2 or (len(freeAxesG) == 2 and snapToPlane)):
-                        constrAxes = freeAxesG if (len(freeAxesG) == 2) else freeAxesC
+                    if(len(freeAxesN) == 2 or (len(freeAxesG) == 2 and snapToPlane)):
+                        constrAxes = freeAxesG if (len(freeAxesG) == 2) else freeAxesN
                         loc = refCo.copy()
                         # Any other two points on the plane
                         ppt1 = loc.copy()
@@ -4282,9 +4282,9 @@ class Snapper():
                             else: loc[axis] = (tm @ pt)[axis]
                         self.lastSnapTypes.add('axis2')
 
-                    if(len(freeAxesC) == 1 and len(refLine) > 0):
+                    if(len(freeAxesN) == 1 and len(refLine) > 0):
                         if(lastCo1Axis): refCo = self.lastSelCo #TODO: More testing
-                        axis = freeAxesC[0]
+                        axis = freeAxesN[0]
                         # Any one point on axis
                         ptOnAxis = refCo.copy()
 
@@ -4327,7 +4327,7 @@ class Snapper():
                     self.lastSnapTypes.add('grid')
 
                 if(not self.snapDigits.hasVal() and angleSnap and len(refLine) > 0):
-                    freeAxesC = [0, 1, 2] if len(freeAxesC) == 0 else freeAxesC
+                    # ~ freeAxesC = [0, 1, 2] if len(freeAxesC) == 0 else freeAxesC
                     snapStart = tm @ orig
                     actualLoc = loc.copy()
 
@@ -4346,7 +4346,7 @@ class Snapper():
                     l1 =  actualLoc[axis] - snapStart[axis] #Main axis diff value
 
                     for i in range(0, 3):
-                        if(i != axis and (i in freeAxesC)):
+                        if(i != axis and (i in freeAxesN)):
                             l2 =  (actualLoc[i] - snapStart[i]) #Minor axis value
                             angle = abs(atan(l2 / l1)) if l1 != 0 else 0
                             dirn = (l1 * l2) / abs(l1 * l2) if (l1 * l2) != 0 else 1
@@ -4395,7 +4395,7 @@ class Snapper():
         if(rmInfo == None): return []
         refLine = self.getRefLine()
         refLineOrig = self.getRefLineOrig()
-        freeAxesC = self.getFreeAxesCombined()
+        # ~ freeAxesC = self.getFreeAxesCombined()
         freeAxesN = self.getFreeAxesNormalized()
 
         params = bpy.context.window_manager.bezierToolkitParams
@@ -4406,12 +4406,12 @@ class Snapper():
         tm, invTm, orig = self.getTMInfoAndOrig(rmInfo)
 
         if(FTProps.dispAxes and ((refLineOrig != None or transType == 'VIEW' \
-            or len(freeAxesC) == 1) or (len(freeAxesN) > 0 \
+            or len(freeAxesN) == 1) or (len(freeAxesN) > 0 \
                 and origType != 'REFERENCE'))):
             colors = [(.6, 0.2, 0.2, 1), (0.2, .6, 0.2, 1), (0.2, 0.4, .6, 1)]
             l = 2 * rmInfo.rv3d.view_distance
 
-            if (self.lastSelCo != None and len(freeAxesC) == 1): orig = self.lastSelCo
+            if (self.lastSelCo != None and len(freeAxesN) == 1): orig = self.lastSelCo
 
             refCo = tm @ orig
 
@@ -5260,15 +5260,15 @@ class BezierDraw:
             return {'RUNNING_MODAL'}
 
         if (not snapProc and event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
-            if(snapper.isLocked()):
-                if(len(self.parent.curvePts) == 1):
-                    self.moveBptElem('right', \
-                        snapper.get3dLocSnap(rmInfo))# changes only rt handle
-                return {'RUNNING_MODAL'}
+            # ~ if(snapper.isLocked()):
+                # ~ if(len(self.parent.curvePts) == 1):
+                    # ~ self.moveBptElem('right', \
+                        # ~ snapper.get3dLocSnap(rmInfo))# changes only rt handle
+                # ~ return {'RUNNING_MODAL'}
 
             # See the special condition above in event.value == 'PRESS'
-            if(len(snapper.freeAxes) > 1):
-                snapper.resetSnap()
+            # ~ if(len(snapper.freeAxes) > 1):
+            snapper.resetSnap()
 
             self.capture = False
             self.grabRepos = False
@@ -5292,8 +5292,8 @@ class BezierDraw:
                 else:
                     loc = snapper.get3dLocSnap(rmInfo)
 
-                if(len(self.parent.curvePts) == 1):
-                    self.moveBptElem('right', loc)# changes only rt handle
+                # ~ if(len(self.parent.curvePts) == 1):
+                    # ~ self.moveBptElem('right', loc)# changes only rt handle
 
                 self.newPoint(loc)
                 self.parent.redrawBezier(rmInfo)
