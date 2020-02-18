@@ -3813,7 +3813,8 @@ class CustomAxis:
         if(event.type == 'RIGHTMOUSE'):
             snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
             if(event.value == 'RELEASE' and snapOrigin == 'AXIS'):
-                loc = snapper.get3dLocSnap(rmInfo, snapToAxisLine = False)
+                loc = snapper.get3dLocSnap(rmInfo, \
+                    SnapParams(snapper, snapToAxisLine = False))
                 if(not self.inDrawAxis): self.set(0, loc)
                 else: self.set(1, loc)
                 self.inDrawAxis = not self.inDrawAxis
@@ -3831,7 +3832,8 @@ class CustomAxis:
                     if(self.snapCnt > 0): self.snapCnt -= 1
 
             if(event.type == 'MOUSEMOVE'):
-                loc = snapper.get3dLocSnap(rmInfo, snapToAxisLine = False)
+                loc = snapper.get3dLocSnap(rmInfo, \
+                    SnapParams(snapper, snapToAxisLine = False))
                 self.set(1, loc)
 
             if(event.type == 'ESC'):
@@ -3844,7 +3846,60 @@ class CustomAxis:
         return False
 
 
-class Snapper():
+# TODO: Make independent of snapper
+class SnapParams:
+    def __init__(self, \
+        snapper, \
+        xyDelta = [0, 0], \
+        vec = None, \
+        refreshStatus = True, \
+        snapToAxisLine = True, \
+        lastCo1Axis = False, \
+        enableSnap = True, \
+        vertSnap = None, \
+        gridSnap = None, \
+        angleSnap = None, \
+        refLine = None, \
+        refLineOrig = None, \
+        inEdit = None, \
+        hasSel = None, \
+        transType = None, \
+        origType = None, \
+        axisScale = None, \
+        freeAxesN = None):
+
+        self.xyDelta = xyDelta
+        self.vec = vec
+        self.refreshStatus = refreshStatus
+        self.snapToAxisLine = snapToAxisLine
+        self.lastCo1Axis = lastCo1Axis
+
+        if(enableSnap):
+            self.vertSnap = snapper.vertSnap if(vertSnap == None) else vertSnap
+            self.gridSnap = snapper.gridSnap if(gridSnap == None) else gridSnap
+            self.angleSnap = snapper.angleSnap if(angleSnap == None) else angleSnap
+        else:
+            self.vertSnap = False
+            self.gridSnap = False
+            self.angleSnap = False
+
+        self.refLine = snapper.getRefLine() if(refLine == None) else refLine
+        self.refLineOrig = snapper.getRefLineOrig() if(refLineOrig == None) \
+            else refLineOrig
+
+        self.inEdit = snapper.isEditing() if(inEdit == None) else inEdit
+        self.hasSel = snapper.hasSelection() if(hasSel == None) else hasSel
+
+        params = bpy.context.window_manager.bezierToolkitParams
+        self.transType = params.snapOrient if(transType == None) else transType
+        self.origType = params.snapOrigin if(origType == None) else origType
+        self.axisScale = params.axisScale if(axisScale == None) else axisScale
+
+        self.freeAxesN = snapper.getFreeAxesNormalized() \
+            if(freeAxesN == None) else freeAxesN
+        
+
+class Snapper:
 
     DEFAULT_ANGLE_SNAP_STEPS = 3
     MAX_SNAP_VERT_CNT = 1000
@@ -3912,9 +3967,6 @@ class Snapper():
 
         # ~ self.snapStack = [] # TODO
 
-    def getGlobalOrient(self):
-        return bpy.context.window_manager.bezierToolkitParams.snapOrient
-
     # Return user selection in header menu, [] for None
     # (Tightly coupled with strings in BezierToolkitParams)
     def getFreeAxesGlobal(self):
@@ -3957,10 +4009,8 @@ class Snapper():
         elif(snapOrigin == 'CURSOR'): return bpy.context.scene.cursor.location
         return Vector((0, 0, 0))
 
-    def getTransMatsForOrient(self, rmInfo, obj = None):
+    def getTransMatsForOrient(self, rmInfo, obj, transType, axisScale):
         tm = Matrix()
-        params = bpy.context.window_manager.bezierToolkitParams
-        orientType = params.snapOrient
 
         custAxis = self.customAxis
         if(abs(custAxis.length()) <= DEF_ERR_MARGIN): custAxis = None
@@ -3968,20 +4018,20 @@ class Snapper():
         refLine = self.getRefLine()
         if(refLine != None and len(refLine) < 2): refLine = None
 
-        if(orientType == 'AXIS' and custAxis != None):
+        if(transType == 'AXIS' and custAxis != None):
             pts = custAxis.axisPts
             tm, invTm = getLineTransMatrices(pts[0], pts[1])
 
-        if(orientType == 'REFERENCE' and refLine != None):
+        if(transType == 'REFERENCE' and refLine != None):
             tm, invTm = getLineTransMatrices(refLine[0], refLine[1])
 
-        if(orientType == 'VIEW'):
+        if(transType == 'VIEW'):
             tm = rmInfo.rv3d.view_matrix
 
-        if(obj != None and orientType == 'OBJECT'):
-                tm = obj.matrix_world.inverted()
+        if(obj != None and transType == 'OBJECT'):
+            tm = obj.matrix_world.inverted()
 
-        if(orientType == 'FACE'):
+        if(transType == 'FACE'):
             selObj, location, normal, faceIdx = getSelFaceLoc(rmInfo.region, \
                 rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT)
             if(faceIdx >= 0):
@@ -3989,12 +4039,12 @@ class Snapper():
                 quat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
                 tm = (selObj.matrix_world @ quat).inverted()
 
-        if(custAxis != None and params.axisScale == 'AXIS'):
+        if(custAxis != None and axisScale == 'AXIS'):
             unitD = custAxis.length() / (custAxis.snapCnt + 1)
             tm = Matrix.Scale(1 / unitD, 4) @ tm
             invTm = tm.inverted()
 
-        if(refLine != None and params.axisScale == 'REFERENCE'):
+        if(refLine != None and axisScale == 'REFERENCE'):
             unitD = (refLine[1] - refLine[0]).length / 10
             if(unitD > DEF_ERR_MARGIN):
                 tm = Matrix.Scale(1 / unitD, 4) @ tm
@@ -4044,22 +4094,6 @@ class Snapper():
                     self.freeAxes = []
 
             return EVT_CONS
-
-        # ~ if(event.type == 'Q' and self.getGlobalOrient() == 'AXIS'):
-            # ~ if(event.value == 'RELEASE'):
-                # ~ self.customAxis.initialize()
-            # ~ return True
-
-        # ~ if(event.type == 'WHEELDOWNMOUSE' and self.angleSnap):# Event not consumed
-            # ~ if(self.snapSteps < 10):
-                # ~ self.snapSteps += 1
-
-        # ~ if(event.type == 'WHEELUPMOUSE' and self.angleSnap):# Event not consumed
-            # ~ if(self.snapSteps > 1):
-                # ~ self.snapSteps -= 1
-
-        # ~ if(event.type == 'MIDDLEMOUSE' and self.angleSnap):# Event not consumed
-            # ~ self.snapSteps = self.defaultSnapSteps
 
         retVal = EVT_NOT_CONS
         # Consume escape or return / space only if there's something to process
@@ -4137,62 +4171,65 @@ class Snapper():
                     break
         return snapLocs
 
-    def getTMInfoAndOrig(self, rmInfo):
+    def getTMInfoAndOrig(self, rmInfo, transType, origType, freezeOrient, axisScale):
         obj = bpy.context.object
-
-        params = bpy.context.window_manager.bezierToolkitParams
-        transType = params.snapOrient
-        origType = params.snapOrigin
 
         if(self.tm != None and self.freezeOrient and transType == 'FACE'):
             tm, invTm = self.tm, self.tm.inverted()
         else:
-            tm, invTm = self.getTransMatsForOrient(rmInfo, obj)
+            tm, invTm = self.getTransMatsForOrient(rmInfo, obj, transType, axisScale)
 
-        if(self.orig != None and self.freezeOrient and origType == 'FACE'):
+        if(self.orig != None and freezeOrient and origType == 'FACE'):
             orig = self.orig
         else:
             orig = self.getCurrOrig(rmInfo, obj)
 
         return tm, invTm, orig
 
-    def get3dLocSnap(self, rmInfo, vec = None, refreshStatus = True, \
-        snapToAxisLine = True, xyDelta = [0, 0], enableSnap = True, lastCo1Axis = False):
+    def get3dLocSnap(self, rmInfo, snapParams = None):
 
-        if(enableSnap):
-            vertSnap = self.vertSnap
-            gridSnap = self.gridSnap
-            angleSnap = self.angleSnap
-        else:
-            vertSnap = False
-            gridSnap = False
-            angleSnap = False
+        if(snapParams == None): snapParams = SnapParams(self)
 
         self.rmInfo = rmInfo
-        self.snapCo = None
-        xy = [rmInfo.xy[0] - xyDelta[0], rmInfo.xy[1] - xyDelta[1]]
+        self.snapParams = snapParams
 
+        refreshStatus = snapParams.refreshStatus
+        snapToAxisLine = snapParams.snapToAxisLine
+        lastCo1Axis = snapParams.lastCo1Axis
+
+        vertSnap = snapParams.vertSnap
+        gridSnap = snapParams.gridSnap
+        angleSnap = snapParams.angleSnap
+
+        refLine = snapParams.refLine
+        refLineOrig = snapParams.refLineOrig
+
+        inEdit = snapParams.inEdit
+        hasSel = snapParams.hasSel
+
+        transType = snapParams.transType
+        origType = snapParams.origType
+        axisScale = snapParams.axisScale
+
+        vec = snapParams.vec
+        freeAxesN = snapParams.freeAxesN
+
+        self.snapCo = None
         region = rmInfo.region
         rv3d = rmInfo.rv3d
 
-        refLine = self.getRefLine()
-        refLineOrig = self.getRefLineOrig()
-
-        inEdit = self.isEditing()
-        hasSel = self.hasSelection()
-
-        params = bpy.context.window_manager.bezierToolkitParams
-        transType = params.snapOrient
-        origType = params.snapOrigin
-        axisScale = params.axisScale
+        xy = [rmInfo.xy[0] - snapParams.xyDelta[0], \
+            rmInfo.xy[1] - snapParams.xyDelta[1]]
 
         loc = None
 
-        tm, invTm, orig = self.getTMInfoAndOrig(rmInfo)
+        tm, invTm, orig = self.getTMInfoAndOrig(rmInfo, transType, \
+            origType, self.freezeOrient, axisScale)
+        
+        # Must be done after the call to getTMInfoAndOrig
+        if(hasSel): self.freezeOrient = True 
 
-        if(hasSel): self.freezeOrient = True
-
-        if(vec == None): vec = orig
+        vec = snapParams.vec if (snapParams.vec != None) else orig
 
         self.lastSnapTypes = set()
 
@@ -4201,8 +4238,8 @@ class Snapper():
 
         digitsValid = True
         # ~ freeAxesC = self.getFreeAxesCombined()
-        freeAxesN = self.getFreeAxesNormalized()
-        freeAxesG = self.getFreeAxesGlobal()
+        # ~ freeAxesN = self.getFreeAxesNormalized()
+        # ~ freeAxesG = self.getFreeAxesGlobal()
 
         if(FTProps.dispSnapInd or vertSnap):
             #TODO: Called very frequently (store the tree [without duplicating data])
@@ -4260,8 +4297,10 @@ class Snapper():
                     # Special condition for lock to single axis
                     if(len(freeAxesN) == 1 and refLineOrig != None):
                         refCo = tm @ refLineOrig
-                    if(len(freeAxesN) == 2 or (len(freeAxesG) == 2 and snapToPlane)):
-                        constrAxes = freeAxesG if (len(freeAxesG) == 2) else freeAxesN
+                    # ~ if(len(freeAxesN) == 2 or (len(freeAxesG) == 2 and snapToPlane)):
+                        # ~ constrAxes = freeAxesG if (len(freeAxesG) == 2) else freeAxesN
+                    if(len(freeAxesN) == 2):
+                        constrAxes = freeAxesN
                         loc = refCo.copy()
                         # Any other two points on the plane
                         ppt1 = loc.copy()
@@ -4390,20 +4429,21 @@ class Snapper():
     def setStatus(self, area, text): #TODO Global
         area.header_text_set(text)
 
+    # Tightly coupled with get3dLocSnap
     def updateGuideBatches(self, bglDrawMgr):
         rmInfo = self.rmInfo
         if(rmInfo == None): return []
-        refLine = self.getRefLine()
-        refLineOrig = self.getRefLineOrig()
-        # ~ freeAxesC = self.getFreeAxesCombined()
-        freeAxesN = self.getFreeAxesNormalized()
+        snapParams = self.snapParams
+        refLine = snapParams.refLine
+        refLineOrig = snapParams.refLineOrig
+        freeAxesN = snapParams.freeAxesN
 
-        params = bpy.context.window_manager.bezierToolkitParams
-        transType = params.snapOrient
-        origType = params.snapOrigin
-        axisScale = params.axisScale
+        transType = snapParams.transType
+        origType = snapParams.origType
+        axisScale = snapParams.axisScale
 
-        tm, invTm, orig = self.getTMInfoAndOrig(rmInfo)
+        tm, invTm, orig = self.getTMInfoAndOrig(rmInfo, transType, \
+            origType, self.freezeOrient, axisScale)
 
         if(FTProps.dispAxes and ((refLineOrig != None or transType == 'VIEW' \
             or len(freeAxesN) == 1) or (len(freeAxesN) > 0 \
@@ -4438,7 +4478,6 @@ class Snapper():
             slineCol = [(.4, .4, .4, 1)]
             ptCol = (1, 1, 1, 1)
         bglDrawMgr.addLineInfo('SnapLine', FTProps.axisLineWidth, slineCol, slineCo)
-        # ~ bglDrawMgr.addPtInfo('SnapLinePt', snapPtSize, [ptCol], lineCo)
 
         ptCo = []
         ptCol = []
@@ -4902,7 +4941,8 @@ class PrimitiveDraw:
             return {'RUNNING_MODAL'}
 
         if(not snapProc and event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
-            loc = parent.snapper.get3dLocSnap(rmInfo, lastCo1Axis = True)
+            loc = parent.snapper.get3dLocSnap(rmInfo, \
+                SnapParams(parent.snapper, lastCo1Axis = True))
             if(self.bbStart == None):
                 self.bbStart = loc
                 self.bbEnd = loc
@@ -4914,7 +4954,8 @@ class PrimitiveDraw:
             return {"RUNNING_MODAL"}
         if (snapProc or event.type == 'MOUSEMOVE'):
             if(self.bbStart != None):
-                self.bbEnd = parent.snapper.get3dLocSnap(rmInfo, lastCo1Axis = True)
+                self.bbEnd = parent.snapper.get3dLocSnap(rmInfo, \
+                    SnapParams(parent.snapper, lastCo1Axis = True))
                 self.updateCurvePts()
             parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
             return {"RUNNING_MODAL"}
@@ -5314,8 +5355,8 @@ class BezierDraw:
                         rtHandle = self.parent.curvePts[-1][2].copy()
                         xy2 = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, pt)
                         xy1 = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, rtHandle)
-                        loc = snapper.get3dLocSnap(rmInfo, \
-                            xyDelta = [xy1[0] - xy2[0], xy1[1] - xy2[1]])
+                        loc = snapper.get3dLocSnap(rmInfo, SnapParams(snapper, \
+                            xyDelta = [xy1[0] - xy2[0], xy1[1] - xy2[1]]))
                         delta = loc.copy() - pt.copy()
                         self.moveBptElemByDelta('pt', delta)
                         self.moveBptElemByDelta('left', delta)
@@ -7503,7 +7544,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
     def getNewDeltaPos(self, refreshStatus):
         if(self.xyLoc != None):
-            loc = self.snapper.get3dLocSnap(self.rmInfo, enableSnap = False)
+            loc = self.snapper.get3dLocSnap(self.rmInfo, \
+                SnapParams(self.snapper, enableSnap = False))
             return loc - self.xyLoc
         else:
             return Vector()
@@ -7513,11 +7555,11 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         xySel = getCoordFromLoc(self.rmInfo.region, self.rmInfo.rv3d, selCo)
         if(self.xyPress != None):
             return self.snapper.get3dLocSnap(self.rmInfo, \
-                vec = selCo, refreshStatus = refreshStatus, \
-                    xyDelta = [self.xyPress[0] - xySel[0], self.xyPress[1] - xySel[1]])
+                SnapParams(self.snapper, vec = selCo, refreshStatus = refreshStatus, \
+                    xyDelta = [self.xyPress[0] - xySel[0], self.xyPress[1] - xySel[1]]))
         else:
             return self.snapper.get3dLocSnap(self.rmInfo, \
-                vec = selCo, refreshStatus = refreshStatus)
+                SnapParams(self.snapper, vec = selCo, refreshStatus = refreshStatus))
 
     def confirmCurveOp(self):
         if(self.bevelMode or self.subdivCnt > 0):
@@ -7622,7 +7664,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     self.bevelMode = changed
                     if(changed):
                         self.xyPress = rmInfo.xy[:]
-                        self.xyLoc = self.snapper.get3dLocSnap(rmInfo, enableSnap = False)
+                        self.xyLoc = self.snapper.get3dLocSnap(rmInfo, \
+                            SnapParams(self.snapper, enableSnap = False))
                         bpy.context.window.cursor_set("CROSSHAIR")
                         self.bevelCnt = FTProps.defBevelFact
                         self.refreshDisplaySelCurves()
@@ -7818,7 +7861,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             bptDispInfos = None
             ei = self.editCurveInfo
             locOnCurve = None # For debug
-            loc = self.snapper.get3dLocSnap(rmInfo, enableSnap = False)
+            loc = self.snapper.get3dLocSnap(rmInfo, \
+                SnapParams(self.snapper, enableSnap = False))
 
             if(self.bevelMode):
                 lineCol = (1, 1, 0, 1)
@@ -7833,7 +7877,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
                 # ~ coFind = Vector(rmInfo.xy).to_3d()
                 coFind = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, \
-                    self.snapper.get3dLocSnap(rmInfo, enableSnap = False)).to_3d()
+                    self.snapper.get3dLocSnap(rmInfo, \
+                        SnapParams(self.snapper, enableSnap = False))).to_3d()
 
                 objs = self.getEditableCurveObjs()
 
