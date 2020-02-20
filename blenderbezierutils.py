@@ -3867,7 +3867,8 @@ class SnapParams:
         origType = None, \
         axisScale = None, \
         freeAxesN = None, \
-        dispAxes = True):
+        dispAxes = True, 
+        snapToPlane = None):
 
         self.xyDelta = xyDelta
         self.vec = vec
@@ -3900,6 +3901,14 @@ class SnapParams:
             if(freeAxesN == None) else freeAxesN
         
         self.dispAxes = dispAxes
+
+        if(snapToPlane != None):
+            self.snapToPlane = snapToPlane
+        else:
+            if(showSnapToPlane(params)): # Only if Snap to Plane option is visible
+                self.snapToPlane = params.snapToPlane
+            else: self.snapToPlane = False
+
 
 class Snapper:
 
@@ -4236,6 +4245,7 @@ class Snapper:
 
         vec = snapParams.vec
         freeAxesN = snapParams.freeAxesN
+        snapToPlane = snapParams.snapToPlane
 
         self.snapCo = None
         region = rmInfo.region
@@ -4294,11 +4304,6 @@ class Snapper:
         else:
             loc = region_2d_to_location_3d(region, rv3d, xy, vec)
             loc = tm @ loc
-
-            params = bpy.context.window_manager.bezierToolkitParams
-            if(showSnapToPlane(params)):
-                snapToPlane = params.snapToPlane
-            else: snapToPlane = False
 
             # TODO: Get gridSnap and angleSnap out of this if
             if((transType != 'GLOBAL' and inEdit) or \
@@ -4377,7 +4382,7 @@ class Snapper:
                         self.lastSnapTypes.add('axis1')
 
                 if(not self.snapDigits.hasVal() and gridSnap):
-                    if(refLineOrig and params.axisScale in {'AXIS' or 'REFERENCE'}):
+                    if(refLineOrig and axisScale in {'AXIS' or 'REFERENCE'}):
                         # Independent of view distance
                         diffV = (loc - tm @ refLineOrig)
                         loc = tm @ refLineOrig + \
@@ -7594,14 +7599,23 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         return len(self.selectCurveInfos) > 0
 
     # SnapParams object for bevel indicator
-    def getBevelIndSnapParam(self):
-        return SnapParams(self.snapper, enableSnap = False, freeAxesN = [0, 1], \
-            refLineOrig = self.xyLoc, inEdit = True, transType = 'GLOBAL', \
-                origType = 'REFERENCE', dispAxes = False)
+    def getBevelIndSnapParam(self, orig):
+        # TODO: Maybe a more efficient way to find two major axes
+        locs = [region_2d_to_location_3d(self.rmInfo.region, self.rmInfo.rv3d, \
+            [[0, 0], [1000,1000]][i], Vector()) for i in range(2)]
+
+        axisIdxs = [x[0] for x in sorted([(i, -abs(y)) for i, y in \
+            enumerate(locs[1] - locs[0])], key = lambda z: z[1])]
+
+        return SnapParams(self.snapper, enableSnap = False, \
+            freeAxesN = sorted(axisIdxs[:2]), refLineOrig = orig, inEdit = True, \
+                transType = 'GLOBAL', origType = 'REFERENCE', dispAxes = False, \
+                    vec = Vector(), snapToPlane = True)
 
     def getNewDeltaPos(self, refreshStatus):
         if(self.xyLoc != None):
-            loc = self.snapper.get3dLocSnap(self.rmInfo, self.getBevelIndSnapParam())
+            loc = self.snapper.get3dLocSnap(self.rmInfo, \
+                self.getBevelIndSnapParam(self.xyLoc))
             return loc - self.xyLoc
         else:
             return Vector()
@@ -7723,7 +7737,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     if(changed):
                         self.xyPress = rmInfo.xy[:]
                         self.xyLoc = self.snapper.get3dLocSnap(rmInfo, \
-                            SnapParams(self.snapper, enableSnap = False))
+                            self.getBevelIndSnapParam(orig = None))
                         bpy.context.window.cursor_set("CROSSHAIR")
                         self.bevelCnt = FTProps.defBevelFact
                         self.refreshDisplaySelCurves()
@@ -7899,6 +7913,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         ptIdx = ei.clickInfo['ptIdx']
                         hdlIdx = ei.clickInfo['hdlIdx']
                         ei.addSel(ptIdx, hdlIdx, toggle = True)
+                        if(hdlIdx == 1):
+                            ei.addSel(ptIdx, 0, toggle = True)
+                            ei.addSel(ptIdx, 2, toggle = True)
                         self.selectCurveInfos.add(ei)
                         # ~ self.refreshDisplaySelCurves()
                 else:
@@ -7921,7 +7938,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             locOnCurve = None # For debug
 
             if(self.bevelMode):
-                loc = self.snapper.get3dLocSnap(rmInfo, self.getBevelIndSnapParam())
+                loc = self.snapper.get3dLocSnap(rmInfo, \
+                    self.getBevelIndSnapParam(self.xyLoc))
                 lineCol = (1, 1, 0, 1)
                 self.bglDrawMgr.addLineInfo('bevelLine', 1, [lineCol], \
                     [self.xyLoc, loc])
