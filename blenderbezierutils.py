@@ -7739,7 +7739,6 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         if(not opMode and FTHotKeys.isHotKey(FTHotKeys.hkBevelPt, event.type, metakeys)):
             hltCurve = self.htlCurveInfo
-            print('hltCurve->', hltCurve)
             if(hltCurve != None and \
                 sum(len(c.ptSels) for c in self.selectCurveInfos) == 0):
                     hltType = hltCurve.hltInfo['hltType']
