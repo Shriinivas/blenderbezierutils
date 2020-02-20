@@ -3345,7 +3345,7 @@ class FTProps:
             'colGreaseSubdiv', 'colGreaseBezPt', 'snapDist', 'dispSnapInd', \
             'dispAxes', 'snapPtSize', 'dispCurveRes', 'showKeyMap', 'keyMapFontSize', \
             'keyMapLocX', 'keyMapLocY', 'keyMapNextToTool', 'defBevelFact', \
-            'maxBevelFact', 'minBevelFact', 'bevelIncr']
+            'maxBevelFact', 'minBevelFact', 'bevelIncr', 'numpadEntry']
 
             if(resetPrefs):
                 FTProps.initDefault()
@@ -3415,6 +3415,7 @@ class FTProps:
         FTProps.maxBevelFact = 15
         FTProps.minBevelFact = -15
         FTProps.bevelIncr = .5
+        FTProps.numpadEntry = False
 
 class FTMenuData:
 
@@ -3564,8 +3565,11 @@ class FTMenuOptionOp(Operator):
 
 
 class SnapDigits:
-    digitMap = {'ONE':'1', 'TWO':'2', 'THREE':'3', 'FOUR':'4', 'FIVE':'5', \
-                'SIX':'6', 'SEVEN':'7', 'EIGHT':'8', 'NINE':'9', 'ZERO':'0', 'PERIOD':'.'}
+    digitMap = {'ZERO':'0', 'ONE':'1', 'TWO':'2', 'THREE':'3', 'FOUR':'4', 'FIVE':'5', \
+                'SIX':'6', 'SEVEN':'7', 'EIGHT':'8', 'NINE':'9', 'PERIOD':'.'}
+    numpadDigitMap = {'NUMPAD_0':'0', 'NUMPAD_1':'1', 'NUMPAD_2':'2', 'NUMPAD_3':'3', \
+        'NUMPAD_4':'4', 'NUMPAD_5':'5', 'NUMPAD_6':'6', 'NUMPAD_7':'7', 'NUMPAD_8':'8', \
+            'NUMPAD_9':'9', 'NUMPAD_PERIOD': '.'}
 
     def getValidFloat(sign, digits):
         delta = 0
@@ -3664,7 +3668,10 @@ class SnapDigits:
                     self.axisIdx = self.axes[0]
             return True
 
-        dval = SnapDigits.digitMap.get(event.type)
+        dmap = self.digitMap.copy()
+        if(FTProps.numpadEntry): 
+            dmap.update(self.numpadDigitMap)
+        dval = dmap.get(event.type)
         if(dval != None):
             if(event.value == 'RELEASE'):
                 self.digitChars.append(dval)
@@ -6407,7 +6414,7 @@ class SelectCurveInfo:
         self.ptSels = {}
 
         # Highlighted point (mouse move)
-        # format: 'hltType': hltType {'SegLoc', 'CurveBezPt', 'SelHandles'}
+        # format: 'hltType': hltType {'CurveLoc', 'CurveBezPt', 'SelHandles'}
         # 'ptIdx': ptIdx, 'hltIdx':hltIdx {0, 1} [0 - left, 1 - right]
         self.hltInfo = {}
 
@@ -6588,15 +6595,18 @@ class SelectCurveInfo:
                 changed = True
         return changed
 
-    def initBevelMode(self, rv3d):
+    def isBevelabel(self, rv3d):
         if(self.hasShapeKey): return False
         changed = False
         for ptIdx in self.ptSels.keys():
-            nextIdx = self.getAdjIdx(ptIdx)
-            prevIdx = self.getAdjIdx(ptIdx, -1)
-            if((1 in self.ptSels[ptIdx] or -1 in self.ptSels[ptIdx]) and \
-             nextIdx != None and prevIdx != None and \
-                not hasAlignedHandles(self.wsData[ptIdx])):
+            ptIdxs = [ptIdx]
+            if(-1 in self.ptSels[ptIdx]): ptIdxs.append(self.getAdjIdx(ptIdx))
+            elif(1 not in self.ptSels[ptIdx]): continue # only pt and seg selection
+            for idx in ptIdxs:
+                prevIdx = self.getAdjIdx(idx, -1)
+                nextIdx = self.getAdjIdx(idx)
+                if(nextIdx != None and prevIdx != None and \
+                    not hasAlignedHandles(self.wsData[idx])):
                     changed = True
                     break
         return changed
@@ -7728,11 +7738,22 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             return {"RUNNING_MODAL"}
 
         if(not opMode and FTHotKeys.isHotKey(FTHotKeys.hkBevelPt, event.type, metakeys)):
+            hltCurve = self.htlCurveInfo
+            print('hltCurve->', hltCurve)
+            if(hltCurve != None and \
+                sum(len(c.ptSels) for c in self.selectCurveInfos) == 0):
+                    hltType = hltCurve.hltInfo['hltType']
+                    if(hltType in {'CurveBezPt', 'CurveLoc'}):
+                        ptIdx = hltCurve.hltInfo['ptIdx']
+                        hltCurve.ptSels[ptIdx] = {-1 if hltType == 'CurveLoc' else 1}
+                        self.selectCurveInfos.add(hltCurve)
+            
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     changed = False
                     for c in self.selectCurveInfos: 
-                        changed = changed or c.initBevelMode(rmInfo.rv3d)
+                        # short-circuit fine (no change in isBevelabel)
+                        changed = changed or c.isBevelabel(rmInfo.rv3d)
                     self.bevelMode = changed
                     if(changed):
                         self.xyPress = rmInfo.xy[:]
@@ -7741,6 +7762,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         bpy.context.window.cursor_set("CROSSHAIR")
                         self.bevelCnt = FTProps.defBevelFact
                         self.refreshDisplaySelCurves()
+                        self.htlCurveInfo = None
                 return {"RUNNING_MODAL"}
 
         if(not opMode and \
@@ -7978,10 +8000,10 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         segDispInfos, bptDispInfos = \
                             ci.getDisplayInfos(ModalFlexiEditBezierOp.h, \
                                 subdivCnt = self.subdivCnt, bevelCnt = self.bevelCnt)
-                        self.htlCurveInfo = ci
                     else:
                         ci.setHltInfo(hltType = resType, ptIdx = segIdx, \
                             hltIdx = otherInfo)
+                    self.htlCurveInfo = ci
             self.refreshDisplaySelCurves(segDispInfos, bptDispInfos, \
                 locOnCurve, refreshPos = True)
 
@@ -8574,6 +8596,13 @@ class BezierUtilsPreferences(AddonPreferences):
             update = FTProps.updateProps
     )
 
+    numpadEntry: BoolProperty(
+            name="Allow Numpad Entry", \
+            description='Allow numpad entries as keyboard input', \
+            default = False,
+            update = FTProps.updateProps
+    )
+
     showKeyMap: BoolProperty(
             name="Display Keymap", \
             description='Display Keymap When Flexi Tool Is Active', \
@@ -8952,6 +8981,9 @@ class BezierUtilsPreferences(AddonPreferences):
             col = box.column().split()
             col.label(text='Display Orientation / Origin Axes:')
             col.prop(self, "dispAxes", text = '')
+            col = box.column().split()
+            col.label(text='Allow Numpad Entry:')
+            col.prop(self, "numpadEntry", text = '')
             
             box = box.box()
             col = box.column().split()
