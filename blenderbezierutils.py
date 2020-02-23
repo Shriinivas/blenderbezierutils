@@ -25,7 +25,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 90),
+    "version": (0, 9, 91),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -2663,6 +2663,9 @@ EVT_META_OR_SNAP = 2
 TOOL_TYPE_FLEXI_DRAW = 'Flexi Draw'
 TOOL_TYPE_FLEXI_GREASE = 'Flexi Grease'
 TOOL_TYPE_FLEXI_EDIT = 'Flexi Edit'
+TOOL_TYPES_FLEXI_DRAW_COMMON = {TOOL_TYPE_FLEXI_DRAW, TOOL_TYPE_FLEXI_GREASE}
+TOOL_TYPES_FLEXI_ALL = {TOOL_TYPE_FLEXI_DRAW, \
+    TOOL_TYPE_FLEXI_GREASE, TOOL_TYPE_FLEXI_EDIT}
 
 class BptDisplayInfo:
     # handleNos: 0: seg1-left, 1: seg1-right
@@ -2917,13 +2920,24 @@ def updateMetaBtns(caller, event, keymap = None):
 unitMap = {'FEET': "'", 'METERS':'m'}
 
 class FTHotKeyData:
-    def __init__(self, id, key, label, description, exclTools = None):
+    def __init__(self, id, key, label, description, isExclusive = False, \
+        inclTools = None, exclTools = None):
+        if(isExclusive and '+' in key):
+            raise ValueError('Exclusive keys cannot be combined with meta keys')
         self.id = id
         self.key = key
         self.label = label
         self.description = description
         self.default = key
-        self.exclTools = exclTools if(exclTools != None) else []
+        # isExclusive means the hot key function will be invoked even if there are 
+        # meta keys (that are not part of the hot key combination) are
+        # held down together with this key. This way user can have both 
+        # meta key related functionality (e.g. snapping) amd hot key functionality
+        # (e. g. tweak position) simultaneously (Tweak from a snapped point)
+        self.isExclusive = isExclusive
+        self.exclTools = exclTools if(exclTools != None) else set()
+        self.inclTools = inclTools if(inclTools != None) else TOOL_TYPES_FLEXI_ALL
+        self.inclTools = self.inclTools - self.exclTools
 
 class FTHotKeys:
 
@@ -2931,13 +2945,21 @@ class FTHotKeys:
     # Draw
     hkGrabRepos = 'hkGrabRepos'
     hkUndoLastSeg = 'hkUndoLastSeg'
+    hkDissociateHdl = 'hkDissociateHdl'
+    hkResetLastHdl = 'hkResetLastHdl'
 
     drawHotkeys = []
 
     drawHotkeys.append(FTHotKeyData(hkGrabRepos, 'G', 'Grab Bezier Point', \
-            'Hotkey to grab Bezier point while drawing'))
+            'Grab Bezier point while drawing', inclTools = TOOL_TYPES_FLEXI_DRAW_COMMON))
+    drawHotkeys.append(FTHotKeyData(hkDissociateHdl, 'V', 'Dissociate Draw Hendle', \
+            'Dissociate right handle from left while drawing', \
+                inclTools = TOOL_TYPES_FLEXI_DRAW_COMMON, isExclusive = True))
+    drawHotkeys.append(FTHotKeyData(hkResetLastHdl, 'Shift+G', 'Reset Last Handle', \
+            'Reset last handle so that new segment starts as straight line', \
+                inclTools = TOOL_TYPES_FLEXI_DRAW_COMMON))
     drawHotkeys.append(FTHotKeyData(hkUndoLastSeg, 'BACK_SPACE', 'Undo Last Segment', \
-            'Hotkey to undo drawing of last segment'))
+            'Undo drawing of last segment', inclTools = TOOL_TYPES_FLEXI_DRAW_COMMON))
 
     # Edit
     hkUniSubdiv = 'hkUniSubdiv'
@@ -2952,28 +2974,33 @@ class FTHotKeys:
 
     editHotkeys = []
     editHotkeys.append(FTHotKeyData(hkUniSubdiv, 'W', 'Segment Uniform Subdivide', \
-            'Hotkey to initiate Segment Uniform Subdiv op'))
+            'Hotkey to initiate Segment Uniform Subdiv op', \
+                inclTools = {TOOL_TYPE_FLEXI_EDIT}))
     editHotkeys.append(FTHotKeyData(hkBevelPt, 'Ctrl+B', 'Bevel Selected Points', \
-            'Hotkey to initiate Bevel op'))
+            'Hotkey to initiate Bevel op', inclTools = {TOOL_TYPE_FLEXI_EDIT}))
     editHotkeys.append(FTHotKeyData(hkAlignHdl, 'K', 'Align Handle', \
-            'Hotkey to align one handle with the other'))
+            'Hotkey to align one handle with the other', \
+                inclTools = {TOOL_TYPE_FLEXI_EDIT}))
     editHotkeys.append(FTHotKeyData(hkDelPtSeg, 'DEL', 'Delete Point / Seg', \
-            'Delete selected Point / Segment, align selected handle with other point'))
+            'Delete selected Point / Segment, align selected handle with other point', \
+                inclTools = {TOOL_TYPE_FLEXI_EDIT}))
     editHotkeys.append(FTHotKeyData(hkToggleHdl, 'H', 'Hide / Unhide Handles', \
-            'Toggle handle visibility'))
+            'Toggle handle visibility', inclTools = {TOOL_TYPE_FLEXI_EDIT}))
     editHotkeys.append(FTHotKeyData(hkSplitAtSel, 'L', 'Split At Selected Points', \
-            'Split curve at selected Bezier points'))
+            'Split curve at selected Bezier points', inclTools = {TOOL_TYPE_FLEXI_EDIT}))
     editHotkeys.append(FTHotKeyData(hkMnHdlType, 'S', 'Set Handle Type', \
-            'Set type of selected handles'))
+            'Set type of selected handles', inclTools = {TOOL_TYPE_FLEXI_EDIT}))
     editHotkeys.append(FTHotKeyData(hkMnSelect, 'A', 'Select', \
-            'Select elements from existing spline selection'))
+            'Select elements from existing spline selection', \
+                inclTools = {TOOL_TYPE_FLEXI_EDIT}))
     editHotkeys.append(FTHotKeyData(hkMnDeselect, 'Alt+A', 'Deselect', \
-            'Deselect elements from existing spline selection'))
+            'Deselect elements from existing spline selection', \
+                inclTools = {TOOL_TYPE_FLEXI_EDIT}))
 
     # Common
     hkToggleKeyMap = 'hkToggleKeyMap'
     hkSwitchOut = 'hkSwitchOut'
-    # ~ hkTweakPos = 'hkTweakPos'
+    hkTweakPos = 'hkTweakPos'
     hkToggleDrwEd = 'hkToggleDrwEd'
     hkReorient = 'hkReorient'
 
@@ -2983,8 +3010,9 @@ class FTHotKeys:
             'Hide / Unhide Keymap Displayed When Flexi Tool Is Active'))
     commonHotkeys.append(FTHotKeyData(hkSwitchOut, 'F1', 'Exit Flexi Tool', \
             'Switch out of the Flexi Tool mode'))
-    # ~ commonHotkeys.append(FTHotKeyData(hkTweakPos, 'P', 'Tweak Position', \
-            # ~ 'Tweak position or enter polar coordinates of the draw / edit point'))
+    commonHotkeys.append(FTHotKeyData(hkTweakPos, 'P', 'Tweak Position', \
+            'Tweak position or enter polar coordinates of the draw / edit point', \
+                isExclusive = True))
     commonHotkeys.append(FTHotKeyData(hkToggleDrwEd, 'E', 'Toggle Draw / Edit', \
             'Toggle between Draw & Edit Flexi Tools', \
                 exclTools = {TOOL_TYPE_FLEXI_GREASE}))
@@ -3020,18 +3048,16 @@ class FTHotKeys:
     snapHotkeysMeta.append(FTHotKeyData(hkSnapAngleMeta, 'SHIFT', 'Snap to Angle', \
         'Key pressed with mouse click for snapping to Angle Increment'))
 
-    idDataMap = {}
-    keyDataMap = {}
-
     # Metakeys not part of the map
     idDataMap = {h.id: h for h in \
         drawHotkeys + editHotkeys + commonHotkeys + snapHotkeys}
 
-    # Imp: Needs to update after every key selection change
-    keyDataMap = {h.key: h for h in \
-        drawHotkeys + editHotkeys + commonHotkeys + snapHotkeys}
+    # There can be multiple keydata with same keys (e.g. same key for draw and edit)
+    # Not creating a separate map for now. May require later.
+    # ~ keyDataMap = {h.key: h for h in \
+        # ~ drawHotkeys + editHotkeys + commonHotkeys + snapHotkeys}
 
-    exclKeys = {'RET', 'SPACE', 'ESC', 'X', 'Y', 'Z', 'P', \
+    exclKeys = {'RET', 'SPACE', 'ESC', 'X', 'Y', 'Z', \
         'ACCENT_GRAVE', 'COMMA', 'PERIOD', 'F2', 'F3'}
 
     metas = ['Alt', 'Ctrl', 'Shift']
@@ -3053,21 +3079,37 @@ class FTHotKeys:
         keyVal += key
         return keyVal
 
-    def getHotKeyData(key, metas):
-        return FTHotKeys.keyDataMap.get(FTHotKeys.getKey(key, metas))
+    def getHotKeyData(toolType, key, metas):
+        # Map will be more efficient, but not so many keys... So ok for now
+        kds = [kd for kd in FTHotKeys.idDataMap.values() \
+            if(kd.key == FTHotKeys.getKey(key, metas) and toolType in kd.inclTools)]
+        return kds[0] if len(kds) > 0 else None
 
     def isHotKey(id, key, metas):
-        return FTHotKeys.idDataMap[id].key == FTHotKeys.getKey(key, metas)
+        currKeyData = FTHotKeys.idDataMap[id]
+        # Only compare part without meta for exclusive keys
+        if(currKeyData.isExclusive):
+            return currKeyData.key == key
+        else:
+            return currKeyData.key == FTHotKeys.getKey(key, metas)
+
+    def haveCommonTool(keyData1, keyData2):
+        return len(keyData1.inclTools.intersection(keyData2.inclTools)) > 0
 
     # The regular part of the snap keys is validated against assigned key without meta
     # So that if e.g. Ctrl+B is already assigned, B is not available as reg part
     def isAssignedWithoutMeta(kId, key):
-        return any([k.endswith(key) for k in FTHotKeys.keyDataMap.keys() \
-            if FTHotKeys.keyDataMap[k].id != kId])
+        if(key.endswith(INVAL)): return True
+        return any([kd.key.split('+')[-1] == key for kd in FTHotKeys.idDataMap.values() \
+            if kd.id != kId and FTHotKeys.haveCommonTool(kd, FTHotKeys.idDataMap[kId])])
 
     def isAssigned(kId, key):
-        keydata = FTHotKeys.keyDataMap.get(key)
-        return (keydata != None and keydata.id != kId)
+        if(key.endswith(INVAL)): return True
+        currKeyData = FTHotKeys.idDataMap.get(kId)
+        exclKeys = [kd for kd in FTHotKeys.idDataMap.values() \
+            if(FTHotKeys.haveCommonTool(kd, currKeyData) and ((key == kd.key) or \
+            (kd.isExclusive and (key.split('+')[-1] == kd.key))))]
+        return len(exclKeys) > 0
 
     updating = False
 
@@ -3078,9 +3120,9 @@ class FTHotKeys:
     def updateHotkeys(dummy, context):
         try:
             FTHotKeys.updateHKPropPrefs(context)
-            FTHotKeys.keyDataMap = {h.key: h for h in \
-                [k for k in (FTHotKeys.drawHotkeys + FTHotKeys.editHotkeys + \
-                    FTHotKeys.commonHotkeys + FTHotKeys.snapHotkeys)]}
+            # ~ FTHotKeys.keyDataMap = {h.key: h for h in \
+                # ~ [k for k in (FTHotKeys.drawHotkeys + FTHotKeys.editHotkeys + \
+                    # ~ FTHotKeys.commonHotkeys + FTHotKeys.snapHotkeys)]}
         except Exception as e:
             FTHotKeys.updateHKPropPrefs(context, reset = True)
             print("BezierUtils: Error fetching keymap preferences", e)
@@ -3233,22 +3275,20 @@ class FTHotKeys:
 
     # Drop down item tuples with 400 entries
     # INVAL in all 3 fields for unavailable keycodes
-    def getKeyMapTuples(dummy1 = None, dummy2 = None):
+    # TODO: Very big drop-down for every hotkey (because of default)
+    def getKeyMapTupleStr():
         kcMap = FTHotKeys.keyCodeMap()
         tuples = []
+        exclKeys = FTHotKeys.exclKeys
 
         for i in range(0, 400):
-            if(kcMap.get(i) != None and kcMap[i] not in FTHotKeys.exclKeys):
+            if(kcMap.get(i) != None and kcMap[i] not in exclKeys):
                 char = kcMap[i]
             else:
                 char = INVAL
             tuples.append((char, char, char))
-        return tuples
-
-    # TODO: Very big drop-down for every hotkey (because of default)
-    def getKeyMapTupleStr():
         return ''.join(["('" + t[0] + "','" + t[1] + "','" + t[2] +"')," \
-            for t in FTHotKeys.getKeyMapTuples()])
+            for t in tuples])
 
     def getHKFieldStr(keydata, addMeta):
         propName = keydata.id
@@ -3295,7 +3335,7 @@ class FTHotKeys:
                 hkData.append(FTHotKeys.snapHotkeys[i])
             else: 
                 hkData.append(hk)
-        if(toolType in {TOOL_TYPE_FLEXI_DRAW, TOOL_TYPE_FLEXI_GREASE}): 
+        if(toolType in TOOL_TYPES_FLEXI_DRAW_COMMON):
             hkData += [k for k in FTHotKeys.drawHotkeys if toolType not in k.exclTools]
         if(toolType == TOOL_TYPE_FLEXI_EDIT): 
             hkData += [k for k in FTHotKeys.editHotkeys if toolType not in k.exclTools]
@@ -3304,7 +3344,6 @@ class FTHotKeys:
         config = []
         keys = []
         stdKeylabels = []
-        stdKeylabels.append(['Tweak Position', 'P'])
         stdKeylabels.append(['Lock to YZ Plane', 'Shift+X'])
         stdKeylabels.append(['Lock to XZ Plane', 'Shift+Y'])
         stdKeylabels.append(['Lock to XY Plane', 'Shift+Z'])
@@ -3314,7 +3353,7 @@ class FTHotKeys:
         stdKeylabels.append(['Confirm Operation', 'Space / Enter'])
         for k in hkData:
             labels.append(k.label)
-            config.append(True)
+            config.append(not k.isExclusive)
             keys.append(k.key)
         for k in stdKeylabels:
             labels.append(k[0])
@@ -3457,19 +3496,17 @@ class FTMenu:
             'VIEW3D_MT_FlexiEditDeselMenu', 'Deselect', 'mnDeselect'))
 
     idDataMap = {m.hotkeyId: m for m in editMenus}
-    toolClassMenuMap = {'ModalFlexiEditBezierOp': set([m.hotkeyId for m in editMenus])}
+    toolClassMap = {'ModalFlexiEditBezierOp': set([m.hotkeyId for m in editMenus])}
+    toolTypeMap = {'ModalFlexiEditBezierOp': TOOL_TYPE_FLEXI_EDIT}
 
     currMenuId = None
     abandoned = False
 
     def getMenuData(caller, hotkeyId):
-        found = False
-        for c in FTMenu.toolClassMenuMap:
-            if(isinstance(caller, eval(c))):
-                if(hotkeyId in FTMenu.toolClassMenuMap[c]):
-                    found = True
-                    break
-        return FTMenu.idDataMap.get(hotkeyId) if(found) else None
+        keyIds = FTMenu.toolClassMap.get(caller.__class__.__name__)
+        if(keyIds != None and hotkeyId in keyIds):
+            return FTMenu.idDataMap.get(hotkeyId)
+        return None
 
     def procMenu(parent, context, event, outside):
 
@@ -3495,8 +3532,10 @@ class FTMenu:
             return True
 
         if(outside): return False
+        parentClassName = parent.__class__.__name__
+        hkData = FTHotKeys.getHotKeyData(FTMenu.toolTypeMap.get(parentClassName), \
+            evtType, metakeys)
 
-        hkData = FTHotKeys.getHotKeyData(evtType, metakeys)
         if(hkData == None): return False
         menuData = FTMenu.getMenuData(parent, hkData.id)
         if(menuData == None): return False
@@ -3652,7 +3691,7 @@ class SnapDigits:
         self.deltaVec = editCos[1] - editCos[0]
 
     def procEvent(self, context, event, metakeys):
-        if(event.type == 'P'):
+        if(FTHotKeys.isHotKey(FTHotKeys.hkTweakPos, event.type, metakeys)):
             editCos = self.getEditCoPair()
             if(len(editCos) == 2):
                 if(event.value == 'RELEASE'):
@@ -5235,13 +5274,15 @@ class BezierDraw:
     def initialize(self):
         self.capture = False
         self.grabRepos = False
+        self.dissociateHdl = False
 
     def newPoint(self, loc):
-        self.parent.curvePts.append([loc, loc, loc])
+        self.parent.curvePts.append([loc, loc, loc, 'ALIGNED', 'ALIGNED'])
 
     def moveBezierPt(self, loc):
         if(len(self.parent.curvePts) > 0):
-            self.parent.curvePts[-1] = [loc, loc, loc]
+            pt = self.parent.curvePts[-1][:]
+            self.parent.curvePts[-1] = [loc, loc, loc, pt[3], pt[4]]
 
     def movePointByDelta(self, delta):
         if(len(self.parent.curvePts) > 0):
@@ -5277,7 +5318,15 @@ class BezierDraw:
         if(self.capture and FTHotKeys.isHotKey(FTHotKeys.hkGrabRepos, \
             event.type, metakeys)):
             if(event.value == 'RELEASE'):
+                self.dissociateHdl = False
                 self.grabRepos = not self.grabRepos
+            return {"RUNNING_MODAL"}
+
+        if(self.capture and FTHotKeys.isHotKey(FTHotKeys.hkDissociateHdl, \
+            event.type, metakeys)):
+            if(event.value == 'RELEASE'):
+                self.grabRepos = False
+                self.dissociateHdl = not self.dissociateHdl
             return {"RUNNING_MODAL"}
 
         # This can happen only when space was entered and something was there
@@ -5302,6 +5351,8 @@ class BezierDraw:
             if(event.value == 'RELEASE'):
                 if(self.grabRepos):
                     self.grabRepos = False
+                elif(self.dissociateHdl):
+                    self.dissociateHdl = False
                 elif(self.capture and self.isHandleSet()):
                     self.resetHandle('left')
                     self.resetHandle('right')
@@ -5315,6 +5366,17 @@ class BezierDraw:
             return {'RUNNING_MODAL'}
 
         if(not snapProc and \
+            FTHotKeys.isHotKey(FTHotKeys.hkResetLastHdl, event.type, metakeys)):
+            if(event.value == 'RELEASE'):
+                if(len(self.parent.curvePts) > 1):
+                    if(len(self.parent.curvePts) > 2):
+                        idx = len(self.parent.curvePts) - 2
+                        pt = self.parent.curvePts[idx]
+                        pt[2] = pt[1].copy()
+                    self.parent.redrawBezier(rmInfo)
+            return {'RUNNING_MODAL'}
+
+        if(not snapProc and \
             FTHotKeys.isHotKey(FTHotKeys.hkUndoLastSeg, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 snapper.resetSnap()
@@ -5325,11 +5387,10 @@ class BezierDraw:
                 #Because there is an extra point (the current one)
                 if(len(self.parent.curvePts) <= 1):
                     self.parent.curvePts = []
-                    self.capture = False
-                    self.grabRepos = False
+                    self.initialize()
                 else:
                     loc = snapper.get3dLocSnap(rmInfo)
-                    self.parent.curvePts[-1] = [loc, loc, loc]
+                    self.moveBezierPt(loc)
                 self.capture = False
                 self.parent.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
@@ -5337,8 +5398,7 @@ class BezierDraw:
         if(not snapProc and (event.type == 'RET' or event.type == 'SPACE')):
             if(event.value == 'RELEASE'):
                 if(snapper.digitsConfirmed):
-                    self.capture = False
-                    self.grabRepos = False
+                    self.initialize()
                     snapper.digitsConfirmed = False
                     loc = snapper.get3dLocSnap(rmInfo)
                     self.newPoint(loc)
@@ -5373,9 +5433,7 @@ class BezierDraw:
             # See the special condition above in event.value == 'PRESS'
             # ~ if(len(snapper.freeAxes) > 1):
             snapper.resetSnap()
-
-            self.capture = False
-            self.grabRepos = False
+            self.initialize()
 
             # Rare condition: This happens e. g. when user clicks on header menu
             # like Object->Transform->Move. These ops consume press event but not release
@@ -5428,7 +5486,13 @@ class BezierDraw:
                         loc = snapper.get3dLocSnap(rmInfo)
                         pt = self.parent.curvePts[-1][1]
                         delta = (loc - pt)
-                        self.moveBptElem('left', pt - delta)
+                        if(self.dissociateHdl):
+                            self.parent.curvePts[-1][3] = 'FREE'
+                            self.parent.curvePts[-1][4] = 'FREE'
+                        else:
+                            self.moveBptElem('left', pt - delta)
+                            self.parent.curvePts[-1][3] = 'ALIGNED'
+                            self.parent.curvePts[-1][4] = 'ALIGNED'
                         self.moveBptElem('right', pt + delta)
                     hdlPtIdxs = {len(self.parent.curvePts) - 1}
                 else:
@@ -5694,7 +5758,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
         if(len(self.curvePts) > 0):
             locs += [pt[1] for pt in self.curvePts[:-1]]
-
+            # ~ locs += [self.curvePts[-1][0], self.curvePts[-1][1], self.curvePts[-1][2]] 
         return locs
 
     def updateSnapLocs(self, objNames = None):
@@ -6642,17 +6706,17 @@ class SelectCurveInfo:
         if(self.hasShapeKey): 
             if(allShapekeys):
                 pts = self.getAllShapeKeysData(ptIdx)
-                if(prevIdx): prevPts = self.getAllShapeKeysData(prevIdx)
-                if(nextIdx): nextPts = self.getAllShapeKeysData(nextIdx)
+                if(prevIdx != None): prevPts = self.getAllShapeKeysData(prevIdx)
+                if(nextIdx != None): nextPts = self.getAllShapeKeysData(nextIdx)
             else:
                 pts = [self.getShapeKeyData(ptIdx)]
-                if(prevIdx): prevPts = [self.getShapeKeyData(prevIdx)]
-                if(nextIdx): nextPts = [self.getShapeKeyData(nextIdx)]
+                if(prevIdx != None): prevPts = [self.getShapeKeyData(prevIdx)]
+                if(nextIdx != None): nextPts = [self.getShapeKeyData(nextIdx)]
                 
         else: 
             pts = [bpt]
-            if(prevIdx): prevPts = [self.getBezierPt(prevIdx)]
-            if(nextIdx): nextPts = [self.getBezierPt(nextIdx)]
+            if(prevIdx != None): prevPts = [self.getBezierPt(prevIdx)]
+            if(nextIdx != None): nextPts = [self.getBezierPt(nextIdx)]
 
         if(hdlIdx == 0):
             if(bpt.handle_left_type != 'VECTOR'): bpt.handle_left_type = 'FREE'
@@ -8778,6 +8842,7 @@ class BezierUtilsPreferences(AddonPreferences):
     for i, keySet in enumerate([FTHotKeys.drawHotkeys, \
         FTHotKeys.editHotkeys, FTHotKeys.commonHotkeys]):
         for j, keydata in enumerate(keySet):
+            # ~ if(keydata.isExclusive): continue # TODO: Remove exclusive keys from props
             exec(FTHotKeys.getHKFieldStr(keydata, addMeta = True))
             expStr = keydata.id + 'Exp'
             exec(expStr + ': BoolProperty(name="' + expStr + '", default = False)')
@@ -9032,6 +9097,7 @@ class BezierUtilsPreferences(AddonPreferences):
                         even_columns = True, columns = 3)
                     j = 0
                     for j, keydata in enumerate(keySet):
+                        if(keydata.isExclusive): continue
                         expStr = keydata.id + "Exp"
                         col = boxIn.box().column(align=True)
                         col.prop(self, expStr, icon = "TRIA_DOWN" \
