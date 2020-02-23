@@ -1,6 +1,6 @@
 
 # Blender Add-on with Bezier Utility Operations
-<b>Add-on Version: 0.9.90 </b>
+<b>Add-on Version: 0.9.91 </b>
 
 This add-on contains several tools for working with Bezier curves. <br>
 Supported Blender Version: <b>2.8x</b> <br>
