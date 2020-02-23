@@ -4462,8 +4462,8 @@ class Snapper:
             origType = bpy.context.window_manager.bezierToolkitParams.origType
             refLineOrig = self.getRefLineOrig()
         else:
-            origType = snapParams.origType
-            refLineOrig = snapParams.refLineOrig
+            origType = self.snapParams.origType
+            refLineOrig = self.snapParams.refLineOrig
         orig = self.getCurrOrig(self.rmInfo, bpy.context.object, origType, refLineOrig)
         return (self.tm @ orig, self.tm @ self.lastSelCo)
 
