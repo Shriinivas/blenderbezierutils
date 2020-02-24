@@ -40,9 +40,11 @@ To adjust the segment count or sides use the mouse wheel or + or - keys on numpa
 <b>Drawing from Center or from Corner:</b> <br>
 You can start the drawing either from the corner (Bounding Box) or from the center by choosing appropriate option in the Drawing Mode drop-down.<br>
 <b>Sweep (Available in Ellipse / Circle, Polygon and Star):</b> <br>
-The sweep angle can be entered directly in the edit box of the toolbar or changed incrementally using left or right arrow keys while drawing the shape. The maximum angle value is 360, which makes the shape complete.
+The sweep angle can be entered directly in the edit box of the toolbar or changed incrementally using left or right arrow keys while drawing the shape. The maximum angle value is 360, which makes the shape complete.<br>
 <b>Starting Angle (Available in Ellipse / Circle):</b> <br>
 The starting angle can be entered directly in the edit box of the toolbar or changed incrementally using up or down arrow keys while drawing the shape. This angle changes the tilt of the ellipse being drawn.<br>
+<b>Copy Object Properties:</b> <br>
+Select an existing curve object in the Copy Object Properties option in the toolbar to apply its properties like material, dimension, bevel depth, bevel object on to the curves / shapes drawn with the Flexi Bézier Tool. If a mesh object is selected, only its material is applied to the curve / shape drawn.<br>
 
 ## Flexi Edit Bézier Tool
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/editdemo.gif)<br>
