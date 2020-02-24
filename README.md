@@ -27,7 +27,8 @@ At the time of dragging the LMB to set the handle location, you can grab the Bé
 You can reset the handle if you need to draw a straight line after a curved segment by pressing the hot key Shift+G (configurable).<br/>
 <b>Dissociating Handle:</b> <br>
 While adjusting the handle by dragging the mouse pointer, you can change the handle type to free by pressing the hot-key V. This allows creating cusp nodes, even while creating the curve.<br/>
-<b>Undo:</b> While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve creation can be undone by pressing ctrl-Z  <br><br>
+<b>Undo:</b><br/> 
+While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve creation can be undone by pressing ctrl-Z  <br><br>
 
 # Flexi Edit Bézier Tool
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/editdemo.gif)<br>
