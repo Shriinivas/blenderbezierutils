@@ -20,8 +20,8 @@ The tools Flexi Draw , Flexi Edit and Flexi Grease are interactive tools that al
 ## Flexi Draw Bézier Tool
 This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). It allows drawing Bézier curves by manipulating the control points.<br>
 ### Drawing Bézier Curve:
+To draw the curve, activate the tool by clicking the Flexi Draw Bézier tool on the toolshelf. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. You can auto-close the curve by pressing Shift+Space or Shift+Enter<br>
 <p align="center"><img src="https://github.com/Shriinivas/blenderbezierutils/blob/master/drawdemo.gif" alt="Demo"/></p><br/>
-To draw the curve, activate the tool by clicking the Flexi Draw Bézier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. You can auto-close the curve by pressing Shift+Space or Shift+Enter<br>
 <b>Repositioning the Bézier point:</b> <br>
 At the time of dragging the LMB to set the handle location, you can grab the Bézier point to reposition it by pressing G (configirable). All the snapping options are available for setting the handle location and repositioning the Bézier point. Press G again to release the grab. <br>
 <b>Resetting Handle:</b> <br>
@@ -32,7 +32,16 @@ While adjusting the handle by dragging the mouse pointer, you can change the han
 While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve creation can be undone by pressing ctrl-Z  <br><br>
 
 ### Drawing Primitive Shapes:
+Other than Bézier curve you can also create primitive shapes with Bézier segments. To do this, select the appropriate primitive shape from the Draw Shape drop-down in the tollbar at the top. The shapes currently available are 1) Rectangle 2) Ellipse / Circle 3) Polygon 4) Star. Click the starting point and end point of the shape. To draw shapes with equal height and width (e.g. perfect circle or square), hold down shift key. You can optionally snap to the grid.
+The shapes are all 2d, so for drawing in the 3d perspective view, you can either choose a constraining plane or set the orientation to view. In perspective view, without any constraining plain, the depth value of the current mouse location is applied to all the points.<br>
 <p align="center"><img src="https://github.com/Shriinivas/blenderbezierutils/blob/master/drawprim.gif" alt="Demo"/></p><br/>
+<b>Adjusting number of segments (Ellipse) or Sides (Polygon / Star):</b> <br>
+To adjust the segment count or sides use the mouse wheel or + or - keys on numpad. <br>
+<b>Drawing from Center or from Corner:</b> <br>
+You can start the drawing either from the corner (Bounding Box) or from the center by choosing appropriate option in the Drawing Mode drop-down.<br>
+<b>Sweep (Available in Ellipse / Circle, Polygon and Star):</b> <br>
+
+
 
 ## Flexi Edit Bézier Tool
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/editdemo.gif)<br>
