@@ -15,7 +15,7 @@ After installation, a new tab: 'Bézier Utilities' is displayed in Object and Ed
 There will also appear two new buttons - <b>Flexi Draw Bézier</b> and <b>Flexi Edit Bézier</b> - in Object Mode and a <b>Flexi Grease Bézier</b> button in GP Draw Mode on the toolshelf. 
 
 # Overview
-The tools Flexi Draw , Flexi Edit and Flexi Grease are interactive tool that allowing drawing and editing Bézier curves.
+The tools Flexi Draw , Flexi Edit and Flexi Grease are interactive tools that allow drawing and editing Bézier curves.
 
 # Flexi Draw Bézier Tool
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/drawdemo.gif)<br>
