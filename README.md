@@ -35,6 +35,7 @@ While drawing, you can undo one segment at a time by pressing backspace. Pressin
 Other than Bézier curve you can also create primitive shapes with Bézier segments. To do this, select the appropriate primitive shape from the Shape Type drop-down in the tollbar at the top. The shapes currently available are 1) Rectangle 2) Ellipse / Circle 3) Polygon 4) Star. Click the starting point and end point of the shape. To draw shapes with equal height and width (e.g. perfect circle or square), hold down shift key. You can optionally snap to the grid.
 The shapes are all 2d, so for drawing in the 3d perspective view, you can either choose a constraining plane or set the orientation to view. In perspective view, without any constraining plain, the depth value of the current mouse location is applied to all the points.<br>
 <p align="center"><img src="https://github.com/Shriinivas/blenderbezierutils/blob/master/drawprim.gif" alt="Demo"/></p><br/>
+<p align="center"><img src="https://github.com/Shriinivas/blenderbezierutils/blob/master/drawshapeoptions.png" alt="Demo"/></p><br/>
 <b>Adjusting number of segments (Ellipse) or Sides (Polygon / Star):</b> <br>
 To adjust the segment count or sides use the mouse wheel or + or - keys on numpad. You may also directly type the value in the edit box on toolbar.<br>
 <b>Drawing from Center or from Corner:</b> <br>
