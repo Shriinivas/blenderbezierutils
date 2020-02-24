@@ -1,46 +1,37 @@
-
-# Blender Add-on with Bezier Utility Operations
+# Blender Add-on with Bézier Utility Operations
 <b>Add-on Version: 0.9.91 </b>
 
-This add-on contains several tools for working with Bezier curves. <br>
-Supported Blender Version: <b>2.8x</b> <br>
+This add-on contains several tools and utility ops for working with Bézier curves. <br>
+Supported Blender Versions: <b>2.8x</b> <br>
 
 # Installation
 - Download blenderbezierutils.py (save the file from <a href = 'https://raw.githubusercontent.com/Shriinivas/blenderbezierutils/master/blenderbezierutils.py'>this location</a> in a folder on disk.)
 - Open Blender and select File->User Preferences
 - Click install Add-ons tab and then Install Add-on from File
 - Select the downloaded file
-- Check the 'Bezier Utilities' option in the add-ons dialog
+- Check the 'Bézier Utilities' option in the add-ons dialog
 
-After installation, a new 'Bezier Utilities' tab is displayed in object mode on 'Active Tool and Workspace settings' tab on the properties panel. There will also appear two new buttons - <b>Flexi Draw Bezier</b> and <b>Flexi Edit Bezier</b> - in Object Mode and a <b>Flexi Grease Bezier</b> button in Draw Mode on the toolshelf. 
+After installation, a new tab: 'Bézier Utilities' is displayed in Object and Edit modes on 'Active Tool and Workspace settings' area on the properties panel. <br/>
+There will also appear two new buttons - <b>Flexi Draw Bézier</b> and <b>Flexi Edit Bézier</b> - in Object Mode and a <b>Flexi Grease Bézier</b> button in GP Draw Mode on the toolshelf. 
 
 # Overview
-The tools are arranged in a collapsible Panel, grouped according to the functionality type. 
-Here is a brief overview of a few of the tools in this add-on:
-- Separate Bezier Splines: Create individual objects out of the splines of the selected Curve objects. Only affects curves with multiple splines. This also works with Curves with shape keys. New objects are put in a separate collection.
-- Separate Bezier Segments: Create individual objects out of every segment within the Curve. This also works with Curves with shape keys. New objects are put in a separate collection.
-- Separate Bezier Points: Create individual objects out of the Bezier end point of each segment within the selected Curves. The newly created point objects do not inherit the shape keys of the original curve objects. New objects are put in a separate collection. The points can be used for snapping with the Flexi Bezier Tool for interesting experimentation :)
-- Select Objects in collection: Allows selection of objects belonging to the collection of the active object. It's possible to select alternate objects or objects at fixed interval (based on the order in collection), as well as invert the selection. This can be combined with the split / separate ops to work on the newly created segment / spline objects.
-- Close with Straight Segment: Closes all (non-cyclic) splines within the selected curves with straight segments.
-- Remove Duplicate Curve Vertices: Removes vertices at the same location. If there are duplicate end vertices coinciding with the start node the spline is marked cyclic.
-- Convert to Mesh: Converts the curve to a mesh with quad faces. The curve is first made 2d and all its splines cyclic. This op basically applies remesh modifier to make a quad mesh. Users can optionally check unsubdivide option to reduce the polygon count further.
-- Join Bezier Curves: Joins the selected objects at their end points. If the 'Join optimized' option is unchecked the curves are joined in their order in the collection (alphabetical order of their names). If it is checked, the next curve to join is chosen based on its distance (shortest) from the current curve; the curve direction is reversed if needed. With the 'Join With Straight Segments' option, the curve objects are joined with straight line segments, regardless of the end point handle types.
-- Set Curve Colors: This tool allows users to set the display color of the selected curves in viewport. The colored curves are drawn on top of the Blender curve objects. There is a button - Apply Curve Color - to toggle the curve coloring.
-- Paste Length: Makes the length of all the selected curve objects the same as that of active curve object. The scale remains unchanged.
-- Mark Start Vertex (edit mode): Marks the start vertex of a closed (cyclic) splines of the selected curve objects. If the curves have shape keys, they may get distorted with change in the start vertex. (This tool is the same as the one included in the <a href ='https://github.com/Shriinivas/assignshapekey'>Assign Shape Keys</a> add-on.)<br> 
+The tools Flexi Draw , Flexi Edit and Flexi Grease are interactive tool that allowing drawing and editing Bézier curves.
 
-# Flexi Draw Bezier Tool
+# Flexi Draw Bézier Tool
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/drawdemo.gif)<br>
-This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). It allows drawing Bezier curves by manipulating the control points.<br>
-<b>Drawing the curve: </b> To draw the curve activate the tool by clicking the Flexi Draw Bezier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. <br>
-<b>Repositioning the Bezier point:</b> <br>
-![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/grabrepos2o.gif)<br>
-At the time of dragging the LMB to set the handle location, you can grab the Bezier point to reposition it by pressing g. All the snapping options are available for setting the handle location and repositioning the Bezier point. Press g again to release the grab. <br>
-<b>Undo:</b> While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve op can be undone by pressing ctrl-Z  <br><br>
+This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). It allows drawing Bézier curves by manipulating the control points.<br>
+<b>Drawing the curve: </b> To draw the curve, activate the tool by clicking the Flexi Draw Bézier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. You can auto-close the curve by pressing Shift+Space or Shift+Enter<br>
+<b>Repositioning the Bézier point:</b> <br>
+At the time of dragging the LMB to set the handle location, you can grab the Bézier point to reposition it by pressing G (configirable). All the snapping options are available for setting the handle location and repositioning the Bézier point. Press G again to release the grab. <br>
+<b>Resetting Handle:</b> <br>
+You can reset the handle if you need to draw a straight line after a curved segment by pressing the hot key Shift+G (configurable).
+<b>Dissociating Handle:</b> <br>
+While adjusting the handle by dragging the mouse pointer, you can change the handle type to free by pressing the hot-key V. This allows creating cusp nodes, even while creating the curve.
+<b>Undo:</b> While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve creation can be undone by pressing ctrl-Z  <br><br>
 
-# Flexi Edit Bezier Tool
+# Flexi Edit Bézier Tool
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/editdemo.gif)<br>
-This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). With it You can 1) edit a Bezier curve by dragging a point on the curve 2) Move Segment endpoints and manipulate handles 3) Add or delete a vertex at any arbitrary location on the curve <br><br>
+This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). With it You can 1) edit a Bézier curve by dragging a point on the curve 2) Move Segment endpoints and manipulate handles 3) Add or delete a vertex at any arbitrary location on the curve <br><br>
 <b>Edit Curve and move handles and end points: </b> When the tool is activated, moving a mouse cursor in the 3d viewport would highlight the individual curve segments under the mouse cursor. Clicking on a segment will make the segment active and it's handles will be visible. You can drag any point on the curve to edit it. Releasing the button will apply the changes to the curve. Also when the handles are visible, bringing the mouse cursor in the vicinity of any of the handle points will highlight that point (bright green), indicating the mouse click will operate on it. You can move the handles and segment points by dragging the mouse pointer. Releasing the mouse button makes the changes permanent.<br><br>
 <b>Grab the Edit Point:</b>
 The point being edited can be grabbed by double clicking it. Once grabbed the point will move along the mouse, without having to drag the pointer. The grab is released on the next single click.
@@ -54,16 +45,16 @@ You can also subdivide the selected segments uniformly. To initiate the subdivis
 <b>Align Handle:</b>
 To align the handle with the opposite handle of the same end point, select the handle point and press K. This way you can quickly smooth out the sharp corners.
 
-# Flexi Grease Bezier Tool
+# Flexi Grease Bézier Tool
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/greasedemo.gif)<br>
-This tool will appear on the toolshelf in Grease Pencil Draw mode. You can draw Bezier curves just as you would draw with the Flexi Draw tool. After confirming the drawing is converted to grease pencil strokes. All the snapping and locking options of the Flexi Draw are available here also.<br>
+This tool will appear on the toolshelf in Grease Pencil Draw mode. You can draw Bézier curves just as you would draw with the Flexi Draw tool. After confirming the drawing is converted to grease pencil strokes. All the snapping and locking options of the Flexi Draw are available here also.<br>
 Additionaly, you can increase of decrease the resolution of the stroke using the mouse wheel or pressing + or - keys.<br>
 The subdivision point visibility can be toggled by pressing h key.<br>
 
 # Configurable Entities
 ![Configurable Options](https://github.com/Shriinivas/blenderbezierutils/blob/master/configitems.png)<br>
 Values of a number of entities are user configurable via Add-ons dialog (from Preferences->Add-on Menu). Some of these are:
-- Bezier Toolkit Panel Tab<br>
+- Bézier Toolkit Panel Tab<br>
 <b>Dimensions</b>
 - Draw Line Thickness
 - Handle Point Size
@@ -74,7 +65,7 @@ Values of a number of entities are user configurable via Add-ons dialog (from Pr
 - Snap Point size<br>
 <b>Colors</b>
 - Selected and Adjacent Segment
-- Handle Tips & Bezier Points
+- Handle Tips & Bézier Points
 - Highlighted Points
 - Subdivision & Resolution Markers
 
@@ -123,7 +114,7 @@ After moving the point by mouse, user can further tweak the value via keyboard (
 When the drawing / editing is constrained to a single plane (the Constrain Axes dropdown has an axis-pair selection), you can tweak the polar coordinate values. To do this press P twice, after the first time you can enter cartesian coordinates and after the second, it's possible to enter the coordinates in polar form. Please note all the values are interpreted based on the selections in the Snapping Orientation and Snapping Origin dropdown.
 
 <b>Reference Line and Reference Line Point: </b>
-Reference Line takes on different connotations based on the context. While drawing (Flexi Draw and Flexi Grease), the Reference Line is the segment previous to the one being drawn and the Reference Line Point is the immediate previous point. While editing, for a Bezier Point, the Reference Line is the line joining the current Bezier point with the other one of the segment (which is also the Reference Line Point). In case of handles, the Reference Line is the handle itself and the Reference Line point is the Bezier point in the handle. While moving a point on the segment, the Reference Line point is the location of the point before it is moved.
+Reference Line takes on different connotations based on the context. While drawing (Flexi Draw and Flexi Grease), the Reference Line is the segment previous to the one being drawn and the Reference Line Point is the immediate previous point. While editing, for a Bézier Point, the Reference Line is the line joining the current Bézier point with the other one of the segment (which is also the Reference Line Point). In case of handles, the Reference Line is the handle itself and the Reference Line point is the Bézier point in the handle. While moving a point on the segment, the Reference Line point is the location of the point before it is moved.
 
 <b>Custom Axis:</b>
 Custom Axis is a user defined line, that serves multiple purpose. To create a Custom Axis, make sure the selection in Snapping Origin dropdown is 'Custom Axis Origin' and rightclick the starting point, move the pointer to the end point and rightclick once again. You can snap to grid or bezier point location while creating the Custom Axis. Additionally, it's possible to define custom snapping points along the Custom Axis, using mouse wheel (or plus or minus keys).<br>
@@ -132,7 +123,7 @@ The Custom Axis can be used to define the Snappig Orientation, Snapping Origin, 
 <b>Hotkey Snapping Options (Active for the Point being Drawn / Edited):</b> 
 - Holding down <b>ctrl</b> while moving mouse will snap the point or handle to the<b> grid.</b> 
 - By holding down <b>shift</b> key the <b>angle</b> of the segment / handle being drawn / edited will be restricted to fixed values (0, 45, 90 etc). The reference axis for determining angle increment is the first free axis based on the selected Snapping Orientation.<br>
-- Holding down <b>alt</b> key will snap the point being drawn / edited to the a) <b>Bezier points</b> of the splines within all the curve objects in the view b) <b>vertices</b> of the selected objects (if there are fewer than 1000 vertices) c) <b>the face</b> under the mouse pointer of the selected objects (if there are fewer than 1000 faces). d) <b>snapping Origin</b> <br>
+- Holding down <b>alt</b> key will snap the point being drawn / edited to the a) <b>Bézier points</b> of the splines within all the curve objects in the view b) <b>vertices</b> of the selected objects (if there are fewer than 1000 vertices) c) <b>the face</b> under the mouse pointer of the selected objects (if there are fewer than 1000 faces). d) <b>snapping Origin</b> <br>
 By default, after the drawing is started or the segment is selected for editing, and if the Snapping Orientation or Snapping Origin is 'Selected Object Face', the orientation / orign will be locked to the normal / center of the face under the mouse pointer. During the drawing / editing operation, user can make the tool reposition the orientation / origin to the new face by pressing <b>U</b>.<br>
 
 By default, snapping to the end points joins the new curve to the curve(s) it is being snapped to. You can hold down <b>ctrl</b> while ending the curve (by double click or space or return key) to keep the curve separate. The curve can also be separated from the snapped curves be pressing ctrl-Z after confirming. <br>
@@ -148,13 +139,29 @@ Snapping and locking can be combined together. So user can hold down both contro
 
 When Constrain Axes dropdown has an axis-pair selection (lock to plane), pressing a single axis key will allow users to draw lines parallel to the axis (or slide the point along this line).
 
+# Other Tools
+The utility ops are arranged in a collapsible Panel, grouped according to the functionality type. 
+Here is a brief overview of a few of the ops in this add-on:
+- Separate Bézier Splines: Create individual objects out of the splines of the selected Curve objects. Only affects curves with multiple splines. This also works with Curves with shape keys. New objects are put in a separate collection.
+- Separate Bézier Segments: Create individual objects out of every segment within the Curve. This also works with Curves with shape keys. New objects are put in a separate collection.
+- Separate Bézier Points: Create individual objects out of the Bézier end point of each segment within the selected Curves. The newly created point objects do not inherit the shape keys of the original curve objects. New objects are put in a separate collection. The points can be used for snapping with the Flexi Bézier Tool for interesting experimentation :)
+- Select Objects in collection: Allows selection of objects belonging to the collection of the active object. It's possible to select alternate objects or objects at fixed interval (based on the order in collection), as well as invert the selection. This can be combined with the split / separate ops to work on the newly created segment / spline objects.
+- Close with Straight Segment: Closes all (non-cyclic) splines within the selected curves with straight segments.
+- Remove Duplicate Curve Vertices: Removes vertices at the same location. If there are duplicate end vertices coinciding with the start node the spline is marked cyclic.
+- Convert to Mesh: Converts the curve to a mesh with quad faces. The curve is first made 2d and all its splines cyclic. This op basically applies remesh modifier to make a quad mesh. Users can optionally check unsubdivide option to reduce the polygon count further.
+- Join Bézier Curves: Joins the selected objects at their end points. If the 'Join optimized' option is unchecked the curves are joined in their order in the collection (alphabetical order of their names). If it is checked, the next curve to join is chosen based on its distance (shortest) from the current curve; the curve direction is reversed if needed. With the 'Join With Straight Segments' option, the curve objects are joined with straight line segments, regardless of the end point handle types.
+- Set Curve Colors: This tool allows users to set the display color of the selected curves in viewport. The colored curves are drawn on top of the Blender curve objects. There is a button - Apply Curve Color - to toggle the curve coloring.
+- Paste Length: Makes the length of all the selected curve objects the same as that of active curve object. The scale remains unchanged.
+- Mark Start Vertex (edit mode): Marks the start vertex of a closed (cyclic) splines of the selected curve objects. If the curves have shape keys, they may get distorted with change in the start vertex. (This tool is the same as the one included in the <a href ='https://github.com/Shriinivas/assignshapekey'>Assign Shape Keys</a> add-on.)<br> 
+
+
 <b>Video Tutorials & Demos:</b><br>
-<b>Overview of Flexi Draw Bezier Tool:</b> https://youtu.be/C9PXp0XHgYQ<br>
-<b>Overview of Flexi Edit Bezier Tool:</b> https://youtu.be/enQHGmluQIw<br>
+<b>Overview of Flexi Draw Bézier Tool:</b> https://youtu.be/C9PXp0XHgYQ<br>
+<b>Overview of Flexi Edit Bézier Tool:</b> https://youtu.be/enQHGmluQIw<br>
 <b>Overview of Snapping & Locking Framework:</b> https://youtu.be/VQCXZbOq47s<br>
-<b>Overview of Flexi Grease Bezier & Uniform Subdiv Op:</b> https://youtu.be/4XrjpWwLU4M<br>
+<b>Overview of Flexi Grease Bézier & Uniform Subdiv Op:</b> https://youtu.be/4XrjpWwLU4M<br>
 <b>Demo of Flexi Ellipse: </b>https://youtu.be/t7eVWP8gxeE<br>
-<b>All Bezier Toolkit videos: </b> https://www.youtube.com/playlist?list=PLxsh4i5F_h9G6QFoPzKvBRMayz8533fSW<br>
+<b>All Bézier Toolkit videos: </b> https://www.youtube.com/playlist?list=PLxsh4i5F_h9G6QFoPzKvBRMayz8533fSW<br>
 
 # Credits
 The functionality of editing curve by grabbing a point on it, is adapted from Inkscape edit curve tool: https://gitlab.com/inkscape/inkscape/blob/master/src/ui/tool/curve-drag-point.cpp <br>
@@ -165,10 +172,10 @@ The add-on script includes python converted a2c js function (Copyright (C) 2013-
 Algorithms that were inspired by the answers on stackoverflow are mentioned with the corresponding links in the code. I would also like to thank the users who provided this very useful information, sometimes even with working sample code.<br><br>
 
 # Known Issues
-- In Flexi Draw Bezier, the part of the area under toolshelf and properties panel is excluded from drawing. Hide these elements to maximize the drawing area.<br>
+- In Flexi Draw Bézier, the part of the area under toolshelf and properties panel is excluded from drawing. Hide these elements to maximize the drawing area.<br>
 
 # Limitations
-- In Flexi Draw Bezier, snapping does not work for curves with modifiers. This is the intended functionality.<br>
+- In Flexi Draw Bézier, snapping does not work for curves with modifiers. This is the intended functionality.<br>
 
 In general, exercise caution when using this add-on in production, since all possible conditions have not been extensively tested.<br>
 You may report bug as comment on the youtube videos or on the issues page here on Github. I will try and fix them as soon as I can.
