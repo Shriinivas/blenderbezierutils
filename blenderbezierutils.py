@@ -2951,11 +2951,12 @@ class FTHotKeys:
     drawHotkeys = []
 
     drawHotkeys.append(FTHotKeyData(hkGrabRepos, 'G', 'Grab Bezier Point', \
-            'Grab Bezier point while drawing', inclTools = TOOL_TYPES_FLEXI_DRAW_COMMON))
+            'Grab Bezier point while drawing', inclTools = TOOL_TYPES_FLEXI_DRAW_COMMON, \
+                isExclusive = True))
     drawHotkeys.append(FTHotKeyData(hkDissociateHdl, 'V', 'Dissociate Draw Hendle', \
             'Dissociate right handle from left while drawing', \
                 inclTools = TOOL_TYPES_FLEXI_DRAW_COMMON, isExclusive = True))
-    drawHotkeys.append(FTHotKeyData(hkResetLastHdl, 'Shift+G', 'Reset Last Handle', \
+    drawHotkeys.append(FTHotKeyData(hkResetLastHdl, 'Shift+R', 'Reset Last Handle', \
             'Reset last handle so that new segment starts as straight line', \
                 inclTools = TOOL_TYPES_FLEXI_DRAW_COMMON))
     drawHotkeys.append(FTHotKeyData(hkUndoLastSeg, 'BACK_SPACE', 'Undo Last Segment', \
@@ -3108,7 +3109,8 @@ class FTHotKeys:
         currKeyData = FTHotKeys.idDataMap.get(kId)
         exclKeys = [kd for kd in FTHotKeys.idDataMap.values() \
             if(FTHotKeys.haveCommonTool(kd, currKeyData) and ((key == kd.key) or \
-            (kd.isExclusive and (key.split('+')[-1] == kd.key))))]
+                (kd.isExclusive and (key.split('+')[-1] == kd.key)) or \
+                    (currKeyData.isExclusive and (key == kd.key.split('+')[-1]))))]
         return len(exclKeys) > 0
 
     updating = False
@@ -3353,7 +3355,7 @@ class FTHotKeys:
         stdKeylabels.append(['Confirm Operation', 'Space / Enter'])
         for k in hkData:
             labels.append(k.label)
-            config.append(not k.isExclusive)
+            config.append(True)
             keys.append(k.key)
         for k in stdKeylabels:
             labels.append(k[0])
@@ -8842,8 +8844,7 @@ class BezierUtilsPreferences(AddonPreferences):
     for i, keySet in enumerate([FTHotKeys.drawHotkeys, \
         FTHotKeys.editHotkeys, FTHotKeys.commonHotkeys]):
         for j, keydata in enumerate(keySet):
-            # ~ if(keydata.isExclusive): continue # TODO: Remove exclusive keys from props
-            exec(FTHotKeys.getHKFieldStr(keydata, addMeta = True))
+            exec(FTHotKeys.getHKFieldStr(keydata, addMeta = (not keydata.isExclusive)))
             expStr = keydata.id + 'Exp'
             exec(expStr + ': BoolProperty(name="' + expStr + '", default = False)')
         expStr = 'hotKeySet'+ str(i)+'Exp'
@@ -9097,7 +9098,6 @@ class BezierUtilsPreferences(AddonPreferences):
                         even_columns = True, columns = 3)
                     j = 0
                     for j, keydata in enumerate(keySet):
-                        if(keydata.isExclusive): continue
                         expStr = keydata.id + "Exp"
                         col = boxIn.box().column(align=True)
                         col.prop(self, expStr, icon = "TRIA_DOWN" \
@@ -9105,13 +9105,14 @@ class BezierUtilsPreferences(AddonPreferences):
                                 emboss = False, text = keydata.label + ':')
                         if  getattr(self, expStr):
                             col.prop(self, keydata.id, text = '', event = True)
-                            rowC = col.row()
-                            rowC.prop(self, keydata.id + 'Alt', \
-                                text = 'Alt', toggle = True)
-                            rowC.prop(self, keydata.id + 'Ctrl', \
-                                text = 'Ctrl', toggle = True)
-                            rowC.prop(self, keydata.id + 'Shift', \
-                                text = 'Shift', toggle = True)
+                            if(not keydata.isExclusive): 
+                                rowC = col.row()
+                                rowC.prop(self, keydata.id + 'Alt', \
+                                    text = 'Alt', toggle = True)
+                                rowC.prop(self, keydata.id + 'Ctrl', \
+                                    text = 'Ctrl', toggle = True)
+                                rowC.prop(self, keydata.id + 'Shift', \
+                                    text = 'Shift', toggle = True)
                     for idx in range(j % 3, 2):
                         col = boxIn.column(align = True)
             ####################### Snap Hotkeys #######################
