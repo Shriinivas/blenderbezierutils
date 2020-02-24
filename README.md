@@ -17,10 +17,10 @@ There will also appear two new buttons - <b>Flexi Draw Bézier</b> and <b>Flexi 
 # Overview
 The tools Flexi Draw , Flexi Edit and Flexi Grease are interactive tools that allow drawing and editing Bézier curves.
 
-# Flexi Draw Bézier Tool
- <p align="center"><img src="https://github.com/Shriinivas/blenderbezierutils/blob/master/drawdemo.gif" alt="Demo"/></p><br/>
-This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). It allows drawing Bézier curves by manipulating the control points.<br>
-<b>Drawing the curve: </b><br/>
+## Flexi Draw Bézier Tool
+ his tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). It allows drawing Bézier curves by manipulating the control points.<br>
+### Drawing Bézier Curve:
+<p align="center"><img src="https://github.com/Shriinivas/blenderbezierutils/blob/master/drawdemo.gif" alt="Demo"/></p><br/>
 To draw the curve, activate the tool by clicking the Flexi Draw Bézier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. You can auto-close the curve by pressing Shift+Space or Shift+Enter<br>
 <b>Repositioning the Bézier point:</b> <br>
 At the time of dragging the LMB to set the handle location, you can grab the Bézier point to reposition it by pressing G (configirable). All the snapping options are available for setting the handle location and repositioning the Bézier point. Press G again to release the grab. <br>
@@ -30,8 +30,10 @@ You can reset the handle if you need to draw a straight line after a curved segm
 While adjusting the handle by dragging the mouse pointer, you can change the handle type to free by pressing the hot-key V. This allows creating cusp nodes, even while creating the curve.<br/>
 <b>Undo:</b><br/> 
 While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve creation can be undone by pressing ctrl-Z  <br><br>
+### Drawing Primitive Shapes:
+<p align="center"><img src="https://github.com/Shriinivas/blenderbezierutils/blob/master/drawprim.gif" alt="Demo"/></p><br/>
 
-# Flexi Edit Bézier Tool
+## Flexi Edit Bézier Tool
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/editdemo.gif)<br>
 This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). With it You can 1) edit a Bézier curve by dragging a point on the curve 2) Move Segment endpoints and manipulate handles 3) Add or delete a vertex at any arbitrary location on the curve <br><br>
 <b>Edit Curve and move handles and end points: </b> When the tool is activated, moving a mouse cursor in the 3d viewport would highlight the individual curve segments under the mouse cursor. Clicking on a segment will make the segment active and it's handles will be visible. You can drag any point on the curve to edit it. Releasing the button will apply the changes to the curve. Also when the handles are visible, bringing the mouse cursor in the vicinity of any of the handle points will highlight that point (bright green), indicating the mouse click will operate on it. You can move the handles and segment points by dragging the mouse pointer. Releasing the mouse button makes the changes permanent.<br><br>
@@ -47,13 +49,13 @@ You can also subdivide the selected segments uniformly. To initiate the subdivis
 <b>Align Handle:</b>
 To align the handle with the opposite handle of the same end point, select the handle point and press K. This way you can quickly smooth out the sharp corners.
 
-# Flexi Grease Bézier Tool
+## Flexi Grease Bézier Tool
 ![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/greasedemo.gif)<br>
 This tool will appear on the toolshelf in Grease Pencil Draw mode. You can draw Bézier curves just as you would draw with the Flexi Draw tool. After confirming the drawing is converted to grease pencil strokes. All the snapping and locking options of the Flexi Draw are available here also.<br>
 Additionaly, you can increase of decrease the resolution of the stroke using the mouse wheel or pressing + or - keys.<br>
 The subdivision point visibility can be toggled by pressing h key.<br>
 
-# Configurable Entities
+## Configurable Entities
 ![Configurable Options](https://github.com/Shriinivas/blenderbezierutils/blob/master/configitems.png)<br>
 Values of a number of entities are user configurable via Add-ons dialog (from Preferences->Add-on Menu). Some of these are:
 - Bézier Toolkit Panel Tab<br>
@@ -71,7 +73,7 @@ Values of a number of entities are user configurable via Add-ons dialog (from Pr
 - Highlighted Points
 - Subdivision & Resolution Markers
 
-# Snapping & Locking Framework
+## Snapping & Locking Framework
 The Framework provides comprihensive snapping and locking options common to all three Flexi tools.
 After activating one of the Flexi tools the header portion displayes the following new options:
 
