@@ -20,7 +20,8 @@ The tools Flexi Draw , Flexi Edit and Flexi Grease are interactive tools that al
 # Flexi Draw Bézier Tool
  <p align="center"><img src="https://github.com/Shriinivas/blenderbezierutils/blob/master/drawdemo.gif" alt="Demo"/></p><br/>
 This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). It allows drawing Bézier curves by manipulating the control points.<br>
-<b>Drawing the curve: </b> To draw the curve, activate the tool by clicking the Flexi Draw Bézier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. You can auto-close the curve by pressing Shift+Space or Shift+Enter<br>
+<b>Drawing the curve: </b><br/>
+To draw the curve, activate the tool by clicking the Flexi Draw Bézier tool on the toolbar. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. You can auto-close the curve by pressing Shift+Space or Shift+Enter<br>
 <b>Repositioning the Bézier point:</b> <br>
 At the time of dragging the LMB to set the handle location, you can grab the Bézier point to reposition it by pressing G (configirable). All the snapping options are available for setting the handle location and repositioning the Bézier point. Press G again to release the grab. <br>
 <b>Resetting Handle:</b> <br>
