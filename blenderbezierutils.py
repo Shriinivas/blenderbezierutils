@@ -809,7 +809,7 @@ def splitCurveSelPts(selPtMap, newColl = True):
     changeCnt = 0
     newObjs = []
 
-    if(len(selPtMap) == 0): return changeCnt, newObjs
+    if(len(selPtMap) == 0): return newObjs, changeCnt
 
     for obj in selPtMap.keys():
         splinePtMap = selPtMap.get(obj)
@@ -6480,8 +6480,7 @@ class SelectCurveInfo:
         self.ptSels = {}
 
         # Highlighted point (mouse move)
-        # format: 'hltType': hltType {'CurveLoc', 'CurveBezPt', 'SelHandles'}
-        # 'ptIdx': ptIdx, 'hltIdx':hltIdx {0, 1} [0 - left, 1 - right]
+        # 'ptIdx': ptIdx, 'hltIdx':hltIdx {-1, 0, 1, 2} (just as in sel above)
         self.hltInfo = {}
 
         # obj.name gives exception if obj is not in bpy.data.objects collection,
@@ -6595,8 +6594,8 @@ class SelectCurveInfo:
     def getHltInfo(self):
         return self.hltInfo
 
-    def setHltInfo(self, hltType, ptIdx, hltIdx):
-        self.hltInfo = {'hltType': hltType, 'ptIdx': ptIdx, 'hltIdx':hltIdx}
+    def setHltInfo(self, ptIdx, hltIdx):
+        self.hltInfo = {'ptIdx': ptIdx, 'hltIdx':hltIdx}
 
     def getClickLoc(self):
         return self.clickInfo.get('loc')
@@ -6943,15 +6942,15 @@ class SelectCurveInfo:
             segDispInfos.append(SegDisplayInfo([pts[-1], pts[0]], cNonHltSeg))
 
         hltInfo = self.getHltInfo()
-        hltType = hltInfo.get('hltType')
+        hltPtIdx = hltInfo.get('ptIdx')
+        hltIdx = hltInfo.get('hltIdx')
 
         # Process highlighted segments before selected ones because...
         # selected segments take priority over highlighted
-        if(hltType != None and hltType in {'SegLoc', 'CurveLoc'}):
-            ptIdx = hltInfo['ptIdx']
-            segDispInfos[ptIdx].segColor = FTProps.colDrawHltSeg
-            bptDispInfos[ptIdx].tipColors[1] = cBezPt
-            nextIdx = self.getAdjIdx(ptIdx)
+        if(hltIdx == -1):
+            segDispInfos[hltPtIdx].segColor = FTProps.colDrawHltSeg
+            bptDispInfos[hltPtIdx].tipColors[1] = cBezPt
+            nextIdx = self.getAdjIdx(hltPtIdx)
             bptDispInfos[nextIdx].tipColors[1] = cBezPt
 
         # Process selections
@@ -6991,13 +6990,8 @@ class SelectCurveInfo:
 
         # Process highlighted points after selected ones because...
         # highlighted points take priority over selected
-        if(hltType != None):
-            ptIdx = hltInfo['ptIdx']
-            if(hltType == 'CurveBezPt'):
-                bptDispInfos[ptIdx].tipColors[1] = cHltTip
-            elif(hltType == 'SelHandles'):
-                hltIdx = hltInfo['hltIdx']
-                bptDispInfos[ptIdx].tipColors[hltIdx] = cHltTip
+        if(hltIdx in {0, 1, 2}):
+            bptDispInfos[hltPtIdx].tipColors[hltIdx] = cHltTip
 
         return [segDispInfos, bptDispInfos]
 
@@ -7599,9 +7593,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
     def mnSelect(self, opt):
         h = ModalFlexiEditBezierOp.h
-        if(self.htlCurveInfo != None):
-            self.selectCurveInfos.add(self.htlCurveInfo)
-            bpy.context.view_layer.objects.active = self.htlCurveInfo.obj
+        self.selHltInfo(makeActive = True)
+            
         for i, c in enumerate(self.selectCurveInfos):
             if(opt[0] == 'miSelObj'):
                 c.obj.select_set(True)
@@ -7636,6 +7629,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
     def mnSetHdlType(self, opt):
         if(ModalFlexiEditBezierOp.h): return
+        self.selHltInfo(hltIdxs = {0, 1, 2}, selHdls = True, selEndPts = True)
 
         hdlType = opt[1].upper()
         for c in self.selectCurveInfos:
@@ -7728,6 +7722,40 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             return True
         return False
         
+    def getHltIdxFromRes(self, resType, otherInfo):
+        # return 1:bez pt, -1:segloc, 0:lefthandle, 2:righthandle (like ptSels format)
+        if(resType in {'SegLoc', 'CurveLoc'}): return -1
+        else: return otherInfo
+
+    # Select highlighted element for cases where op needs to be initiated without
+    # mouse click (just by mouse hover)
+    def selHltInfo(self, hltIdxs = None, makeActive = False, \
+        selHdls = False, selEndPts = False):
+        hltCurve = self.htlCurveInfo
+        if(hltCurve != None and \
+            all(sum(len(sel) for sel in c.ptSels.values() if hltIdxs == None or \
+                len(sel.intersection(hltIdxs)) > 0) == 0 for c in self.selectCurveInfos)):
+                hltIdx = hltCurve.hltInfo['hltIdx']
+                if(hltIdxs == None or hltIdx in hltIdxs):
+                    currIdx = hltCurve.hltInfo['ptIdx']
+                    hltCurve.ptSels[currIdx] = {hltIdx}
+                    ptIdxs = [currIdx]
+                    if(selHdls and hltIdx == -1):
+                        nextIdx = hltCurve.getAdjIdx(currIdx)
+                        if(nextIdx != None): 
+                            hltCurve.ptSels[currIdx].add(1)
+                            hltCurve.ptSels[nextIdx] = {1}
+                            ptIdxs.append(nextIdx)
+                        hltIdx = 1
+                    for ptIdx in ptIdxs:
+                        if(selHdls and hltIdx == 1):
+                            hltCurve.ptSels[ptIdx] = hltCurve.ptSels[ptIdx].union({0, 2})
+                        else:
+                            hltCurve.ptSels[ptIdx] = {hltIdx}
+                    self.selectCurveInfos.add(hltCurve)
+                    if(makeActive): 
+                        bpy.context.view_layer.objects.active = self.htlCurveInfo.obj
+        
     def subModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
         metakeys = self.snapper.getMetakeys()
@@ -7781,12 +7809,17 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             FTHotKeys.isHotKey(FTHotKeys.hkSplitAtSel, event.type, metakeys)):
             if(event.value == 'RELEASE'):
                 selPtMap = {}
+                # ~ self.selHltInfo(hltIdxs = {-1}, selEndPts = True)
                 for c in self.selectCurveInfos:
                     if(selPtMap.get(c.obj) == None):
                         selPtMap[c.obj] = {}
-                    ptIdxs = [p for p in c.ptSels.keys() if 1 in c.ptSels[p]]
+                    ptIdxs = {p for p in c.ptSels.keys() if 1 in c.ptSels[p] \
+                        or -1 in c.ptSels[p]}
                     if(len(ptIdxs) > 0):
                         selPtMap[c.obj][c.splineIdx] = ptIdxs
+                        ptIdxs = [p for p in c.ptSels.keys() if -1 in c.ptSels[p]]
+                        selPtMap[c.obj][c.splineIdx].update({c.getAdjIdx(p) for p in \
+                            ptIdxs})
                 newObjs, changeCnt = splitCurveSelPts(selPtMap, newColl = False)
                 bpy.ops.ed.undo_push()
                 self.reset()
@@ -7804,15 +7837,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             return {"RUNNING_MODAL"}
 
         if(not opMode and FTHotKeys.isHotKey(FTHotKeys.hkBevelPt, event.type, metakeys)):
-            hltCurve = self.htlCurveInfo
-            if(hltCurve != None and \
-                sum(len(c.ptSels) for c in self.selectCurveInfos) == 0):
-                    hltType = hltCurve.hltInfo['hltType']
-                    if(hltType in {'CurveBezPt', 'CurveLoc'}):
-                        ptIdx = hltCurve.hltInfo['ptIdx']
-                        hltCurve.ptSels[ptIdx] = {-1 if hltType == 'CurveLoc' else 1}
-                        self.selectCurveInfos.add(hltCurve)
-            
+            # Allow beveling seg / pt just with mouse hover
+            self.selHltInfo(hltIdxs = {1, -1})
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     changed = False
@@ -7832,6 +7858,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         if(not opMode and \
             FTHotKeys.isHotKey(FTHotKeys.hkUniSubdiv, event.type, metakeys)):
+            self.selHltInfo(hltIdxs = {-1})
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     changed = False
@@ -7896,6 +7923,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         if(not opMode and \
             FTHotKeys.isHotKey(FTHotKeys.hkAlignHdl, event.type, metakeys)):
+            self.selHltInfo(hltIdxs = {0, 1, 2}, selHdls = True, selEndPts = True)
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     changed = False
@@ -7957,7 +7985,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 # ~ if(ci._t == None): ci = None
 
                 self.editCurveInfo = ci
-                ci.setHltInfo(hltType = resType, ptIdx = segIdx, hltIdx = otherInfo)
+                ci.setHltInfo(ptIdx = segIdx, \
+                    hltIdx = self.getHltIdxFromRes(resType, otherInfo))
                 # ~ self.pressT = time.time()
                 return {'RUNNING_MODAL'}
 
@@ -8001,8 +8030,13 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         hdlIdx = ei.clickInfo['hdlIdx']
                         ei.addSel(ptIdx, hdlIdx, toggle = True)
                         if(hdlIdx == 1):
-                            ei.addSel(ptIdx, 0, toggle = True)
-                            ei.addSel(ptIdx, 2, toggle = True)
+                            if(ptIdx in ei.ptSels and 1 in ei.ptSels[ptIdx]):
+                                ei.addSel(ptIdx, 0, toggle = False)
+                                ei.addSel(ptIdx, 2, toggle = False)
+                            else:
+                                ei.removeSel(ptIdx, 0)
+                                ei.removeSel(ptIdx, 2)
+                                
                         self.selectCurveInfos.add(ei)
                         # ~ self.refreshDisplaySelCurves()
                 else:
@@ -8060,14 +8094,14 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         locOnCurve = otherInfo
                     if(ci == None):
                         ci = SelectCurveInfo(obj, splineIdx)
-                        ci.setHltInfo(hltType = resType, ptIdx = segIdx, \
-                            hltIdx = otherInfo)
+                        ci.setHltInfo(ptIdx = segIdx, \
+                            hltIdx = self.getHltIdxFromRes(resType, otherInfo))
                         segDispInfos, bptDispInfos = \
                             ci.getDisplayInfos(ModalFlexiEditBezierOp.h, \
                                 subdivCnt = self.subdivCnt, bevelCnt = self.bevelCnt)
                     else:
-                        ci.setHltInfo(hltType = resType, ptIdx = segIdx, \
-                            hltIdx = otherInfo)
+                        ci.setHltInfo(ptIdx = segIdx, \
+                            hltIdx = self.getHltIdxFromRes(resType, otherInfo))
                     self.htlCurveInfo = ci
             self.refreshDisplaySelCurves(segDispInfos, bptDispInfos, \
                 locOnCurve, refreshPos = True)
