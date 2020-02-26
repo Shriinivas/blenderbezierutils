@@ -7303,8 +7303,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         removeObjNames = set() # For snaplocs
         addObjNames = set()
         self.htlCurveInfo = None
+        self.editCurveInfo = None # Reset if editing (capture == True)
 
-        #can never be called during editing, so don't consider editInfo
         for ci in self.selectCurveInfos:
             if(bpy.data.objects.get(ci.objName) != None):
                 ci.obj = bpy.data.objects.get(ci.objName) #refresh anyway
