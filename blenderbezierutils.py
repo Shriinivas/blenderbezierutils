@@ -6832,25 +6832,33 @@ class SelectCurveInfo:
 
         ptSels = {k:self.ptSels[k].copy() for k in self.ptSels.keys()}
 
+        # Extra loop because next points need to be determined beforehand
         for ptIdx in bevelPtIdxs:
             if(ptSels.get(ptIdx) == None): ptSels[ptIdx] = {1}
             else: ptSels[ptIdx].add(1)
-
-        for ptIdx, pt in enumerate(pts):
             nextIdx = self.getAdjIdx(ptIdx)
             prevIdx = self.getAdjIdx(ptIdx, -1)
             if(prevIdx != None and nextIdx != None and \
-                ptIdx in bevelPtIdxs and not hasAlignedHandles(pt)):
-                prevPt = pts[prevIdx][:] #if(len(newPts) == 0) else newPts[-1]
+                not hasAlignedHandles(pts[ptIdx])):
+                newSelPtIdxs.append(ptIdx)
+            
+        for ptIdx, pt in enumerate(pts):
+            if(ptIdx in newSelPtIdxs):
+                nextIdx = self.getAdjIdx(ptIdx)
+                prevIdx = self.getAdjIdx(ptIdx, -1)
+                prevPt = pts[prevIdx][:]
                 diffV = (pt[1] - prevPt[1])
                 segLen = diffV.length
                 if(segLen < .001):
                     newPts.append(pt)
                 else:
                     t = deltaLen / segLen
-                    if(t > maxT): 
+                    if(t > maxT and (prevIdx in newSelPtIdxs)): 
                         t = maxT
                         k = kFact * (segLen / 2)
+                    elif(t > 1):
+                        t = 1
+                        k = kFact * segLen
                     else:
                         k = kFact * deltaLen
 
@@ -6867,16 +6875,19 @@ class SelectCurveInfo:
 
                     prevPt[2] = partialSeg[1]
 
-                nextPt = pts[nextIdx][:] #if(nextIdx > 0) else newPts[0]
+                nextPt = pts[nextIdx][:]
                 diffV = (nextPt[1] - pt[1])
                 segLen = diffV.length
                 if(floatCmpWithMargin(segLen, 0)):
                     newPts.append(pt)
                 else:
                     t = deltaLen / segLen
-                    if(t > maxT): 
+                    if(t > maxT and (nextIdx in newSelPtIdxs)): 
                         t = maxT
                         k = kFact * (segLen / 2)
+                    elif(t > 1):
+                        t = 1
+                        k = kFact * segLen
                     else:
                         k = kFact * deltaLen
 
@@ -6893,8 +6904,6 @@ class SelectCurveInfo:
                     newPts.append(pt1)
 
                     nextPt[0] = partialSeg[2]
-                
-                newSelPtIdxs.append(ptIdx)
             else:
                 newPts.append(pt)
         
