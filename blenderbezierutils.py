@@ -3909,6 +3909,7 @@ class SnapParams:
         angleSnap = None, \
         refLine = None, \
         refLineOrig = None, \
+        selCo = None, \
         inEdit = None, \
         hasSel = None, \
         transType = None, \
@@ -3936,6 +3937,7 @@ class SnapParams:
         self.refLine = snapper.getRefLine() if(refLine == None) else refLine
         self.refLineOrig = snapper.getRefLineOrig() if(refLineOrig == None) \
             else refLineOrig
+        self.selCo = snapper.getSelCo() if(selCo == None) else selCo
 
         self.inEdit = snapper.isEditing() if(inEdit == None) else inEdit
         self.hasSel = snapper.hasSelection() if(hasSel == None) else hasSel
@@ -3964,11 +3966,12 @@ class Snapper:
     MAX_SNAP_VERT_CNT = 1000
     MAX_SNAP_FACE_CNT = 1000
 
-    def __init__(self, context, getSnapLocs, getRefLine, getRefLineOrig, \
+    def __init__(self, context, getSnapLocs, getRefLine, getRefLineOrig, getSelCo, \
         hasSelection, isEditing):
         self.getSnapLocs = getSnapLocs
         self.getRefLine = getRefLine
         self.getRefLineOrig = getRefLineOrig
+        self.getSelCo = getSelCo
         self.hasSelection = hasSelection
         self.isEditing = isEditing
         self.angleSnapSteps = Snapper.DEFAULT_ANGLE_SNAP_STEPS
@@ -4059,11 +4062,13 @@ class Snapper:
         else:
             return self.getFreeAxesNormalized()
 
-    def getCurrOrig(self, rmInfo, obj, origType, refLineOrig):
+    def getCurrOrig(self, rmInfo, obj, origType, refLineOrig, selCo):
         if(origType == 'AXIS'):
             if(self.customAxis.length() != 0): return self.customAxis.axisPts[0]
         elif(origType == 'REFERENCE'):
             if(refLineOrig != None): return refLineOrig
+        elif(origType == 'CURR_POS'):
+            if(selCo != None): return selCo
         elif(origType == 'OBJECT' and obj != None): return obj.location
         elif(origType == 'FACE' and rmInfo != None):
             selObj, location, normal, faceIdx = getSelFaceLoc(rmInfo.region, \
@@ -4251,7 +4256,7 @@ class Snapper:
         return snapLocs
 
     def getTMInfoAndOrig(self, rmInfo, transType, origType, freezeOrient, \
-        axisScale, refLineOrig):
+        axisScale, refLineOrig, selCo):
         obj = bpy.context.object
 
         if(self.tm != None and self.freezeOrient and transType == 'FACE'):
@@ -4262,7 +4267,7 @@ class Snapper:
         if(self.orig != None and freezeOrient and origType == 'FACE'):
             orig = self.orig
         else:
-            orig = self.getCurrOrig(rmInfo, obj, origType, refLineOrig)
+            orig = self.getCurrOrig(rmInfo, obj, origType, refLineOrig, selCo)
 
         return tm, invTm, orig
 
@@ -4283,6 +4288,7 @@ class Snapper:
 
         refLine = snapParams.refLine
         refLineOrig = snapParams.refLineOrig
+        selCo = snapParams.selCo
 
         inEdit = snapParams.inEdit
         hasSel = snapParams.hasSel
@@ -4305,7 +4311,7 @@ class Snapper:
         loc = None
 
         tm, invTm, orig = self.getTMInfoAndOrig(rmInfo, transType, \
-            origType, self.freezeOrient, axisScale, refLineOrig)
+            origType, self.freezeOrient, axisScale, refLineOrig, selCo)
         
         # Must be done after the call to getTMInfoAndOrig
         if(hasSel): self.freezeOrient = True 
@@ -4360,10 +4366,10 @@ class Snapper:
                         (inEdit and (len(freeAxesN) < 3 or angleSnap))):
 
                 # snapToPlane means global constrain axes selection is a plane
-                if(snapToPlane or refLineOrig == None): refCo = orig
-                else: refCo = refLineOrig
+                # ~ if(snapToPlane or refLineOrig == None): refCo = orig
+                # ~ else: refCo = refLineOrig
 
-                refCo = tm @ refCo
+                refCo = tm @ orig
 
                 if(self.snapDigits.hasVal()):
                     delta = self.snapDigits.getCurrDelta()
@@ -4371,10 +4377,8 @@ class Snapper:
                     self.lastSnapTypes.add('keyboard')
                 else:
                     # Special condition for lock to single axis
-                    if(len(freeAxesN) == 1 and refLineOrig != None):
-                        refCo = tm @ refLineOrig
-                    # ~ if(len(freeAxesN) == 2 or (len(freeAxesG) == 2 and snapToPlane)):
-                        # ~ constrAxes = freeAxesG if (len(freeAxesG) == 2) else freeAxesN
+                    # ~ if(len(freeAxesN) == 1 and refLineOrig != None):
+                        # ~ refCo = tm @ refLineOrig
                     if(len(freeAxesN) == 2):
                         constrAxes = freeAxesN
                         loc = refCo.copy()
@@ -4397,7 +4401,7 @@ class Snapper:
                             else: loc[axis] = (tm @ pt)[axis]
                         self.lastSnapTypes.add('axis2')
 
-                    if(len(freeAxesN) == 1 and refLineOrig != None):
+                    if(len(freeAxesN) == 1):
                         if(lastCo1Axis): refCo = self.lastSelCo #TODO: More testing
                         axis = freeAxesN[0]
                         # Any one point on axis
@@ -4430,11 +4434,10 @@ class Snapper:
                         self.lastSnapTypes.add('axis1')
 
                 if(not self.snapDigits.hasVal() and gridSnap):
-                    if(refLineOrig and axisScale in {'AXIS' or 'REFERENCE'}):
+                    if(axisScale in {'AXIS' or 'REFERENCE'}):
                         # Independent of view distance
-                        diffV = (loc - tm @ refLineOrig)
-                        loc = tm @ refLineOrig + \
-                            round(diffV.length) * (diffV / diffV.length)
+                        diffV = (loc - refCo)
+                        loc = refCo + round(diffV.length) * (diffV / diffV.length)
                     else:
                         rounding = getViewDistRounding(rmInfo.space3d, rv3d)
                         loc = tm @ roundedVect(rmInfo.space3d, invTm @ loc, \
@@ -4502,10 +4505,13 @@ class Snapper:
         if(self.snapParams == None):
             origType = bpy.context.window_manager.bezierToolkitParams.origType
             refLineOrig = self.getRefLineOrig()
+            selCo = self.getSelCo()
         else:
             origType = self.snapParams.origType
             refLineOrig = self.snapParams.refLineOrig
-        orig = self.getCurrOrig(self.rmInfo, bpy.context.object, origType, refLineOrig)
+            selCo = self.snapParams.selCo
+        orig = self.getCurrOrig(self.rmInfo, bpy.context.object, origType, \
+            refLineOrig, selCo)
         return (self.tm @ orig, self.tm @ self.lastSelCo)
 
     def setStatus(self, area, text): #TODO Global
@@ -4541,6 +4547,7 @@ class Snapper:
             snapParams = self.snapParams
             refLine = snapParams.refLine
             refLineOrig = snapParams.refLineOrig
+            selCo = snapParams.selCo
             freeAxesN = snapParams.freeAxesN
 
             transType = snapParams.transType
@@ -4549,7 +4556,7 @@ class Snapper:
             dispAxes = snapParams.dispAxes
 
             tm, invTm, orig = self.getTMInfoAndOrig(rmInfo, transType, \
-                origType, self.freezeOrient, axisScale, refLineOrig)
+                origType, self.freezeOrient, axisScale, refLineOrig, selCo)
 
             if(dispAxes and FTProps.dispAxes and ((refLineOrig != None \
                 or transType == 'VIEW' or len(freeAxesN) == 1) or (len(freeAxesN) > 0 \
@@ -4783,7 +4790,8 @@ class ModalBaseFlexiOp(Operator):
         context.space_data.show_region_tool_header = True
 
         self.snapper = Snapper(context, self.getSnapLocs, \
-            self.getRefLine, self.getRefLineOrig, self.hasSelection, self.isEditing)
+            self.getRefLine, self.getRefLineOrig, self.getSelCo, \
+                self.hasSelection, self.isEditing)
 
         self.rmInfo = None
 
@@ -5694,6 +5702,8 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
     def getRefLineOrig(self):
         return self.drawObj.getRefLineOrig()
 
+    def getSelCo(self):
+        return self.getRefLineOrig()
 
 class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
     bl_description = "Flexible drawing of Bezier curves in object mode"
@@ -7433,6 +7443,11 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         refLine = self.getRefLine()
         return refLine[0] if len(refLine) > 0 else None
 
+    def getSelCo(self):
+        if(self.editCurveInfo != None): 
+            return self.editCurveInfo.getSelCo()
+        return self.getRefLineOrig()
+
     def getEditableCurveObjs(self):
         return [b for b in bpy.data.objects if isBezier(b) and b.visible_get() \
                 and len(b.data.splines[0].bezier_points) > 1]
@@ -8293,7 +8308,9 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
           "Draw / Edit with reference to active object location"), \
         ('FACE', 'Selected Object Face', \
           "Draw / Edit with reference to the center of " + \
-          "Selected object face under mouse pointer")), \
+          "Selected object face under mouse pointer"), 
+        ('CURR_POS', 'Current Position', \
+          "Edit with reference to the current mouse position")), \
         default = 'REFERENCE',
         description='Origin for Draw / Edit')
 
