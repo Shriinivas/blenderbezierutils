@@ -4524,8 +4524,6 @@ class Snapper:
         drawAxes = [0, 1, 2]
         axisLineCos = [[], [], []]
         axisLineCols = [[], [], []]
-        axisGradStart = None
-        axisGradEnd = None
 
         snapLineCos = []
         snapLineCols = []
@@ -4567,18 +4565,13 @@ class Snapper:
                 if (self.lastSelCo != None and len(freeAxesN) == 1): orig = self.lastSelCo
 
                 refCo = tm @ orig
-                drawAxes = freeAxesN[:2]
-                axisGradStart = .2
-                axisGradEnd = .9
-                axisLineCols = []
-                axisLineCos = []
-                for axis in drawAxes:
-                    axisLineCols.append([colors[axis]])
+                for axis in freeAxesN[:2]:
+                    axisLineCols[axis] = [colors[axis]]
                     pt1 = refCo.copy()
                     pt2 = refCo.copy()
                     pt1[axis] = l + refCo[axis]
                     pt2[axis] = -l + refCo[axis]
-                    axisLineCos.append([invTm @ pt1, invTm @ pt2])
+                    axisLineCos[axis] = [invTm @ pt1, invTm @ pt2]
                 
             if(refLineOrig != None and self.lastSelCo != None and \
                 (self.angleSnap or ('keyboard' in self.lastSnapTypes \
@@ -4604,6 +4597,8 @@ class Snapper:
                 snapIndPtCols = [(1, .4, 0, 1)]            
         
         for i, axis in enumerate(drawAxes):
+            axisGradStart = .2 if len(axisLineCos[i]) > 0 else None
+            axisGradEnd = .9 if len(axisLineCos[i]) > 0 else None
             bglDrawMgr.addLineInfo('snapAxis'+str(axis), FTProps.axisLineWidth, \
                 axisLineCols[i], axisLineCos[i], axisGradStart, axisGradEnd)
 
