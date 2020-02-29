@@ -343,6 +343,8 @@ def copyProperties(srcObj, destCurve):
         destData.bevel_resolution = srcData.bevel_resolution
         destData.bevel_object = srcData.bevel_object
 
+        destData.use_fill_caps = srcData.use_fill_caps
+
     if(hasattr(srcData, 'materials') and len(srcData.materials) > 0):
         mat = srcData.materials[srcObj.active_material_index]
         if(len(destData.materials) == 0 or mat.name not in destData.materials):
