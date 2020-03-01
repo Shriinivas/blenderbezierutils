@@ -2340,12 +2340,6 @@ def getPartialSeg(seg, t0, t1):
         t1 = t0
         t0 = tt
 
-    #Let's make at least the line segments of predictable length :)
-    if(pts[0] == pts[1] and pts[2] == pts[3]):
-        pt0 = Vector([(1 - t0) * pts[0][i] + t0 * pts[2][i] for i in range(0, 3)])
-        pt1 = Vector([(1 - t1) * pts[0][i] + t1 * pts[2][i] for i in range(0, 3)])
-        return [pt0, pt0, pt1, pt1]
-
     u0 = 1.0 - t0
     u1 = 1.0 - t1
 
