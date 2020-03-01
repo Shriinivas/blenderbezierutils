@@ -5728,6 +5728,10 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         'ENDPT_TIP_COLOR': FTProps.colBezPt,
         'MARKER_COLOR': FTProps.colDrawMarker}
 
+    def cancelOp(self, context):
+        bpy.app.handlers.depsgraph_update_post.remove(self.updateAfterGeomChange)
+        super(ModalFlexiDrawBezierOp, self).cancelOp(context)
+
     def preInvoke(self, context, event):
 
         # If the operator is invoked from context menu, enable the tool on toolbar
