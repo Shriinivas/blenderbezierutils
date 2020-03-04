@@ -8089,7 +8089,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
             # ei != None taken care by refreshDisplaySelCurves(refreshPos = True)
             elif(ei == None):
-
+                self.htlCurveInfo = None
                 # ~ coFind = Vector(rmInfo.xy).to_3d()
                 coFind = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, \
                     self.snapper.get3dLocSnap(rmInfo, \
