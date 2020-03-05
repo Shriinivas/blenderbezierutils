@@ -4765,10 +4765,10 @@ class ModalBaseFlexiOp(Operator):
         raise NotImplementedError('Call to abstract method.')
 
     def preInvoke(self, context, event):
-        pass # place holder
+        pass # placeholder
 
     def subInvoke(self, context, event):
-        return {'RUNNING_MODAL'} # place holder
+        return {'RUNNING_MODAL'} # placeholder
 
     def invoke(self, context, event):
         ModalBaseFlexiOp.opObj = self
@@ -4903,9 +4903,39 @@ class ModalBaseFlexiOp(Operator):
     def getSnapLocs(self):
         return self.getSnapLocsImpl()
 
-################### Flexi Draw Bezier Curve ###################
+################################## Flexi Draw Bezier Curve ###############################
+#
+#                                         BaseDraw
+#                                            |
+#                          -------------------------------------
+#                          |                                   |
+#                 PrimitiveDraw                           BezierDraw
+#                          |
+#          ---------------------------------
+#          |               |               |
+#    RectangleDraw    PolygonDraw     EllipseDraw
 
-class PrimitiveDraw:
+class BaseDraw:
+    def __init__(self, parent):
+        self.parent = parent
+        self.initialize()
+
+    def initialize(self):
+        self.curvePts = []
+
+    def newPoint(self, loc, ltype, rtype):
+        self.curvePts.append([loc, loc, loc, ltype, rtype])
+
+    def setCurvePt(self, idx, pt):
+        self.curvePts[idx] = pt
+
+    def popCurvePt(self):
+        self.curvePts.pop()
+
+    def setCurvePts(self, curvePts):
+        self.curvePts = curvePts
+
+class PrimitiveDraw(BaseDraw):
 
     def getNumSegsLimits(self):
         return 2, 100
@@ -4959,12 +4989,12 @@ class PrimitiveDraw:
         return curvePts
 
     def __init__(self, parent):
-        self.parent = parent
-        self.initialize()
+        super(PrimitiveDraw, self).__init__(parent)
         self.shapeSegCnt = 4
         self.curveObjOrigin = None
 
     def initialize(self):
+        super(PrimitiveDraw, self).initialize()
         self.bbStart = None
         self.bbEnd = None
 
@@ -4978,17 +5008,17 @@ class PrimitiveDraw:
             numSegs = self.shapeSegCnt)
 
         if(curvePts != None):
-            self.parent.curvePts = curvePts
+            self.setCurvePts(curvePts)
         else:
-            self.parent.curvePts = [[self.bbStart, self.bbStart, self.bbStart], \
-                [self.bbEnd, self.bbEnd, self.bbEnd]]
+            self.setCurvePts([[self.bbStart, self.bbStart, self.bbStart], \
+                [self.bbEnd, self.bbEnd, self.bbEnd]])
 
     def procDrawEvent(self, context, event, snapProc):
         parent = self.parent
         rmInfo = parent.rmInfo
         metakeys = parent.snapper.getMetakeys()
 
-        if(len(self.parent.curvePts) > 0 and not snapProc):
+        if(len(self.curvePts) > 0 and not snapProc):
             if(event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', \
                     'NUMPAD_PLUS', 'NUMPAD_MINUS','PLUS', 'MINUS'}):
                 if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
@@ -5039,7 +5069,7 @@ class PrimitiveDraw:
 
         if(event.type == 'ESC'):
             if(event.value == 'RELEASE'):
-                self.parent.initialize()
+                self.parent.initialize() # should not access parent.initialize
                 self.parent.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
 
@@ -5049,7 +5079,8 @@ class PrimitiveDraw:
             if(self.bbStart == None):
                 self.bbStart = loc
                 self.bbEnd = loc
-                parent.curvePts = [[loc, loc, loc], [loc, loc, loc]]
+                self.setCurvePts([[loc, loc, loc, 'FREE', 'FREE'], \
+                    [loc, loc, loc, 'FREE', 'FREE']])
             else:
                 self.bbEnd = loc
                 self.updateCurvePts()
@@ -5267,47 +5298,50 @@ class EllipseDraw(PrimitiveDraw):
 
         return curvePts
 
-class BezierDraw:
+class BezierDraw(BaseDraw):
     def __init__(self, parent):
-        self.parent = parent
-        self.initialize()
+        super(BezierDraw, self).__init__(parent)
+        self.reset()
 
-    def initialize(self):
+    def reset(self):
         self.capture = False
         self.grabRepos = False
         self.dissociateHdl = False
 
-    def newPoint(self, loc):
-        self.parent.curvePts.append([loc, loc, loc, 'ALIGNED', 'ALIGNED'])
-
     def moveBezierPt(self, loc):
-        if(len(self.parent.curvePts) > 0):
-            pt = self.parent.curvePts[-1][:]
-            self.parent.curvePts[-1] = [loc, loc, loc, pt[3], pt[4]]
+        if(len(self.curvePts) > 0):
+            pt = self.curvePts[-1][:]
+            self.setCurvePt(-1, [loc, loc, loc, pt[3], pt[4]])
 
     def movePointByDelta(self, delta):
-        if(len(self.parent.curvePts) > 0):
-            self.parent.curvePts[-1][1] = self.parent.curvePts[-1][1]  + delta
+        if(len(self.curvePts) > 0):
+            pt = self.curvePts[-1][:]
+            pt[1] += delta
+            self.setCurvePt(-1, pt)
 
     def moveBptElem(self, handle, loc):
         idx = {'left':0, 'pt':1, 'right':2}[handle]
-        if(len(self.parent.curvePts) > 0):
-            self.parent.curvePts[-1][idx] = loc
+        if(len(self.curvePts) > 0):
+            pt = self.curvePts[-1][:]
+            pt[idx] = loc
+            self.setCurvePt(-1, pt)
 
     def moveBptElemByDelta(self, handle, delta):
         idx = {'left':0, 'pt':1, 'right':2}[handle]
-        if(len(self.parent.curvePts) > 0):
-            self.parent.curvePts[-1][idx] = self.parent.curvePts[-1][idx] + delta
+        if(len(self.curvePts) > 0):
+            pt = self.curvePts[-1][:]
+            pt[idx] += delta
+            self.setCurvePt(-1, pt)
 
     def resetHandle(self, handle):
-        if(len(self.parent.curvePts) > 0):
-            self.moveBptElem(handle, self.parent.curvePts[-1][1])
+        if(len(self.curvePts) > 0):
+            self.moveBptElem(handle, self.curvePts[-1][1])
 
     def isHandleSet(self):
-        if(len(self.parent.curvePts) == 0): return False
-        co = self.parent.curvePts[-1][1]
-        lh = self.parent.curvePts[-1][0]
-        rh = self.parent.curvePts[-1][2]
+        if(len(self.curvePts) == 0): return False
+        co = self.curvePts[-1][1]
+        lh = self.curvePts[-1][0]
+        rh = self.curvePts[-1][2]
         if(not vectCmpWithMargin(co, lh) or not vectCmpWithMargin(co, rh)): return True
         return False
 
@@ -5362,18 +5396,19 @@ class BezierDraw:
                     snapper.digitsConfirmed = True
                     snapper.setStatus(rmInfo.area, None)
                 else:
-                    self.parent.initialize()
+                    self.parent.initialize() # TODO: should not access parent.initialize
                 self.parent.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
 
         if(not snapProc and \
             FTHotKeys.isHotKey(FTHotKeys.hkResetLastHdl, event.type, metakeys)):
             if(event.value == 'RELEASE'):
-                if(len(self.parent.curvePts) > 1):
-                    if(len(self.parent.curvePts) > 2):
-                        idx = len(self.parent.curvePts) - 2
-                        pt = self.parent.curvePts[idx]
+                if(len(self.curvePts) > 1):
+                    if(len(self.curvePts) > 2):
+                        idx = len(self.curvePts) - 2
+                        pt = self.curvePts[idx][:]
                         pt[2] = pt[1].copy()
+                        self.setCurvePt(idx, pt)
                     self.parent.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
 
@@ -5382,13 +5417,13 @@ class BezierDraw:
             if(event.value == 'RELEASE'):
                 snapper.resetSnap()
                 if(not self.capture):
-                    if(len(self.parent.curvePts) > 0):
-                        self.parent.curvePts.pop()
+                    if(len(self.curvePts) > 0):
+                        self.popCurvePt()
 
                 #Because there is an extra point (the current one)
-                if(len(self.parent.curvePts) <= 1):
-                    self.parent.curvePts = []
+                if(len(self.curvePts) <= 1):
                     self.initialize()
+                    self.reset()
                 else:
                     loc = snapper.get3dLocSnap(rmInfo)
                     self.moveBezierPt(loc)
@@ -5399,25 +5434,25 @@ class BezierDraw:
         if(not snapProc and (event.type == 'RET' or event.type == 'SPACE')):
             if(event.value == 'RELEASE'):
                 if(snapper.digitsConfirmed):
-                    self.initialize()
+                    self.reset()
                     snapper.digitsConfirmed = False
                     loc = snapper.get3dLocSnap(rmInfo)
-                    self.newPoint(loc)
+                    self.newPoint(loc, 'ALIGNED', 'ALIGNED')
                     self.parent.redrawBezier(rmInfo)
                 else:
-                    if(len(self.parent.curvePts) > 0): self.parent.curvePts.pop()
+                    if(len(self.curvePts) > 0): self.popCurvePt()
                     self.parent.confirm(context, event)
                     snapper.resetSnap()
                     self.parent.redrawBezier(rmInfo)
             return {'RUNNING_MODAL'}
 
         if(not snapProc and event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
-            if(len(self.parent.curvePts) == 0):
+            if(len(self.curvePts) == 0):
                 loc = snapper.get3dLocSnap(rmInfo)
-                self.newPoint(loc)
+                self.newPoint(loc, 'ALIGNED', 'ALIGNED')
 
             # Special condition for hot-key single axis lock (useful)
-            if(len(snapper.freeAxes) == 1 and len(self.parent.curvePts) > 1):
+            if(len(snapper.freeAxes) == 1 and len(self.curvePts) > 1):
                 snapper.resetSnap()
 
             if(self.capture): self.parent.pressT = None # Lock capture
@@ -5426,7 +5461,7 @@ class BezierDraw:
 
         if (not snapProc and event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
             # ~ if(snapper.isLocked()):
-                # ~ if(len(self.parent.curvePts) == 1):
+                # ~ if(len(self.curvePts) == 1):
                     # ~ self.moveBptElem('right', \
                         # ~ snapper.get3dLocSnap(rmInfo))# changes only rt handle
                 # ~ return {'RUNNING_MODAL'}
@@ -5434,31 +5469,31 @@ class BezierDraw:
             # See the special condition above in event.value == 'PRESS'
             # ~ if(len(snapper.freeAxes) > 1):
             snapper.resetSnap()
-            self.initialize()
+            self.reset()
 
             # Rare condition: This happens e. g. when user clicks on header menu
             # like Object->Transform->Move. These ops consume press event but not release
             # So update the snap locations anyways if there was some transformation
-            if(len(self.parent.curvePts) == 0):
+            if(len(self.curvePts) == 0):
                 self.parent.updateSnapLocs() # Subclass (TODO: have a relook)
 
             elif(self.parent.doubleClick):
-                if(len(self.parent.curvePts) > 0): self.parent.curvePts.pop()
+                if(len(self.curvePts) > 0): self.popCurvePt()
                 self.parent.confirm(context, event)
                 self.parent.redrawBezier(rmInfo)
 
             else:
                 if(self.parent.click):
-                    loc = self.parent.curvePts[-1][1]
+                    loc = self.curvePts[-1][1]
                     self.moveBptElem('left', loc)
                     self.moveBptElem('right', loc)
                 else:
                     loc = snapper.get3dLocSnap(rmInfo)
 
-                # ~ if(len(self.parent.curvePts) == 1):
+                # ~ if(len(self.curvePts) == 1):
                     # ~ self.moveBptElem('right', loc)# changes only rt handle
 
-                self.newPoint(loc)
+                self.newPoint(loc, 'ALIGNED', 'ALIGNED')
                 self.parent.redrawBezier(rmInfo)
 
             return {'RUNNING_MODAL'}
@@ -5470,36 +5505,36 @@ class BezierDraw:
 
             bpy.context.window.cursor_set("DEFAULT")
             hdlPtIdxs = None
-            if(len(self.parent.curvePts) > 0):
+            if(len(self.curvePts) > 0):
                 if(self.capture):
+                    lastPt = self.curvePts[-1][:]
                     if(self.grabRepos):
-                        pt = self.parent.curvePts[-1][1].copy()
-                        rtHandle = self.parent.curvePts[-1][2].copy()
-                        xy2 = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, pt)
+                        rtHandle = lastPt[2].copy()
+                        xy2 = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, lastPt[1])
                         xy1 = getCoordFromLoc(rmInfo.region, rmInfo.rv3d, rtHandle)
                         loc = snapper.get3dLocSnap(rmInfo, SnapParams(snapper, \
                             xyDelta = [xy1[0] - xy2[0], xy1[1] - xy2[1]]))
-                        delta = loc.copy() - pt.copy()
+                        delta = loc - lastPt[1]
                         self.moveBptElemByDelta('pt', delta)
                         self.moveBptElemByDelta('left', delta)
                         self.moveBptElemByDelta('right', delta)
                     else:
                         loc = snapper.get3dLocSnap(rmInfo)
-                        pt = self.parent.curvePts[-1][1]
-                        delta = (loc - pt)
+                        delta = (loc - lastPt[1])
                         if(self.dissociateHdl):
-                            self.parent.curvePts[-1][3] = 'FREE'
-                            self.parent.curvePts[-1][4] = 'FREE'
+                            lastPt[3] = 'FREE'
+                            lastPt[4] = 'FREE'
                         else:
-                            self.moveBptElem('left', pt - delta)
-                            self.parent.curvePts[-1][3] = 'ALIGNED'
-                            self.parent.curvePts[-1][4] = 'ALIGNED'
-                        self.moveBptElem('right', pt + delta)
-                    hdlPtIdxs = {len(self.parent.curvePts) - 1}
+                            lastPt[0] = lastPt[1] - delta 
+                            lastPt[3] = 'ALIGNED'
+                            lastPt[4] = 'ALIGNED'
+                        lastPt[2] = lastPt[1] + delta
+                        self.setCurvePt(-1, lastPt)
+                    hdlPtIdxs = {len(self.curvePts) - 1}
                 else:
                     loc = snapper.get3dLocSnap(rmInfo)
                     self.moveBezierPt(loc)
-                    hdlPtIdxs = {len(self.parent.curvePts) - 2}
+                    hdlPtIdxs = {len(self.curvePts) - 2}
 
             self.parent.redrawBezier(rmInfo, hdlPtIdxs = hdlPtIdxs)
             return {'RUNNING_MODAL'}
@@ -5507,20 +5542,20 @@ class BezierDraw:
         return {'PASS_THROUGH'} if not snapProc else {'RUNNING_MODAL'}
 
     def getRefLine(self):
-        if(len(self.parent.curvePts) > 0):
+        if(len(self.curvePts) > 0):
             idx = 0
             if(self.capture):
-                if(self.grabRepos and len(self.parent.curvePts) > 1): idx = -2
+                if(self.grabRepos and len(self.curvePts) > 1): idx = -2
                 else: idx = -1
-                # ~ return [self.parent.curvePts[-1][1]]
+                # ~ return [self.curvePts[-1][1]]
             # There should always be min 2 pts if not capture, check anyway
-            elif(len(self.parent.curvePts) > 1):
+            elif(len(self.curvePts) > 1):
                 idx = -2
-                # ~ return [self.parent.curvePts[-2][1]]
-            if((len(self.parent.curvePts) + (idx - 1)) >= 0):
-                return[self.parent.curvePts[idx-1][1], self.parent.curvePts[idx][1]]
+                # ~ return [self.curvePts[-2][1]]
+            if((len(self.curvePts) + (idx - 1)) >= 0):
+                return[self.curvePts[idx-1][1], self.curvePts[idx][1]]
             else:
-                return[self.parent.curvePts[idx][1]]
+                return[self.curvePts[idx][1]]
         return []
 
     def getRefLineOrig(self):
@@ -5541,13 +5576,11 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         ModalBaseFlexiOp.drawHandlerBase()
 
     def updateDrawType(dummy, context):
-        params = bpy.context.window_manager.bezierToolkitParams
         opObj = ModalDrawBezierOp.opObj
         if(opObj != None):
-            opObj.drawObj = ModalDrawBezierOp.drawObjMap[params.drawObjType]
+            opObj.setDrawObj()
             opObj.initialize()
             opObj.resetDisplay()
-            opObj.drawType = params.drawObjType
             ModalDrawBezierOp.updateDrawSides(dummy, context)
 
     def updateDrawSides(dummy, context):
@@ -5562,16 +5595,12 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
     def resetDisplay(self):
         ModalBaseFlexiOp.resetDisplayBase()
 
-    def __init__(self, curveDispRes):
-        pass
+    def setDrawObj(self):
+        params = bpy.context.window_manager.bezierToolkitParams
+        self.drawObj = ModalDrawBezierOp.drawObjMap[params.drawObjType]
+        self.drawType = params.drawObjType
 
-    #This will be called multiple times not just at the beginning
-    def initialize(self):
-        self.curvePts = []
-        self.drawObj.initialize()
-        self.snapper.initialize()
-
-    def subInvoke(self, context, event):
+    def preInvoke(self, context, event):
         self.bezierDrawObj = BezierDraw(self)
         self.rectangleDrawObj = RectangleDraw(self)
         self.ellipseDrawObj = EllipseDraw(self)
@@ -5579,12 +5608,20 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         self.starDrawObj = PolygonDraw(self, star = True)
 
         ModalDrawBezierOp.drawObjMap = \
-        {'BEZIER': self.bezierDrawObj, \
-         'RECTANGLE': self.rectangleDrawObj, \
-         'ELLIPSE': self.ellipseDrawObj, \
-         'POLYGON': self.polygonDrawObj, \
-         'STAR': self.starDrawObj, \
-        }
+            {'BEZIER': self.bezierDrawObj, \
+             'RECTANGLE': self.rectangleDrawObj, \
+             'ELLIPSE': self.ellipseDrawObj, \
+             'POLYGON': self.polygonDrawObj, \
+             'STAR': self.starDrawObj, \
+            }
+        self.setDrawObj()
+
+    #This will be called multiple times not just at the beginning
+    def initialize(self):
+        self.drawObj.initialize()
+        self.snapper.initialize()
+
+    def subInvoke(self, context, event):
 
         bpy.app.handlers.undo_post.append(self.postUndoRedo)
         bpy.app.handlers.redo_post.append(self.postUndoRedo)
@@ -5615,8 +5652,6 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         autoclose = (self.drawType == 'BEZIER' and shift and \
             (event.type == 'SPACE' or event.type == 'RET'))
         self.save(context, event, autoclose, location)
-        self.curvePts = []
-        self.capture = False
         self.resetDisplay()
         self.initialize()
 
@@ -5624,7 +5659,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         return True
 
     def isEditing(self):
-        return len(self.curvePts) > 0
+        return len(self.drawObj.curvePts) > 0
 
     def hasSelection(self):
         return self.isEditing()
@@ -5647,8 +5682,9 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
     def redrawBezier(self, rmInfo, lastSegOnly = False, hdlPtIdxs = None, \
         hltEndSeg = True):
+        curvePts = self.drawObj.curvePts
 
-        ptCnt = len(self.curvePts)
+        ptCnt = len(curvePts)
 
         if(ptCnt == 0):
             self.refreshMarkerPos(rmInfo)
@@ -5673,7 +5709,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         elif(len(hdlPtIdxs) == 0): hdlPtIdxs = range(ptCnt)
 
         for hdlPtIdx in hdlPtIdxs:
-            bptDispInfos.append(BptDisplayInfo(self.curvePts[hdlPtIdx], tipColors, \
+            bptDispInfos.append(BptDisplayInfo(curvePts[hdlPtIdx], tipColors, \
                 handleNos = [0, 1] if (not ModalDrawBezierOp.h) else []))
 
         startIdx = 0
@@ -5682,8 +5718,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         for i in range(startIdx, ptCnt - 1):
             if(not hltEndSeg or i == ptCnt - 2): segColor = colSelSeg
             else: segColor = colNonAdjSeg
-            segDispInfos.append(SegDisplayInfo([self.curvePts[i], self.curvePts[i+1]], \
-                segColor))
+            segDispInfos.append(SegDisplayInfo([curvePts[i], curvePts[i+1]], segColor))
 
         ModalBaseFlexiOp.refreshDisplayBase(segDispInfos, bptDispInfos, self.snapper)
 
@@ -5733,7 +5768,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         super(ModalFlexiDrawBezierOp, self).cancelOp(context)
 
     def preInvoke(self, context, event):
-
+        super(ModalFlexiDrawBezierOp, self).preInvoke(context, event)
         # If the operator is invoked from context menu, enable the tool on toolbar
         if(not self.isToolSelected(context) and context.mode == 'OBJECT'):
             # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
@@ -5763,8 +5798,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         for info in infos:
             locs += info[1]
 
-        if(len(self.curvePts) > 0):
-            locs += [pt[1] for pt in self.curvePts[:-1]]
+        if(len(self.drawObj.curvePts) > 0):
+            locs += [pt[1] for pt in self.drawObj.curvePts[:-1]]
             # ~ locs += [self.curvePts[-1][0], self.curvePts[-1][1], self.curvePts[-1][2]] 
         return locs
 
@@ -5795,17 +5830,18 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
         spline = data.splines.new('BEZIER')
         spline.use_cyclic_u = False
+        curvePts = self.drawObj.curvePts
 
-        if(vectCmpWithMargin(self.curvePts[0][1], self.curvePts[-1][1])):
-            self.curvePts[0][0] = self.curvePts[-1][0]
+        if(vectCmpWithMargin(curvePts[0][1], curvePts[-1][1])):
+            curvePts[0][0] = curvePts[-1][0]
             spline.use_cyclic_u = True
-            self.curvePts.pop()
+            curvePts.pop()
 
         if(autoclose): spline.use_cyclic_u = True
 
-        spline.bezier_points.add(len(self.curvePts) - 1)
+        spline.bezier_points.add(len(curvePts) - 1)
         prevPt = None
-        for i, pt in enumerate(self.curvePts):
+        for i, pt in enumerate(curvePts):
             currPt = spline.bezier_points[i]
             currPt.co = pt[1]
             currPt.handle_right = pt[2]
@@ -5926,12 +5962,12 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         return retVals
 
     def save(self, context, event, autoclose, location, align = True):
-
-        if(len(self.curvePts) > 1):
+        curvePts = self.drawObj.curvePts
+        if(len(curvePts) > 1):
 
             startObj, startSplineIdx, ptIdx2, endObj, endSplineIdx, ptIdx1 = \
-                [x for y in self.getSnapObjs(context, [self.curvePts[0][1],
-                    self.curvePts[-1][1]]) for x in y]
+                [x for y in self.getSnapObjs(context, [curvePts[0][1],
+                    curvePts[-1][1]]) for x in y]
 
             ctrl = self.snapper.gridSnap # Overloaded key op
 
@@ -6025,6 +6061,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         'MARKER_COLOR': FTProps.colGreaseMarker, }
 
     def preInvoke(self, context, event):
+        super(ModalFlexiDrawGreaseOp, self).preInvoke(context, event)
         # If the operator is invoked from context menu, enable the tool on toolbar
         if(not self.isToolSelected(context) and context.mode == 'PAINT_GPENCIL'):
             # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
@@ -6043,8 +6080,8 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
     # overridden
     def redrawBezier(self, rmInfo, hdlPtIdxs = None, hltEndSeg = True):
-
-        ptCnt = len(self.curvePts)
+        curvePts = self.drawObj.curvePts
+        ptCnt = len(curvePts)
         subdivCos = self.subdivCos if ptCnt > 1 else []
         self.bglDrawMgr.addLineInfo('gpSubdivLines', FTProps.lineWidth, \
             [FTProps.colGreaseNonHltSeg], getLinesFromPts(subdivCos))
@@ -6054,7 +6091,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
             self.bglDrawMgr.addPtInfo('gpSubdivPts', \
                 FTProps.greaseSubdivPtSize, [FTProps.colGreaseSubdiv], subdivCos)
 
-        if(self.drawType != 'BEZIER' and len(self.curvePts) > 0):
+        if(self.drawType != 'BEZIER' and len(curvePts) > 0):
             ModalBaseFlexiOp.refreshDisplayBase(segDispInfos = [], bptDispInfos = [], \
                 snapper = self.snapper)
         else:
@@ -6068,6 +6105,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         self.updateSnapLocs()
 
     def subModal(self, context, event, snapProc):
+        curvePts = self.drawObj.curvePts
         rmInfo = self.rmInfo
         metakeys = self.snapper.getMetakeys()
 
@@ -6076,7 +6114,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
             if(self.drawType in {'BEZIER', 'ELLIPSE'} and \
                 event.type in {'WHEELDOWNMOUSE', 'WHEELUPMOUSE', 'NUMPAD_PLUS', \
-                'NUMPAD_MINUS','PLUS', 'MINUS'} and len(self.curvePts) > 1):
+                'NUMPAD_MINUS','PLUS', 'MINUS'} and len(curvePts) > 1):
                 if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
                     and event.value == 'PRESS'):
                     return {'RUNNING_MODAL'}
@@ -6094,19 +6132,19 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
                 self.redrawBezier(self.rmInfo)
             return {"RUNNING_MODAL"}
 
-        ptCnt = len(self.curvePts)
+        ptCnt = len(curvePts)
 
         retVal = self.baseSubModal(context, event, snapProc)
 
-        newPtCnt = len(self.curvePts)
+        newPtCnt = len(curvePts)
         # ~ if(newPtCnt - ptCnt != 0):
-        if(len(self.curvePts) > 0):
+        if(len(curvePts) > 0):
             if(self.subdivPerUnit == None):
                 viewDist = context.space_data.region_3d.view_distance
                 self.initSubdivPerUnit = 5000.0 / viewDist # TODO: default configurable?
                 self.subdivPerUnit = 0.02 * self.initSubdivPerUnit
-                self.snapLocs.append(self.curvePts[0][1])
-            if(len(self.curvePts) > 1):
+                self.snapLocs.append(curvePts[0][1])
+            if(len(curvePts) > 1):
                 slens = self.getCurveSegLens()
                 self.updateInterpPts(slens)
                 self.updateSubdivCos(sum(slens))
@@ -6116,14 +6154,16 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
     def getCurveSegLens(self):
         clen = []
-        for i in range(1, len(self.curvePts) - 1):
-            clen.append(getSegLen([self.curvePts[i-1][1], self.curvePts[i-1][2], \
-                self.curvePts[i][0], self.curvePts[i][1]]))
+        curvePts = self.drawObj.curvePts
+
+        for i in range(1, len(curvePts) - 1):
+            clen.append(getSegLen([curvePts[i-1][1], curvePts[i-1][2], \
+                curvePts[i][0], curvePts[i][1]]))
         return clen
 
     def updateSubdivCos(self, clen = None):
         if(self.drawType in {'POLYGON', 'STAR', 'RECTANGLE'}):
-            self.subdivCos = [p[0] for p in self.curvePts]
+            self.subdivCos = [p[0] for p in self.drawObj.curvePts]
         elif(self.interpPts != []):
             if(clen == None): clen = sum(self.getCurveSegLens())
             cnt = round(self.subdivPerUnit * clen)
@@ -6133,7 +6173,9 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
             self.subdivCos = []
 
     def updateInterpPts(self, slens):
-        curvePts = self.curvePts[:] if(self.drawType != 'BEZIER') else self.curvePts[:-1]
+        curvePts = self.drawObj.curvePts[:] if(self.drawType != 'BEZIER') else \
+            self.drawObj.curvePts[:-1]
+
         self.interpPts = getInterpBezierPts(curvePts, self.initSubdivPerUnit, slens)
 
         return self.interpPts
