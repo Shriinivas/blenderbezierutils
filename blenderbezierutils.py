@@ -575,10 +575,7 @@ def getUnitScale():
     fact = 3.28084 if(getUnitSystem() == 'IMPERIAL') else 1
     return fact * bpy.context.scene.unit_settings.scale_length
 
-def get3dLoc(context, event, vec = None):
-    region = context.region
-    rv3d = context.space_data.region_3d
-    xy = event.mouse_region_x, event.mouse_region_y
+def get3dLoc(region, rv3d, xy, vec = None):
     if(vec == None):
         vec = region_2d_to_vector_3d(region, rv3d, xy)
     return region_2d_to_location_3d(region, rv3d, xy, vec)
@@ -738,47 +735,21 @@ def getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt):
     success, location, normal, faceIdx = obj.ray_cast(rayOrigObj, rayDirObj)
     return mw @ location, normal, faceIdx
 
-def getSelFaceLoc(region, rv3d, xy, maxFaceCnt):
-    objCnt = 0
-    aos = [bpy.context.object] if bpy.context.object != None else []
-    objs = bpy.context.selected_objects + aos
-    for obj in objs:
-        if(obj.type == 'MESH' and len(obj.modifiers) == 0):
-            if(not isPtIn2dBBox(obj, region, rv3d, xy)): continue
-            loc, normal, faceIdx = getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt)
-            if(faceIdx >= 0):
-                return obj, loc, normal, faceIdx
-            objCnt += 1
-            if(objCnt > maxFaceCnt): return None, None, None, -1
-        # For edge snapping
-        # ~ if(faceIdx >=0):
-            # ~ eLoc = getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc)
-            # ~ if(eLoc != None): loc = eLoc
-    return None, None, None, -1
-
-
-# ~ def getEdgeUnderMouse(region, rv3d, vec, obj, faceIdx, loc):
-    # ~ p1 = (0, 0)
-    # ~ p2 = (0, FTProps.snapDist)
-    # ~ minEdgeDist =
-        # ~ (region_2d_to_location_3d(region, rv3d, p1, vec) -
-            # ~ region_2d_to_location_3d(region, rv3d, p2, vec)).length
-    # ~ closestLoc = None
-    # ~ for ek in obj.data.polygons[faceIdx].edge_keys:
-        # ~ if(len(ek) == 0):
-            # ~ p1 = obj.data.vertices[ek[0]]
-            # ~ p2 = obj.data.vertices[ek[1]]
-            # ~ iLoc = geometry.intersect_point_line(loc, p1, p2)[0]
-            # ~ ptDist = (iLoc - iLoc).length
-            # ~ if(ptDist < minEdgeDist):
-                # ~ minEdgeDist = ptDist
-                # ~ closestLoc = iLoc
-    # ~ if(closestLoc != None): loc = closestLoc
-
-def get2dBBox(obj, region, rv3d):
+def getSnappableObjs(region, rv3d, xy):
+    objs = bpy.context.selected_objects
+    if(bpy.context.object != None): 
+        objs.append(bpy.context.object)
+    return [o for o in objs if(o.type == 'MESH' and len(o.modifiers) == 0 and \
+            isPtIn2dBBox(o, region, rv3d, xy))]
+    
+# precise can be pretty expensive with large vert count
+def get2dBBox(obj, region, rv3d, precise = False): 
     mw = obj.matrix_world
-    bbox = obj.bound_box
-    co2ds = [getCoordFromLoc(region, rv3d, mw @ Vector(b)) for b in bbox]
+    if(precise):
+        co2ds = [getCoordFromLoc(region, rv3d, mw @ Vector(v.co)) \
+            for v in obj.data.vertices]
+    else:
+        co2ds = [getCoordFromLoc(region, rv3d, mw @ Vector(b)) for b in obj.bound_box]
     minX = min(c[0] for c in co2ds)
     maxX = max(c[0] for c in co2ds)
     minY = min(c[1] for c in co2ds)
@@ -786,16 +757,95 @@ def get2dBBox(obj, region, rv3d):
 
     return minX, minY, maxX, maxY
 
-def isPtIn2dBBox(obj, region, rv3d, xy, extendBy = 0):
-    minX, minY, maxX, maxY = get2dBBox(obj, region, rv3d)
+def isPtIn2dBBox(obj, region, rv3d, xy, extendBy = 0, precise = False):
+    minX, minY, maxX, maxY = get2dBBox(obj, region, rv3d, precise)
     if(xy[0] > (minX - extendBy) and xy[0] < (maxX + extendBy) \
         and xy[1] > (minY - extendBy) and xy[1] < (maxY + extendBy)):
         return True
     else: return False
 
-def isLocIn2dBBox(obj, region, rv3d, loc):
-    pt = getCoordFromLoc(region, rv3d, loc)
-    return isPtIn2dBBox(pt)
+# ~ def isLocIn2dBBox(obj, region, rv3d, loc, extendBy = 0, precise = False):
+    # ~ xy = getCoordFromLoc(region, rv3d, loc)
+    # ~ return isPtIn2dBBox(obj, region, rv3d, xy, extendBy, precise)
+
+def getClosestEdgeLoc2d(obj, region, rv3d, xy, faceIdx = None):
+    mw = obj.matrix_world
+    minDist = LARGE_NO
+    closestLoc = None
+    pt = Vector(xy).to_3d()
+    edgeWSCos = None
+    edgeIdx = None
+    closestIntersect = None
+    vertPairs = obj.data.polygons[faceIdx].edge_keys if faceIdx != None \
+        else [e.vertices for e in obj.data.edges]
+    for i, vertPair in enumerate(vertPairs):
+        co0 = mw @ obj.data.vertices[vertPair[0]].co
+        co1 = mw @ obj.data.vertices[vertPair[1]].co
+
+        pt0 = getCoordFromLoc(region, rv3d, co0).to_3d()
+        pt1 = getCoordFromLoc(region, rv3d, co1).to_3d()
+        intersect, percDist = geometry.intersect_point_line(pt, pt0, pt1)
+        if(percDist < 0):
+            intersect = pt0
+            percDist = 0
+        elif(percDist > 1):
+            intersect = pt1
+            percDist = 1
+        dist = (intersect - pt).length
+        if(dist < minDist):
+            minDist = dist
+            closestIntersect = intersect
+            edgeWSCos = [co0, co1]
+            edgeIdx = i
+    if(edgeWSCos != None):
+        co0, co1 = edgeWSCos[0], edgeWSCos[1]
+        # Just find a non-linear point (TODO: simpler way)
+        m = [co0[i] / co1[i] if co1[i] != 0 else co0[i] for i in range(3)]
+        co2 = co0 + Vector([co0[i] * m[i] for i in range(3)])
+
+        # Raycast from 2d point onto the plane
+        closestLoc = getPtProjOnPlane(region, rv3d, closestIntersect, \
+            edgeWSCos[0], edgeWSCos[1], co2)
+
+    return edgeIdx, edgeWSCos, closestLoc, minDist
+
+# TODO: Fix the signature
+def getSelFaceLoc(region, rv3d, xy, maxFaceCnt, objs = None, checkEdge = False):
+    if(objs == None): objs = getSnappableObjs(region, rv3d, xy)
+    if(len(objs) > maxFaceCnt): return None, None, None, None
+    for obj in objs:
+        loc, normal, faceIdx = getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt)
+        if(faceIdx >= 0):
+            if(checkEdge):
+                edgeIdx, edgeWSCos, closestLoc, minDist = \
+                    getClosestEdgeLoc2d(obj, region, rv3d, xy, faceIdx)
+                if(closestLoc != None and minDist < FTProps.snapDist):
+                    return obj, closestLoc, normal, faceIdx
+            return obj, loc, normal, faceIdx
+    return None, None, None, None
+
+# TODO: Fix the signature
+# ~ def getSelEdgeLoc(region, rv3d, xy, maxFaceCnt, objs = None):
+
+    # ~ if(objs == None): objs = getSnappableObjs()
+    # ~ if(len(objs) > maxFaceCnt): return None, None, None, None
+
+    # ~ minDist = LARGE_NO
+    # ~ closestLoc = None
+    # ~ closestEdgeIdx = None
+    # ~ closestObj = None
+    # ~ objCnt = 0
+    # ~ objs = bpy.context.selected_objects
+    # ~ if(bpy.context.object != None): objs.append(bpy.context.object)
+    # ~ for obj in objs:
+        # ~ edgeIdx, edgeWSCos, loc, dist = \
+            # ~ getClosestEdgeLoc2d(obj, region, rv3d, xy)
+        # ~ if(dist < minDist):
+            # ~ minDist = dist
+            # ~ closestLoc = loc
+            # ~ closestEdgeIdx = edgeIdx
+            # ~ closestObj = obj
+    # ~ return closestObj, closestLoc, minDist, closestEdgeIdx
 
 ###################### Op Specific functions ######################
 
@@ -4345,8 +4395,8 @@ class Snapper:
             if(self.snapCo != None):
                 loc = self.snapCo
             else:
-                selObj, loc, normal, faceIdx = \
-                    getSelFaceLoc(region, rv3d, xy, self.MAX_SNAP_FACE_CNT)
+                selObj, loc, normal, faceIdx = getSelFaceLoc(region, rv3d, xy, \
+                    self.MAX_SNAP_FACE_CNT, checkEdge = True)
 
         if(loc != None):
             loc = tm @ loc
@@ -7487,7 +7537,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
     def getEditableCurveObjs(self):
         return [b for b in bpy.data.objects if isBezier(b) and b.visible_get() \
-                and len(b.data.splines[0].bezier_points) > 1]
+                and not b.hide_select and len(b.data.splines[0].bezier_points) > 1]
 
     def getSearchQueryInfo(self): # TODO: Simplify if possible
         queryInfo = {}
