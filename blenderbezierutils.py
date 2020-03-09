@@ -720,8 +720,8 @@ def getResetBatch(shader, btype): # "LINES" or "POINTS"
 # From python template
 def getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt):
     if(obj == None or obj.type != 'MESH' \
-                or len(obj.data.polygons) > maxFaceCnt):
-        return None, None, -1
+        or len(obj.data.polygons) > maxFaceCnt):
+        return None, None, None
     viewVect = region_2d_to_vector_3d(region, rv3d, xy)
     rayOrig = region_2d_to_origin_3d(region, rv3d, xy)
     mw = obj.matrix_world
@@ -733,7 +733,10 @@ def getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt):
     rayDirObj = rayTargetObj - rayOrigObj
 
     success, location, normal, faceIdx = obj.ray_cast(rayOrigObj, rayDirObj)
-    return mw @ location, normal, faceIdx
+    if(success):
+        return mw @ location, normal, faceIdx
+    else:
+        return None, None, None
 
 def getSnappableObjs(region, rv3d, xy):
     objs = bpy.context.selected_objects
@@ -815,7 +818,7 @@ def getSelFaceLoc(region, rv3d, xy, maxFaceCnt, objs = None, checkEdge = False):
     if(len(objs) > maxFaceCnt): return None, None, None, None
     for obj in objs:
         loc, normal, faceIdx = getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt)
-        if(faceIdx >= 0):
+        if(loc != None):
             if(checkEdge):
                 edgeIdx, edgeWSCos, closestLoc, minDist = \
                     getClosestEdgeLoc2d(obj, region, rv3d, xy, faceIdx)
@@ -4119,8 +4122,8 @@ class Snapper:
         elif(origType == 'FACE' and rmInfo != None):
             selObj, location, normal, faceIdx = getSelFaceLoc(rmInfo.region, \
                 rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT)
-            if(faceIdx >= 0):
-                    return selObj.matrix_world @ selObj.data.polygons[faceIdx].center
+            if(faceIdx != None):
+                return selObj.matrix_world @ selObj.data.polygons[faceIdx].center
         elif(origType == 'CURSOR'): return bpy.context.scene.cursor.location
         return Vector((0, 0, 0))
 
@@ -4149,7 +4152,7 @@ class Snapper:
         if(transType == 'FACE'):
             selObj, location, normal, faceIdx = getSelFaceLoc(rmInfo.region, \
                 rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT)
-            if(faceIdx >= 0):
+            if(faceIdx != None):
                 normal = selObj.data.polygons[faceIdx].normal
                 quat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
                 tm = (selObj.matrix_world @ quat).inverted()
