@@ -3532,7 +3532,8 @@ class FTMenu:
 
     editMenus.append(FTMenuData(FTHotKeys.hkMnSelect, \
         [['miSelSegs', 'Segments', 'GP_SELECT_BETWEEN_STROKES'], \
-         ['miSelBezPts', 'Bezier Points', 'GP_SELECT_POINTS'], \
+         ['miSelAllSplines', 'All Splines', 'GP_MULTIFRAME_EDITING'], \
+         ['miSelBezPts', 'Bezier Points', 'GP_ONLY_SELECTED'], \
          ['miSelHdls', 'Handles', 'CURVE_BEZCURVE'], \
          ['miSelObj', 'Curve Object', 'GP_SELECT_STROKES'], \
          ['miSelAll', 'Everything', 'SELECT_EXTEND']], \
@@ -6592,6 +6593,9 @@ class SelectCurveInfo:
         # hdlIdx - {-1, 0, 1, 2} similar to sel in ptSels
         self.clickInfo = {}
 
+    def __hash__(self):
+        return hash((self.objName, self.splineIdx))
+
     def updateWSData(self):
         self.hasShapeKey = (self.obj.active_shape_key != None)
         self.shapeKeyIdx = self.obj.active_shape_key_index if self.hasShapeKey else -1
@@ -7706,21 +7710,31 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         return changed
 
     def mnSelect(self, opt):
-        h = ModalFlexiEditBezierOp.h
-        self.selHltInfo(makeActive = True)
-            
-        for i, c in enumerate(self.selectCurveInfos):
-            if(opt[0] == 'miSelObj'):
-                c.obj.select_set(True)
-                if(self.htlCurveInfo == None and i == len(self.selectCurveInfos)-1): 
-                    bpy.context.view_layer.objects.active = c.obj
-            else:
-                for ptIdx in range(len(c.wsData)):
-                    if(opt[0] == 'miSelSegs'): c.addSel(ptIdx, -1)
-                    if(opt[0] == 'miSelBezPts'): c.addSel(ptIdx, 1)
-                    if(opt[0] == 'miSelHdls' and not h): c.addSels(ptIdx, {0, 2})
-                    if(opt[0] == 'miSelAll'):
-                        c.addSels(ptIdx, {-1, 1}.union({0, 2} if not h else set()))
+        if(opt[0] == 'miSelAllSplines'):
+            curves = self.getEditableCurveObjs()
+            allCurveInfos = [SelectCurveInfo(curve, i) for curve in curves \
+                for i in range(len(curve.data.splines))]
+            for c in allCurveInfos:
+                if(not c in self.selectCurveInfos):
+                    self.selectCurveInfos.add(c)
+            # ~ for c in allCurveInfos:
+                # ~ for ptIdx in range(len(c.wsData)):
+                    # ~ c.addSel(ptIdx, 1)
+        else:
+            h = ModalFlexiEditBezierOp.h
+            self.selHltInfo(makeActive = True)
+            for i, c in enumerate(self.selectCurveInfos):
+                if(opt[0] == 'miSelObj'):
+                    c.obj.select_set(True)
+                    if(self.htlCurveInfo == None and i == len(self.selectCurveInfos)-1): 
+                        bpy.context.view_layer.objects.active = c.obj
+                else:
+                    for ptIdx in range(len(c.wsData)):
+                        if(opt[0] == 'miSelSegs'): c.addSel(ptIdx, -1)
+                        if(opt[0] == 'miSelBezPts'): c.addSel(ptIdx, 1)
+                        if(opt[0] == 'miSelHdls' and not h): c.addSels(ptIdx, {0, 2})
+                        if(opt[0] == 'miSelAll'):
+                            c.addSels(ptIdx, {-1, 1}.union({0, 2} if not h else set()))
         self.htlCurveInfo = None
 
     def mnDeselect(self, opt):
