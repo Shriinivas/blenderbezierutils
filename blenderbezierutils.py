@@ -1185,7 +1185,7 @@ def joinSegs(curves, optimized, straight, srcCurve = None):
 
     return srcCurve
 
-def removeDupliVert(curve):
+def removeDupliVert(curve, margin):
     newCurveData = curve.data.copy()
     newCurveData.splines.clear()
     dupliFound = False
@@ -1200,7 +1200,7 @@ def removeDupliVert(curve):
 
         cmpPts = spline.bezier_points[:]
         pt0 = cmpPts[0]
-        while(vectCmpWithMargin(cmpPts[-1].co, pt0.co) and
+        while(vectCmpWithMargin(cmpPts[-1].co, pt0.co, margin) and
             len(cmpPts) > 1):
             endPt = cmpPts.pop()
             pt0.handle_left_type = 'FREE'
@@ -1211,7 +1211,8 @@ def removeDupliVert(curve):
 
         prevPt = None
         for pt in cmpPts:
-            if(prevPt != None and vectCmpWithMargin(prevPt.co, pt.co)):
+            if(prevPt != None and vectCmpWithMargin(prevPt.co, pt.co, margin)):
+                copyObjAttr(pt, currSpline.bezier_points[-1])
                 dupliFound = True
             else:
                 if(prevPt != None): currSpline.bezier_points.add(1)
@@ -1622,7 +1623,8 @@ class RemoveDupliVertCurveOp(Operator):
             if o in bpy.context.selected_objects and isBezier(o)]
 
         for curve in curves:
-            removeDupliVert(curve)
+            removeDupliVert(curve, \
+                bpy.context.window_manager.bezierToolkitParams.dupliVertMargin)
 
         return {'FINISHED'}
 
@@ -2103,6 +2105,20 @@ class BezierUtilsPanel(Panel):
                 col = box.column().split()
                 col.operator('object.set_handle_types')
 
+            row = layout.row()
+            row.prop(params, "removeDupliExpanded",
+                icon="TRIA_DOWN" if params.removeDupliExpanded else "TRIA_RIGHT",
+                icon_only=True, emboss=False
+            )
+            row.label(text='Remove Duplicate Vertices', icon='X')
+            if params.removeDupliExpanded:
+                box = layout.box()
+                col = box.column().split()
+                row = col.row()
+                row.prop(params, 'dupliVertMargin', text = 'Proximity')
+                col = box.column().split()
+                col.operator('object.remove_dupli_vert_curve')
+
             ######## Curve Color #########
 
             row = layout.row()
@@ -2142,8 +2158,6 @@ class BezierUtilsPanel(Panel):
                 col.operator('object.close_straight')
                 col = box.column().split()
                 col.operator('object.open_splines')
-                col = box.column().split()
-                col.operator('object.remove_dupli_vert_curve')
 
         else:
             col = layout.column()
@@ -8307,6 +8321,10 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         description='Remesh depth for converting to mesh', \
         default = 4, min = 1, max = 20)
 
+    dupliVertMargin: FloatProperty(name="Proximity", \
+        description='Proximity margin for determining duplicate', \
+        default = .001, min = 0, precision = 5)
+
     unsubdivide: BoolProperty(name="Unsubdivide", \
         description='Unsubdivide to reduce the number of polygons', \
         default = False)
@@ -8355,6 +8373,8 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     handleTypesExpanded: BoolProperty(name = "Set Handle Types", default = False)
 
     curveColorExpanded: BoolProperty(name = "Set Curve Colors", default = False)
+    
+    removeDupliExpanded: BoolProperty(name = "Remove Duplicate Verts", default = False)
 
     otherExpanded: BoolProperty(name = "Other Tools", default = False)
 
