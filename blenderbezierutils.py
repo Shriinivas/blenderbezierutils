@@ -342,6 +342,7 @@ def copyProperties(srcObj, destCurve):
         destData.bevel_depth = srcData.bevel_depth
         destData.bevel_resolution = srcData.bevel_resolution
         destData.bevel_object = srcData.bevel_object
+        destData.taper_object = srcData.taper_object
 
         destData.use_fill_caps = srcData.use_fill_caps
 
