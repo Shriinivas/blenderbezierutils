@@ -25,7 +25,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 91),
+    "version": (0, 9, 93),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -238,7 +238,7 @@ def joinCurves(curves):
         safeRemoveObj(curve)
     return obj
 
-def getBBoxCenter(obj):
+def getObjBBoxCenter(obj):
     bbox = obj.bound_box
     return obj.matrix_world @ Vector(((bbox[0][0] + bbox[4][0]) / 2, \
         (bbox[0][1] + bbox[3][1]) / 2, (bbox[0][2] + bbox[1][2]) / 2))
@@ -443,7 +443,7 @@ def removeBezierSeg(obj, splineIdx, segIdx):
                 segIdxIncr = - (segIdx + 1)
     return splineIdxIncr, segIdxIncr
 
-def insertBezierPts(obj, splineIdx, startIdx, cos, handleType):
+def insertBezierPts(obj, splineIdx, startIdx, cos, handleType, margin = DEF_ERR_MARGIN):
 
     spline = obj.data.splines[splineIdx]
     bpts = spline.bezier_points
@@ -488,7 +488,7 @@ def insertBezierPts(obj, splineIdx, startIdx, cos, handleType):
 
         co = cos[i]
         seg = [prevPt.co, prevPt.handle_right, nextPt.handle_left, nextPt.co]
-        t = getTForPt(seg, co)
+        t = getTForPt(seg, co, margin)
         ctrlPts0 = getPartialSeg(seg, 0, t)
         ctrlPts1 = getPartialSeg(seg, t, 1)
 
@@ -626,10 +626,6 @@ def isOutside(context, event, exclInRgns = True):
 
     return False
 
-def is3DVireport(context):
-    return (context != None and hasattr(context, 'space_data') and \
-        context.space_data != None and hasattr(context.space_data, 'region_3d'))
-
 def getPtProjOnPlane(region, rv3d, xy, p1, p2, p3, p4 = None):
     vec = region_2d_to_vector_3d(region, rv3d, xy)
     orig = region_2d_to_origin_3d(region, rv3d, xy)
@@ -638,6 +634,21 @@ def getPtProjOnPlane(region, rv3d, xy, p1, p2, p3, p4 = None):
     # ~ if(not pt and p4):
         # ~ pt = geometry.intersect_ray_tri(p2, p4, p3, vec, orig, True)
     return pt
+
+# find the location on 3d line p1-p2 if xy is already on 2d projection (in rv3d) of p1-p2 
+def getPtProjOnLine(region, rv3d, xy, p1, p2):
+    # Just find a non-linear point (TODO: simpler way)
+    pd1 = p2 - p1
+    pd2 = Vector(sorted(pd1, reverse = True))
+    maxIdx0 = [i for i in range(3) if pd1[i] == pd2[0]][0]
+    maxIdx1 = [i for i in range(3) if pd1[i] == pd2[1]][0]
+    pd = Vector()
+    pd[maxIdx0] = -pd2[1]
+    pd[maxIdx1] = pd2[0]
+    p3 = p2 + pd
+
+    # Raycast from 2d point onto the plane
+    return getPtProjOnPlane(region, rv3d, xy[:2], p1, p2, p3)
 
 def getLineTransMatrices(pt0, pt1):
     diffV = (pt1 - pt0)
@@ -802,14 +813,8 @@ def getClosestEdgeLoc2d(obj, region, rv3d, xy, faceIdx = None):
             edgeWSCos = [co0, co1]
             edgeIdx = i
     if(edgeWSCos != None):
-        co0, co1 = edgeWSCos[0], edgeWSCos[1]
-        # Just find a non-linear point (TODO: simpler way)
-        m = [co0[i] / co1[i] if co1[i] != 0 else co0[i] for i in range(3)]
-        co2 = co0 + Vector([co0[i] * m[i] for i in range(3)])
-
-        # Raycast from 2d point onto the plane
-        closestLoc = getPtProjOnPlane(region, rv3d, closestIntersect, \
-            edgeWSCos[0], edgeWSCos[1], co2)
+        closestLoc = getPtProjOnLine(region, rv3d, closestIntersect, \
+            edgeWSCos[0], edgeWSCos[1])
 
     return edgeIdx, edgeWSCos, closestLoc, minDist
 
@@ -1397,6 +1402,101 @@ def pasteLength(src, dests):
                 pt.handle_right_type = rts[i]
     bpy.data.curves.remove(tmp)
 
+def intersectCurves(curves, action, firstActive, margin, rounding):
+
+    allIntersectCos, intersectMap = getCurveIntersectPts(curves, firstActive, margin, \
+        rounding)
+
+    if(action in {'MARK_EMPTY', 'MARK_POINT'}):
+        newObjs = []
+        collection = bpy.data.collections.new('Intersect Markers')
+        bpy.context.scene.collection.children.link(collection)
+        objName = 'Marker'
+        for co in allIntersectCos:
+            if(action  == 'MARK_EMPTY'):
+                obj = bpy.data.objects.new(objName, None)
+            elif(action  == 'MARK_POINT'):
+                curveData = bpy.data.curves.new(objName, 'CURVE')
+                spline = curveData.splines.new('BEZIER')
+                obj = bpy.data.objects.new(objName, curveData)
+            obj.location = co
+            newObjs.append(obj)
+            collection.objects.link(obj)
+        for obj in newObjs:
+            obj.select_set(True)
+
+    if(action in {'INSERT_PT', 'CUT'}):
+        mapKeys = sorted(intersectMap.keys(), key = lambda x:(x[0], x[1], x[2]))
+        selPtMap = {}
+        prevCnt = 0
+        prevCurveIdx = None
+        prevSplineIdx = None
+        for i, key in enumerate(mapKeys):
+            intersectPts = intersectMap[key]
+
+            curveIdx, splineIdx, segIdx = key
+            if(prevCurveIdx == curveIdx and prevSplineIdx == splineIdx):
+                segIdx += prevCnt
+            else:
+                prevCnt = 0
+
+            curve = curves[curveIdx]
+
+            if(firstActive and curve == curves[0]):
+                continue
+
+            mw = curve.matrix_world
+            pts = curve.data.splines[splineIdx].bezier_points
+            nextIdx = getAdjIdx(curve, splineIdx, segIdx)
+
+            seg = [mw @ pts[segIdx].co, mw @ pts[segIdx].handle_right, \
+                mw @ pts[nextIdx].handle_left, mw @ pts[nextIdx].co]
+
+            sortedCos = getCosSortedByT(seg, intersectPts, margin)
+            sortedCos = removeDupliCos(sortedCos, margin)
+            insertCos = sortedCos.copy()
+            start = seg[0].freeze()
+            end = seg[1].freeze()
+            startIdxIncr = 1
+            endIdxIncr = 1
+            if(start in insertCos):
+                startIdxIncr = 0 # Keep in split list
+                insertCos.remove(start) # Remove from insert list
+            if(end in insertCos):
+                insertCos.remove(end) # Remove from insert list
+                endIdxIncr = 2 # Keep in split list
+            for j, co in enumerate(insertCos):
+                insertCos[j] = mw.inverted() @ co
+            insertBezierPts(curve, splineIdx, segIdx, insertCos, 'FREE', margin)
+            prevCurveIdx = curveIdx
+            prevSplineIdx = splineIdx
+            prevCnt += len(insertCos)
+
+            if(action == 'CUT'):
+                if(selPtMap.get(curve) == None):
+                    selPtMap[curve] = {}
+                if(selPtMap[curve].get(splineIdx) == None):
+                    selPtMap[curve][splineIdx] = []
+                selPtMap[curve][splineIdx] += \
+                    list(range(segIdx + startIdxIncr, \
+                        segIdx + len(sortedCos) + endIdxIncr))
+    
+        if(action == 'CUT'):
+            for curve in list(selPtMap.keys()):
+                splineIdxs = sorted(selPtMap[curve].keys())
+                if(len(curve.data.splines) > 1):
+                    newObjs, changeCnt = splitCurve([curve], 'spline', \
+                        curve.users_collection)
+                    splineIdxs = list(selPtMap[curve].keys())
+                    for idx in splineIdxs:
+                        newCurve = newObjs[idx]
+                        selPtMap[newCurve] = {}
+                        selPtMap[newCurve][0] = selPtMap[curve][idx]
+                        selPtMap[curve].pop(idx)
+                        if(len(selPtMap[curve]) == 0):
+                            selPtMap.pop(curve)
+            splitCurveSelPts(selPtMap)
+
 ###################### Operators ######################
 
 class SeparateSplinesObjsOp(Operator):
@@ -1516,22 +1616,19 @@ class SelectInCollOp(Operator):
 
     def execute(self, context):
         if(bpy.context.active_object != None):
-            collections = bpy.context.active_object.users_collection
-
-            for obj in bpy.context.selected_objects:
-                obj.select_set(False)
-
             selectIntrvl = bpy.context.window_manager.bezierToolkitParams.selectIntrvl
 
-            for collection in collections:
-                objs = [o for o in collection.objects]
-                idx = objs.index(bpy.context.active_object)
-                objs = objs[idx:] + objs[:idx]
-                for i, o in enumerate(objs):
-                    if( i % (selectIntrvl + 1) == 0):
-                        o.select_set(True)
-                    else:
-                        o.select_set(False)
+            for obj in bpy.context.selected_objects:
+                collections = obj.users_collection
+                for collection in collections:
+                    objs = [o for o in collection.objects]
+                    idx = objs.index(obj)
+                    for i, o in enumerate(objs[idx:]):
+                        if( i % (selectIntrvl + 1) == 0): o.select_set(True)
+                        else: o.select_set(False)
+                    for i, o in enumerate(reversed(objs[:idx+1])):
+                        if( i % (selectIntrvl + 1) == 0): o.select_set(True)
+                        else: o.select_set(False)
 
         return {'FINISHED'}
 
@@ -1711,7 +1808,7 @@ class AlignToFaceOp(Operator):
         searchTree = NestedListSearch(medianLists)
 
         for curve in curves:
-            center = getBBoxCenter(curve)
+            center = getObjBBoxCenter(curve)
             oLoc = curve.location.copy()
 
             srs = searchTree.findInLists(center, searchRange = None)
@@ -1745,7 +1842,7 @@ class AlignToFaceOp(Operator):
                 shiftOrigin(curve, faceCenter)
             elif(alignOrig == 'BBOX'):
                 depsgraph.update()
-                center = getBBoxCenter(curve) # Recalculate after alignment
+                center = getObjBBoxCenter(curve) # Recalculate after alignment
                 shiftOrigin(curve, center)
             else:
                 shiftOrigin(curve, oLoc)
@@ -1799,6 +1896,36 @@ class PasteLengthOp(Operator):
             dests = [o for o in bpy.context.selected_objects if(isBezier(o) and o != src)]
             if(len(dests) > 0):
                 pasteLength(src, dests)
+        return {'FINISHED'}
+
+class IntersectCurvesOp(Operator):
+    bl_idname = "object.intersect_curves"
+    bl_label = "Intersect Curves"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Intersect the selected curves"
+
+    def execute(self, context):
+        params = bpy.context.window_manager.bezierToolkitParams
+        rounding = 2
+        actCurve = bpy.context.active_object
+
+        if(params.intersectNonactive):
+            if(not isBezier(actCurve)):
+                self.report({'WARNING'}, "Active Object Not A Curve")
+                return {'FINISHED'}
+
+        curves = [o for o in bpy.data.objects \
+            if o in bpy.context.selected_objects and isBezier(o) and o != actCurve]
+
+        if(actCurve != None and isBezier(actCurve)):
+            curves = [actCurve] + curves
+
+        if(len(curves) < 2):
+            self.report({'INFO'}, "Please select at least two Bezier curve objects")
+        else:
+            intersectCurves(curves, params.intersectOp, params.intersectNonactive, \
+            params.intersectMargin, rounding)
+
         return {'FINISHED'}
 
 
@@ -2000,11 +2127,32 @@ class BezierUtilsPanel(Panel):
         layout.use_property_decorate = False
 
         if(context.mode == 'OBJECT'):
+
+            row = layout.row()
+            row.prop(params, "intersectExpanded",
+                icon="TRIA_DOWN" if params.intersectExpanded else "TRIA_RIGHT",
+                icon_only=True, emboss=False
+            )
+            row.label(text='Intersect Curves', icon='GRAPH')
+            if params.intersectExpanded:
+                box = layout.box()
+                col = box.column().split()
+                row = col.row()
+                row.prop(params, 'intersectMargin', text = 'Proximity')
+                col = box.column().split()
+                row = col.row()
+                row.prop(params, 'intersectOp', text = 'Action')
+                if(params.intersectOp in {'INSERT_PT', 'CUT'}):
+                    row = col.row()
+                    row.prop(params, 'intersectNonactive', text = 'Only Non-active')
+                col = box.column().split()
+                col.operator('object.intersect_curves')
+
             row = layout.row()
             row.prop(params, "splitExpanded",
                 icon="TRIA_DOWN" if params.splitExpanded else "TRIA_RIGHT",
                 icon_only=True, emboss=False)
-            row.label(text="Split Bezier Curves", icon = 'UNLINKED')
+            row.label(text="Split Curves", icon = 'UNLINKED')
 
             if params.splitExpanded:
                 box = layout.box()
@@ -2020,7 +2168,7 @@ class BezierUtilsPanel(Panel):
                 icon="TRIA_DOWN" if params.joinExpanded else "TRIA_RIGHT",
                 icon_only=True, emboss=False
             )
-            row.label(text="Join Bezier Curves", icon = 'LINKED')
+            row.label(text="Join Curves", icon = 'LINKED')
 
             if params.joinExpanded:
                 box = layout.box()
@@ -2276,11 +2424,12 @@ def getTsForPt(p0, p1, p2, p3, co, coIdx, tolerance = 0.000001, maxItr = 1000):
     return ts
 
 #TODO: There may be a more efficient approach, but this seems foolproof
-def getTForPt(curve, testPt):
+def getTForPt(curve, testPt, tolerance = .000001):
     minLen = LARGE_NO
     retT = None
     for coIdx in range(0, 3):
-        ts = getTsForPt(curve[0], curve[1], curve[2], curve[3], testPt[coIdx], coIdx)
+        ts = getTsForPt(curve[0], curve[1], curve[2], curve[3], \
+            testPt[coIdx], coIdx, tolerance)
         for t in ts:
             pt = getPtFromT(curve[0], curve[1], curve[2], curve[3], t)
             pLen = (testPt - pt).length
@@ -2288,6 +2437,200 @@ def getTForPt(curve, testPt):
                 minLen = pLen
                 retT = t
     return retT
+
+def getCosSortedByT(seg, cos, margin):
+    coInfo = set()
+
+    for co in cos:
+        t = getTForPt(seg, co, margin)
+        # ~ if(all(abs(co[i] - seg[3][i]) < margin for i in range(3)) or t >= 1):
+        if(t >= 1):
+            coInfo.add(((seg[3]).freeze(), 1))
+        # ~ elif(all(abs(co[i] - seg[0][i]) < margin for i in range(3)) or t <= 0):
+        elif(t <= 0):
+            coInfo.add(((seg[0]).freeze(), 0))
+        else:
+            coInfo.add((co.freeze(), t))
+
+    return [inf[0] for inf in sorted(coInfo, key = lambda x: x[1])]
+
+# TODO: Check for initial and end points of the segment (here or in getCosSortedByT)
+# Currently inserting points more than once if intersect is invoked repeatedly
+def removeDupliCos(sortedCos, margin):
+    prevCo = sortedCos[0]
+    newCos = [prevCo]
+    for i in range(1, len(sortedCos)):
+        co = sortedCos[i]
+        if(not vectCmpWithMargin(co, prevCo, margin)):
+            newCos.append(co)
+        prevCo = co
+    return newCos
+
+# https://stackoverflow.com/questions/24809978/calculating-the-bounding-box-of-cubic-bezier-curve
+#(3 D - 9 C + 9 B - 3 A) t^2 + (6 A - 12 B + 6 C) t + 3 (B - A)
+def getBBox(seg):
+    A = seg[0]
+    B = seg[1]
+    C = seg[2]
+    D = seg[3]
+
+    leftBotFront = Vector([min([A[i], D[i]]) for i in range(0, 3)])
+    rgtTopBack = Vector([max([A[i], D[i]]) for i in range(0, 3)])
+
+    a = [3 * D[i] - 9 * C[i] + 9 * B[i] - 3 * A[i] for i in range(0, 3)]
+    b = [6 * A[i] - 12 * B[i] + 6 * C[i] for i in range(0, 3)]
+    c = [3 * (B[i] - A[i]) for i in range(0, 3)]
+
+    solnsxyz = []
+    for i in range(0, 3):
+        solns = []
+        if(a[i] == 0):
+            if(b[i] == 0):
+                solns.append(0)#Independent of t so lets take the starting pt
+            else:
+                solns.append(c[i] / b[i])
+        else:
+            rootFact = b[i] * b[i] - 4 * a[i] * c[i]
+            if(rootFact >=0 ):
+                #Two solutions with + and - sqrt
+                solns.append((-b[i] + sqrt(rootFact)) / (2 * a[i]))
+                solns.append((-b[i] - sqrt(rootFact)) / (2 * a[i]))
+        solnsxyz.append(solns)
+
+    for i, soln in enumerate(solnsxyz):
+        for j, t in enumerate(soln):
+            if(t <= 1 and t >= 0):
+                co = getPtFromT(A[i], B[i], C[i], D[i], t)
+                if(co < leftBotFront[i]): leftBotFront[i] = co
+                if(co > rgtTopBack[i]): rgtTopBack[i] = co
+
+    return leftBotFront, rgtTopBack
+
+def getBBoxOverlapInfo(seg0, seg1):
+    bbox0 = getBBox(seg0)
+    max0 = [max(bbox0[i][axis] for i in range(2)) for axis in range(3)]
+    min0 = [min(bbox0[i][axis] for i in range(2)) for axis in range(3)]
+    bbox1 = getBBox(seg1)
+
+    overlap = True
+    if(any(all(bbox1[i][j] < min0[j] for i in range(2)) for j in range(3)) or \
+        any(all(bbox1[i][j] > max0[j] for i in range(2)) for j in range(3))):
+        overlap = False
+
+    return overlap, bbox0, bbox1
+
+def getBBoxCenter(bbox): # bbox -> [leftBotFront, rightTopBack]
+    return Vector(((bbox[0][i] + bbox[1][i]) / 2 for i in range(3)))
+
+def getIntersectPts(seg0, seg1, soln, solnRounded, recurs, margin, rounding, \
+    maxRecurs = 100):
+    overlap, bbox0, bbox1 = getBBoxOverlapInfo(seg0, seg1)
+    if(overlap):
+        if(recurs == maxRecurs):
+            print('Maximum recursions in getIntersectPts!')
+            return False
+
+        if(all(abs(bbox0[0][i] - bbox0[1][i]) < margin for i in range(3))):
+            center = getBBoxCenter(bbox0)
+            roundedVect = Vector([round(x, rounding) for x in center]).freeze()
+            if(roundedVect not in solnRounded):
+                soln.append(center)
+                solnRounded.add(roundedVect)
+            return True
+        elif(all(abs(bbox1[0][i] - bbox1[1][i]) < margin for i in range(3))):
+            center = getBBoxCenter(bbox1)
+            roundedVect = Vector([round(x, rounding) for x in center]).freeze()
+            if(roundedVect not in solnRounded):
+                soln.append(center)
+                solnRounded.add(roundedVect)
+            return True
+        else:
+            seg01 = getPartialSeg(seg0, t0 = 0, t1 = 0.5)
+            seg02 = getPartialSeg(seg0, t0 = 0.5, t1 = 1)
+
+            seg11 = getPartialSeg(seg1, t0 = 0, t1 = 0.5)
+            seg12 = getPartialSeg(seg1, t0 = 0.5, t1 = 1)
+
+            r0 = getIntersectPts(seg01, seg11, soln, solnRounded, \
+                recurs + 1, margin, rounding)
+            r1 = getIntersectPts(seg01, seg12, soln, solnRounded, \
+                recurs + 1, margin, rounding)
+            r2 = getIntersectPts(seg02, seg11, soln, solnRounded, \
+                recurs + 1, margin, rounding)
+            r3 = getIntersectPts(seg02, seg12, soln, solnRounded, \
+                recurs + 1, margin, rounding)
+
+            return any((r0, r1, r2, r3))
+    return False
+
+# splineInfos: [(curveIdx0, splineIdx0), (curveIdx0, splineIdx1),...]    
+# First active means intersections only with the first curve (otherwise all combinations)
+def getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding):
+    segPairMap = {}
+    areas = [a for a in bpy.context.screen.areas if  a.type == 'VIEW_3D']
+    for i, c0Info in enumerate(splineInfos):
+        idxCurve0, idxSpline0 = c0Info
+        if(firstActive and idxCurve0 != splineInfos[0][0]):
+            break
+        c0 = curves[idxCurve0]
+        spline0 = c0.data.splines[idxSpline0]
+        for j in range(i + 1, len(splineInfos)):
+            idxCurve1, idxSpline1 = splineInfos[j]
+            c1 = curves[idxCurve1]
+            spline1 = c1.data.splines[idxSpline1]
+
+            segPairMap[((idxCurve0, idxSpline0), (idxCurve1, idxSpline1))] = \
+                [((idxSeg0, s0), (idxSeg1, s1)) for idxSeg0, s0 in \
+                    enumerate(getRoundedSplineSegs(c0.matrix_world, spline0)) for \
+                        idxSeg1, s1 in enumerate(getRoundedSplineSegs(c1.matrix_world, \
+                            spline1))]
+
+    intersectMap = {}
+    allIntersectCos = []
+    for key in segPairMap:
+        (idxCurve0, idxSpline0), (idxCurve1, idxSpline1) = key
+        segPairInfo = segPairMap[key]
+        for info in segPairInfo:
+            solnRounded = set()
+            soln = []
+            (idxSeg0, seg0), (idxSeg1, seg1) = info
+            ret = getIntersectPts(seg0, seg1, soln, solnRounded, recurs = 0, \
+                margin = margin, rounding = rounding)
+            if(ret):
+                extKey = (idxCurve0, idxSpline0, idxSeg0)
+                if(intersectMap.get(extKey) == None):
+                    intersectMap[extKey] = []
+                intersectMap[extKey] += soln
+
+                extKey = (idxCurve1, idxSpline1, idxSeg1)
+                if(intersectMap.get(extKey) == None):
+                    intersectMap[extKey] = []
+                intersectMap[extKey] += soln
+
+                allIntersectCos += soln
+    return allIntersectCos, intersectMap
+
+def getCurveIntersectPts(curves, firstActive, margin, rounding):
+    splineInfos = [(x, y) for x in range(len(curves)) \
+        for y in range(len(curves[x].data.splines))]
+
+    return getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding)
+
+def getRoundedSplineSegs(mw, spline, reverse = False, rounding = 5):
+
+    def getRoundedVect(mw, co, rounding):
+        return Vector((round(x, rounding) for x in (mw @ co)))
+
+    bpts = spline.bezier_points
+    if(reverse): bpts = reversed(bpts)
+    segs = []
+    for i in range(1, len(bpts)):
+        segPts = [bpts[i-1].co, bpts[i-1].handle_right, bpts[i].handle_left, bpts[i].co]
+        segs.append([getRoundedVect(mw, pt, rounding) for pt in segPts])
+    if(spline.use_cyclic_u):
+        segPts = [bpts[-1].co, bpts[-1].handle_right, bpts[0].handle_left, bpts[0].co]
+        segs.append([getRoundedVect(mw, pt, rounding) for pt in segPts])
+    return segs
 
 # Because there is some discrepancy between this and getSegLen
 # This seems to be more accurate
@@ -6056,7 +6399,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
             if(align and startObj == None and endObj == None):
                 alignToNormal(obj)
                 bpy.context.evaluated_depsgraph_get().update()
-                if(location == None): location = getBBoxCenter(obj)
+                if(location == None): location = getObjBBoxCenter(obj)
 
             if(location != None): 
                 shiftOrigin(obj, location)
@@ -8314,6 +8657,25 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         description = 'Apply remesh resolution to segment or spline',
         default = 'PERSEG')
         
+    intersectOp: EnumProperty(name="Action", items = \
+        [('MARK_EMPTY', 'Mark with Empty', 'Mark intersections with empties'), \
+         ('INSERT_PT', 'Insert Points', 'Insert Bezier Points at intersection'),
+         ('CUT', 'Cut', 'Cut curves at intersection points'),
+         ('MARK_POINT', 'Mark with Bezier Point', \
+            'Mark intersections with Bezier points'), \
+         ], \
+        description = 'Select operation to perform on intersect points',
+        default = 'MARK_EMPTY')
+        
+    intersectNonactive: BoolProperty(name="Only Non-active", \
+        description="Action is not performed on active curve but " + \
+            "only other selected curves", \
+        default = False)
+
+    intersectFromView: BoolProperty(name="Project From View", \
+        description="Intersection points as per the view", \
+        default = False)
+
     remeshOptimized: BoolProperty(name="Optimized", \
         description="Don't subdivide straight segments", \
         default = False)
@@ -8325,6 +8687,10 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     dupliVertMargin: FloatProperty(name="Proximity", \
         description='Proximity margin for determining duplicate', \
         default = .001, min = 0, precision = 5)
+
+    intersectMargin: FloatProperty(name="Proximity", \
+        description='Proximity margin for determining intersection points', \
+        default = .0001, min = 0, precision = 5)
 
     unsubdivide: BoolProperty(name="Unsubdivide", \
         description='Unsubdivide to reduce the number of polygons', \
@@ -8376,6 +8742,8 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     curveColorExpanded: BoolProperty(name = "Set Curve Colors", default = False)
     
     removeDupliExpanded: BoolProperty(name = "Remove Duplicate Verts", default = False)
+    
+    intersectExpanded: BoolProperty(name = "Intersect Curves", default = False)
 
     otherExpanded: BoolProperty(name = "Other Tools", default = False)
 
@@ -9338,6 +9706,7 @@ classes = [
     CloseStraightOp,
     OpenSplinesOp,
     RemoveDupliVertCurveOp,
+    IntersectCurvesOp,
     convertToMeshOp,
     SetHandleTypesOp,
     SetCurveColorOp,
