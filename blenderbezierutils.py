@@ -1098,7 +1098,7 @@ def getCurvesArrangedByDist(curves):
         remainingCurves.remove(closestCurve)
     return [idMap[cn] for cn in orderedCurves]
 
-def joinSegs(curves, optimized, straight, srcCurve = None):
+def joinSegs(curves, optimized, straight, srcCurve = None, margin = DEF_ERR_MARGIN):
     if(len(curves) == 0):
         return None
     if(len(curves) == 1):
@@ -1139,7 +1139,7 @@ def joinSegs(curves, optimized, straight, srcCurve = None):
         nextBezierPt = nextSpline.bezier_points[0]
 
         #Don't add new point if the last one and the current one are the 'same'
-        if(vectCmpWithMargin(srcMW @ currBezierPt.co, mw @ nextBezierPt.co)):
+        if(vectCmpWithMargin(srcMW @ currBezierPt.co, mw @ nextBezierPt.co, margin)):
             currBezierPt.handle_right_type = nextBezierPt.handle_right_type
             if(currBezierPt.handle_right_type != 'VECTOR'):
                 currBezierPt.handle_right_type = 'FREE'
@@ -1156,7 +1156,7 @@ def joinSegs(curves, optimized, straight, srcCurve = None):
         for i in range(ptIdx, len(nextSpline.bezier_points)):
             if((i == len(nextSpline.bezier_points) - 1) and
                 vectCmpWithMargin(mw @ nextSpline.bezier_points[i].co, \
-                    srcMW @ currSpline.bezier_points[0].co)):
+                    srcMW @ currSpline.bezier_points[0].co, margin)):
 
                     currSpline.bezier_points[0].handle_left_type = 'FREE'
                     currSpline.bezier_points[0].handle_left = \
@@ -1583,8 +1583,11 @@ class JoinBezierSegsOp(Operator):
 
         straight = bpy.context.window_manager.bezierToolkitParams.straight
         optimized = bpy.context.window_manager.bezierToolkitParams.optimized
+        mergeDist = bpy.context.window_manager.bezierToolkitParams.joinMergeDist
 
-        newCurve = joinSegs(curves, optimized = optimized, straight = straight)
+        newCurve = joinSegs(curves, optimized = optimized, straight = straight, \
+            margin = mergeDist)
+
         # ~ removeShapeKeys(newCurve)
         bpy.context.view_layer.objects.active = newCurve
 
@@ -2176,6 +2179,8 @@ class BezierUtilsPanel(Panel):
                 col.prop(params, 'straight')
                 col = box.column().split()
                 col.prop(params, 'optimized')
+                col = box.column().split()
+                col.prop(params, 'joinMergeDist')
                 col = box.column().split()
                 col.operator('object.join_curves')
 
@@ -8703,6 +8708,10 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     optimized: BoolProperty(name="Join Optimized", \
         description='Join the nearest curve (reverse direction if necessary)', \
         default = True)
+
+    joinMergeDist: FloatProperty(name="Merge Distance", \
+        description='Proximity of points to merge', \
+        default = .001, min = 0, precision = 5)
 
     curveColorPick: bpy.props.FloatVectorProperty(
         name="Color",
