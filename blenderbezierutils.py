@@ -6631,15 +6631,22 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
         invMw = self.gpencil.matrix_world.inverted()
         if(len(self.subdivCos) > 0):
+            brush = context.scene.tool_settings.gpencil_paint.brush
+            lineWidth = brush.size
+            strength = brush.gpencil_settings.pen_strength
+
             stroke = frame.strokes.new()
             stroke.display_mode = '3DSPACE'
             stroke.points.add(count = len(self.subdivCos))
             for i in range(0, len(self.subdivCos)):
                 pt = self.subdivCos[i]
                 stroke.points[i].co = self.gpencil.matrix_world.inverted() @ pt
+                stroke.points[i].strength = strength
             if(autoclose):
                 stroke.points.add(count = 1)
                 stroke.points[-1].co = stroke.points[0].co.copy()
+                stroke.points[-1].strength = strength
+            stroke.line_width = lineWidth
             self.snapLocs += [self.subdivCos[0][1], self.subdivCos[-1][1]]
         bpy.ops.ed.undo_push()
 
@@ -8890,9 +8897,14 @@ def drawSettingsFT(self, context):
     self.layout.use_property_decorate = True
 
     # ~ if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname): (T60766)
-    if((context.mode == 'OBJECT' and toolObj.idname  == 'flexi_bezier.draw_tool') or \
-        (context.mode == 'PAINT_GPENCIL' and \
-            toolGP.idname == 'flexi_bezier.grease_draw_tool')):
+    gpMode = (context.mode == 'PAINT_GPENCIL' and \
+            toolGP.idname == 'flexi_bezier.grease_draw_tool')
+    drawMode = (context.mode == 'OBJECT' and toolObj.idname  == 'flexi_bezier.draw_tool')
+    if(drawMode or gpMode):
+        if(gpMode):
+            brush = context.scene.tool_settings.gpencil_paint.brush
+            self.layout.prop(brush, 'size', text ='')
+            self.layout.prop(brush.gpencil_settings, 'pen_strength', text ='')
         self.layout.prop(params, "drawObjType", text = '')
         if(params.drawObjType != 'BEZIER'):
             self.layout.prop(params, "drawObjMode", text = '')
