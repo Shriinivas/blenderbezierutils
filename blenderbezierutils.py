@@ -6364,7 +6364,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
             if(isBezier(obj)):
                 mw = obj.matrix_world
                 for i, s in enumerate(obj.data.splines):
-                    if(s.use_cyclic_u): continue
+                    if(s.use_cyclic_u or len(s.bezier_points) == 0): continue
                     for j, loc in enumerate(locs):
                         p = s.bezier_points[0]
                         if(vectCmpWithMargin(loc, mw @ p.co)):
