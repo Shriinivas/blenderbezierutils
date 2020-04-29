@@ -3844,7 +3844,7 @@ class FTProps:
         FTProps.colGreaseMarker = (0.2, .8, 0.2, 1)
 
         FTProps.colSelTip = (.2, .7, .3, 1)
-        FTProps.colHltTip = (.2, 1, .9, 1)
+        FTProps.colHltTip = (.8, 1, .8, 1)
         FTProps.colBezPt = (1, 1, 0, 1)
         FTProps.colHdlPtTip = (.7, .7, 0, 1)
         FTProps.colAdjBezTip = (.1, .1, .1, 1)
@@ -5007,7 +5007,7 @@ class Snapper:
 
             if(FTProps.dispSnapInd and self.snapCo != None):
                 snapIndPtCos = [self.snapCo]
-                snapIndPtCols = [(1, .4, 0, 1)]            
+                snapIndPtCols = [FTProps.colHltTip] #[(1, .4, 0, 1)]            
         
         for i, axis in enumerate(drawAxes):
             axisGradStart = .2 if len(axisLineCos[i]) > 0 else None
@@ -6600,12 +6600,12 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
     def subdivAdd(self, addCnt):
         slens = self.getCurveSegLens()
         clen = sum(slens)
+        if(clen == 0): return
         cnt = self.subdivPerUnit * clen + addCnt
         if(cnt < 1): cnt = 1
 
         self.subdivPerUnit = (cnt / clen)
         self.updateSubdivCos(clen)
-
 
     def getSnapLocsImpl(self):
         return self.snapLocs
@@ -9169,7 +9169,7 @@ class BezierUtilsPreferences(AddonPreferences):
     snapPtSize: FloatProperty(
             name = "Snap Point Size",
             description = "Size of snap point indicator",
-            default = 3,
+            default = 5,
             min = 0.1,
             max = 20,
             update = FTProps.updateProps
@@ -9224,14 +9224,14 @@ class BezierUtilsPreferences(AddonPreferences):
     dispSnapInd: BoolProperty(
             name="Snap Indicator", \
             description='Display indicator when pointer within snapping range', \
-            default = False,
+            default = True,
             update = FTProps.updateProps
     )
 
     dispAxes: BoolProperty(
             name="Orientation / Origin Axis", \
             description='Display axes for selected orientation / origin', \
-            default = True,
+            default = False,
             update = FTProps.updateProps
     )
 
@@ -9245,7 +9245,7 @@ class BezierUtilsPreferences(AddonPreferences):
     showKeyMap: BoolProperty(
             name="Display Keymap", \
             description='Display Keymap When Flexi Tool Is Active', \
-            default = False,
+            default = True,
             update = FTProps.updateProps
     )
 
@@ -9367,7 +9367,7 @@ class BezierUtilsPreferences(AddonPreferences):
 
     colHltTip: bpy.props.FloatVectorProperty(
         name="Highlighted Point", subtype="COLOR", size=4, min=0.0, max=1.0,\
-        default = (.2, 1, .9, 1), \
+        default = (.8, 1, .8, 1), \
         description = 'Color of Bezier or handle point under mouse pointer', \
         update = FTProps.updateProps
     )
