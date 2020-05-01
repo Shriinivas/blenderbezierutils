@@ -32,7 +32,7 @@ This tool is available in object mode via a new button on the toolshelf (short c
 
 ### Drawing Bézier Curve
 
-To draw the curve, activate the tool by clicking the `Flexi Draw Bézier tool` on the toolshelf and select Bézier Curve from Shape Type drop-down. Click the `LMB` on the starting point of the curve. Then click and drag `LMB` on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting `enter` or `space` will convert the drawing to a curve object. You can auto-close the curve by pressing `Shift+Space` or `Shift+Enter`.
+To draw the curve, activate the tool by clicking the `Flexi Draw Bézier tool` on the toolshelf and select Bézier Curve from Shape Type drop-down. Click the `LMB` on the starting point of the curve. Then click and drag `LMB` on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting `Enter` or `Space` will convert the drawing to a curve object. You can auto-close the curve by pressing `Shift Space` or `Shift Enter`.
 
 ![Demo](drawdemo.gif)
 
@@ -42,7 +42,7 @@ At the time of dragging the `LMB` to set the handle location, you can grab the B
 
 #### Resetting Handle
 
-You can reset the handle if you need to draw a straight line after a curved segment by pressing the hot key `Shift+G` (configurable).
+You can reset the handle if you need to draw a straight line after a curved segment by pressing the hot key `Shift G` (configurable).
 
 #### Dissociating Handle
 
@@ -50,7 +50,7 @@ While adjusting the handle by dragging the mouse pointer, you can change the han
 
 #### Undo
 
-While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve creation can be undone by pressing `ctrl-Z`
+While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve creation can be undone by pressing `Ctrl Z`
 
 
 ### Drawing Primitive Shapes
@@ -66,7 +66,7 @@ The shapes currently available are:
 3. Polygon
 4. Star
 
-Click the starting point and end point of the shape. To draw shapes with equal height and width (e.g. perfect circle or square), hold down `shift` key. You can optionally snap to the grid.
+Click the starting point and end point of the shape. To draw shapes with equal height and width (e.g. perfect circle or square), hold down `Shift` key. You can optionally snap to the grid.
 
 The shapes are all 2D, so for drawing in the 3D perspective view, you can either choose a constraining plane or set the orientation to view. In perspective view, without any constraining plain, the depth value of the current mouse location is applied to all the points.
 
@@ -74,11 +74,11 @@ The shapes are all 2D, so for drawing in the 3D perspective view, you can either
 
 #### Adjusting number of segments (Ellipse) or Sides (Polygon / Star)
 
-To adjust the segment count or sides use the mouse wheel or `+` or `-` keys on numpad. You may also directly type the value in the edit box on toolbar.
+To adjust the segment count or sides use the `mouse wheel` or `Numpad +` and `Numpad -` keys. You may also directly type the value in the edit box on toolbar.
 
 #### Drawing from Center or from Corner
 
-You can start the drawing either from the corner (Bounding Box) or from the center by choosing appropriate option in the Drawing Mode drop-down.
+You can start the drawing either from the corner (Bounding Box) or from the center by choosing appropriate option in the **Drawing Mode** drop-down.
 
 #### Sweep (Available in Ellipse / Circle, Polygon and Star)
 
@@ -86,7 +86,7 @@ The sweep angle can be entered directly in the edit box of the toolbar or change
 
 #### Starting Angle (Available in Ellipse / Circle)
 
-The starting angle can be entered directly in the edit box of the toolbar or changed incrementally using `up` or `down` arrow keys while drawing the shape. This angle changes the tilt of the ellipse being drawn.
+The starting angle can be entered directly in the edit box of the toolbar or changed incrementally using `Up` or `Down` arrow keys while drawing the shape. This angle changes the tilt of the ellipse being drawn.
 
 #### Copy Object Properties
 
@@ -111,11 +111,11 @@ The point being edited can be grabbed by double clicking it. Once grabbed the po
 
 #### Adding a vertex
 
-Hold down `control` and click the mouse on any location on curve to add a vertex at that position. If you also hold down `shift` along with `control` the added point will have aligned handles. The handles will be of type vector if `alt` and `control` are held down while pressing the mouse button.
+Hold down `Ctrl` and click the mouse on any location on curve to add a vertex at that position. If you also hold down `Shift` along with `Ctrl` the added point will have aligned handles. The handles will be of type vector if `Alt` and `Ctrl` are held down while pressing the mouse button.
 
 #### Deleting a vertex or handle point
 
-Select any end point (the selected point is marked in dark green) and press `del` to delete it. Pressing `del` when a handle point is selected will align it with the other point of the segment.
+Select any end point (the selected point is marked in dark green) and press `Del` to delete it. Pressing `Del` when a handle point is selected will align it with the other point of the segment.
 
 You can toggle between `Flexi Draw` and `Flexi Edit` by pressing `E`.
 
@@ -123,7 +123,7 @@ Press `H` to toggle the visibility of the selected segment handles.
 
 #### Subdivide Segments Uniformly
 
-You can also subdivide the selected segments uniformly. To initiate the subdivision op, first select the segments (hold down `shift` to select multiple segments). Then press `W`. Now there will appear a subdivision marker at the middle of each selected segment. You can increase or decrease the number of subdivisions by scrolling the mouse wheel or pressing `+` or `-` keys. Press `Spacebar` or `Enter` to confirm the subdiv operation.
+You can also subdivide the selected segments uniformly. To initiate the subdivision op, first select the segments (hold down `Shift` to select multiple segments). Then press `W`. Now there will appear a subdivision marker at the middle of each selected segment. You can increase or decrease the number of subdivisions by scrolling the `mouse wheel` or pressing `Numpad +` or `Numpad -` keys. Press `Space` or `Enter` to confirm the subdiv operation.
 
 #### Align Handle
 
@@ -136,7 +136,7 @@ To align the handle with the opposite handle of the same end point, select the h
 
 This tool will appear on the toolshelf in `Grease Pencil Draw` mode. You can draw Bézier curves just as you would draw with the `Flexi Draw tool`. After confirming the drawing is converted to grease pencil strokes. All the snapping and locking options of the `Flexi Draw` are available here also.
 
-Additionaly, you can increase of decrease the resolution of the stroke using the mouse wheel or pressing `+` or `-` keys.
+Additionaly, you can increase of decrease the resolution of the stroke using the `mouse wheel` or pressing `Numpad +` or `Numpad -` keys.
 
 The subdivision point visibility can be toggled by pressing `H` key.
 
@@ -213,7 +213,7 @@ After activating one of the Flexi tools the header portion displayes the followi
 
 ### Keyboard Input
 
-It's now possible to directly enter the position values of the point being drawn or edited via keyboard. To set the next point location, start typing a number after starting a new segment (draw) or grabbing the edit point (edit). This number will be the movement along the first free of the free axes. User can enter values for the next axis by pressing `tab`. The values entered are with respect to the current **Snapping Origin** and along the **Snapping Orientation Axes**.
+It's now possible to directly enter the position values of the point being drawn or edited via keyboard. To set the next point location, start typing a number after starting a new segment (draw) or grabbing the edit point (edit). This number will be the movement along the first free of the free axes. User can enter values for the next axis by pressing `Tab`. The values entered are with respect to the current **Snapping Origin** and along the **Snapping Orientation Axes**.
   
 ### Tweaking the Location via Keyboard
 
@@ -229,15 +229,15 @@ When the drawing / editing is constrained to a single plane (the Constrain Axes 
 
 ### Custom Axis
 
-**Custom Axis** is a user defined line, that serves multiple purpose. To create a **Custom Axis**, make sure the selection in **Snapping Origin** dropdown is **Custom Axis Origin** and `rightclick` the starting point, move the pointer to the end point and `rightclick` once again. You can snap to grid or bezier point location while creating the **Custom Axis**. Additionally, it's possible to define custom snapping points along the **Custom Axis**, using `mouse wheel` (or `+` or `-` keys).
+**Custom Axis** is a user defined line, that serves multiple purpose. To create a **Custom Axis**, make sure the selection in **Snapping Origin** dropdown is **Custom Axis Origin** and `right click` the starting point, move the pointer to the end point and `right click` once again. You can snap to grid or bezier point location while creating the **Custom Axis**. Additionally, it's possible to define custom snapping points along the **Custom Axis**, using `mouse wheel` (or `Numpad +` and `Numpad -` keys).
 
 The **Custom Axis** can be used to define the **Snappig Orientation**, **Snapping Origin**, **Custom scale** and **Custom snapping points**.
 
 ### Hotkey Snapping Options (Active for the Point being Drawn / Edited)
 
-- Holding down `ctrl` while moving mouse will snap the point or handle to the **grid**.
-- By holding down `shift` key the **angle** of the segment / handle being drawn / edited will be restricted to fixed values (`0`, `45`, `90`, etc.). The reference axis for determining angle increment is the first free axis based on the selected **Snapping Orientation**.
-- Holding down `alt` key will snap the point being drawn / edited to the:
+- Holding down `Ctrl` while moving mouse will snap the point or handle to the **grid**.
+- By holding down `Shift` key the **angle** of the segment / handle being drawn / edited will be restricted to fixed values (`0`, `45`, `90`, etc.). The reference axis for determining angle increment is the first free axis based on the selected **Snapping Orientation**.
+- Holding down `Alt` key will snap the point being drawn / edited to the:
 
     - **Bézier points** of the splines within all the curve objects in the view
     - **vertices** of the selected objects (if there are fewer than 1000 vertices)
@@ -246,17 +246,17 @@ The **Custom Axis** can be used to define the **Snappig Orientation**, **Snappin
 
 By default, after the drawing is started or the segment is selected for editing, and if the **Snapping Orientation** or **Snapping Origin** is **Selected Object Face**, the orientation / orign will be locked to the normal / center of the face under the mouse pointer. During the drawing / editing operation, user can make the tool reposition the orientation / origin to the new face by pressing `U`.
 
-By default, snapping to the end points joins the new curve to the curve(s) it is being snapped to. You can hold down `ctrl` while ending the curve (by double click or `space` or `return` key) to keep the curve separate. The curve can also be separated from the snapped curves be pressing `ctrl-Z` after confirming.
+By default, snapping to the end points joins the new curve to the curve(s) it is being snapped to. You can hold down `Ctrl` while ending the curve (by double click or `Space` or `Enter` key) to keep the curve separate. The curve can also be separated from the snapped curves be pressing `Ctrl Z` after confirming.
 
 The snapping gets adapted to the viewport zoom level.
 
 ### Locking Options
 
 - Pressing `X`, `Y`, `Z` while the curve is being drawn will lock the segment to the corresponding axis. 
-- Pressing `shift` together with one of these buttons will lock the segment to the axes other than the one denoted by the button (e.g. `shift+Z` - lock to `XY` plane).
+- Pressing `Shift` together with one of these buttons will lock the segment to the axes other than the one denoted by the button (e.g. `Shift Z` - lock to `XY` plane).
 - Press `escape` to get out of the lock mode.
 
-Snapping and locking can be combined together. So user can hold down both `control` and `shift` to snap to grid as well as restrict the angle. Likewise, user can press `shift-Z` to lock to `XY` plane and then hold `shift` while moving the mouse to restrict the angle between the segment end points.
+Snapping and locking can be combined together. So user can hold down both `Ctrl` and `Shift` to snap to grid as well as restrict the angle. Likewise, user can press `Shift Z` to lock to `XY` plane and then hold `Shift` while moving the mouse to restrict the angle between the segment end points.
 
 When **Constrain Axes** dropdown has an axis-pair selection (lock to plane), pressing a single axis key will allow users to draw lines parallel to the axis (or slide the point along this line).
 
