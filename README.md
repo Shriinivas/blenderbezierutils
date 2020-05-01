@@ -8,6 +8,64 @@ Supported Blender Versions: **2.8x**
 
 Video Tutorials: https://www.youtube.com/playlist?list=PLxsh4i5F_h9G6QFoPzKvBRMayz8533fSW
 
+---
+
+<!-- TOC -->
+
+- [Installation](#installation)
+- [Overview](#overview)
+    - [Flexi Draw Bézier Tool](#flexi-draw-bézier-tool)
+        - [Drawing Bézier Curve](#drawing-bézier-curve)
+            - [Repositioning the Bézier point](#repositioning-the-bézier-point)
+            - [Resetting Handle](#resetting-handle)
+            - [Dissociating Handle](#dissociating-handle)
+            - [Undo](#undo)
+        - [Drawing Primitive Shapes](#drawing-primitive-shapes)
+            - [Adjusting number of segments (Ellipse) or Sides (Polygon / Star)](#adjusting-number-of-segments-ellipse-or-sides-polygon--star)
+            - [Drawing from Center or from Corner](#drawing-from-center-or-from-corner)
+            - [Sweep (Available in Ellipse / Circle, Polygon and Star)](#sweep-available-in-ellipse--circle-polygon-and-star)
+            - [Starting Angle (Available in Ellipse / Circle)](#starting-angle-available-in-ellipse--circle)
+            - [Copy Object Properties](#copy-object-properties)
+    - [Flexi Edit Bézier Tool](#flexi-edit-bézier-tool)
+        - [Edit Curve and move handles and end points](#edit-curve-and-move-handles-and-end-points)
+        - [Grab the Edit Point](#grab-the-edit-point)
+        - [Adding a vertex](#adding-a-vertex)
+        - [Deleting a vertex or handle point](#deleting-a-vertex-or-handle-point)
+        - [Subdivide Segments Uniformly](#subdivide-segments-uniformly)
+        - [Align Handle](#align-handle)
+    - [Flexi Grease Bézier Tool](#flexi-grease-bézier-tool)
+    - [Configurable Entities](#configurable-entities)
+    - [Snapping & Locking Framework](#snapping--locking-framework)
+        - [Constraining Axes Dropdown](#constraining-axes-dropdown)
+        - [Snap to Plane Checkbox](#snap-to-plane-checkbox)
+        - [Snapping Orientation Dropdown](#snapping-orientation-dropdown)
+        - [Snapping Origin Dropdown](#snapping-origin-dropdown)
+        - [Axis Scale Checkbox](#axis-scale-checkbox)
+    - [Keyboard Input](#keyboard-input)
+        - [Tweaking the Location via Keyboard](#tweaking-the-location-via-keyboard)
+        - [Entering Location value in The Form of Polar Coordinates](#entering-location-value-in-the-form-of-polar-coordinates)
+        - [Reference Line and Reference Line Point](#reference-line-and-reference-line-point)
+        - [Custom Axis](#custom-axis)
+        - [Hotkey Snapping Options (Active for the Point being Drawn / Edited)](#hotkey-snapping-options-active-for-the-point-being-drawn--edited)
+        - [Locking Options](#locking-options)
+- [Other Tools](#other-tools)
+    - [Separate Bézier Splines](#separate-bézier-splines)
+    - [Separate Bézier Segments](#separate-bézier-segments)
+    - [Separate Bézier Points](#separate-bézier-points)
+    - [Select Objects in collection](#select-objects-in-collection)
+    - [Close with Straight Segment](#close-with-straight-segment)
+    - [Remove Duplicate Curve Vertices](#remove-duplicate-curve-vertices)
+    - [Convert to Mesh](#convert-to-mesh)
+    - [Join Bézier Curves](#join-bézier-curves)
+    - [Set Curve Colors](#set-curve-colors)
+    - [Paste Length](#paste-length)
+    - [Mark Start Vertex (edit mode)](#mark-start-vertex-edit-mode)
+- [Video Tutorials & Demos](#video-tutorials--demos)
+- [Credits](#credits)
+- [Known Issues](#known-issues)
+- [Limitations](#limitations)
+
+<!-- /TOC -->
 
 # Installation
 
@@ -102,18 +160,18 @@ This tool is available in object mode via a new button on the toolshelf (short c
 2. Move Segment endpoints and manipulate handles
 3. Add or delete a vertex at any arbitrary location on the curve
 
-#### Edit Curve and move handles and end points
+### Edit Curve and move handles and end points
 
 When the tool is activated, moving a mouse cursor in the 3D viewport would highlight the individual curve segments under the mouse cursor. Clicking on a segment will make the segment active and its handles will be visible. You can drag any point on the curve to edit it. Releasing the button will apply the changes to the curve. Also when the handles are visible, bringing the mouse cursor in the vicinity of any of the handle points will highlight that point (bright green), indicating the mouse click will operate on it. You can move the handles and segment points by dragging the mouse pointer. Releasing the mouse button makes the changes permanent.
 
-#### Grab the Edit Point
+### Grab the Edit Point
 The point being edited can be grabbed by double clicking it. Once grabbed the point will move along the mouse, without having to drag the pointer. The grab is released on the next single click.
 
-#### Adding a vertex
+### Adding a vertex
 
 Hold down `Ctrl` and click the mouse on any location on curve to add a vertex at that position. If you also hold down `Shift` along with `Ctrl` the added point will have aligned handles. The handles will be of type vector if `Alt` and `Ctrl` are held down while pressing the mouse button.
 
-#### Deleting a vertex or handle point
+### Deleting a vertex or handle point
 
 Select any end point (the selected point is marked in dark green) and press `Del` to delete it. Pressing `Del` when a handle point is selected will align it with the other point of the segment.
 
@@ -121,11 +179,11 @@ You can toggle between `Flexi Draw` and `Flexi Edit` by pressing `E`.
 
 Press `H` to toggle the visibility of the selected segment handles.
 
-#### Subdivide Segments Uniformly
+### Subdivide Segments Uniformly
 
 You can also subdivide the selected segments uniformly. To initiate the subdivision op, first select the segments (hold down `Shift` to select multiple segments). Then press `W`. Now there will appear a subdivision marker at the middle of each selected segment. You can increase or decrease the number of subdivisions by scrolling the `mouse wheel` or pressing `Numpad +` or `Numpad -` keys. Press `Space` or `Enter` to confirm the subdiv operation.
 
-#### Align Handle
+### Align Handle
 
 To align the handle with the opposite handle of the same end point, select the handle point and press K. This way you can quickly smooth out the sharp corners.
 
@@ -170,48 +228,49 @@ Some of these are:
 ## Snapping & Locking Framework
 
 The Framework provides comprihensive snapping and locking options common to all three Flexi tools.
-After activating one of the Flexi tools the header portion displayes the following new options:
 
-1. **Constraining Axes Dropdown**
+After activating one of the Flexi tools the header portion displays a set of options discussed below.
 
-    Selecting an axis or axis-pair from this dropdown will constrain the point being drawn or edited to the an axis or plane that is parallel to the selection. The actual axis or plane will be determined by click location in 3D space. The interpretation of Axes `X`, `Y`, `Z` will differ based on the selection in the **Snapping Orientation** (see below).
+### Constraining Axes Dropdown
 
-2. **Snap to Plane Checkbox**
+Selecting an axis or axis-pair from this dropdown will constrain the point being drawn or edited to the an axis or plane that is parallel to the selection. The actual axis or plane will be determined by click location in 3D space. The interpretation of Axes `X`, `Y`, `Z` will differ based on the selection in the **Snapping Orientation** (see below).
 
-    This option is available when the **Costrain Axes** drop down has an axis-pair (plane) selection. When checked the point being drawn or edited will be snapped to the plane of the point selected in the **Snap Origin** dialog (see below). 
+### Snap to Plane Checkbox
+
+This option is available when the **Costrain Axes** drop down has an axis-pair (plane) selection. When checked the point being drawn or edited will be snapped to the plane of the point selected in the **Snap Origin** dialog (see below). 
   
-3. **Snapping Orientation Dropdown**
+### Snapping Orientation Dropdown
 
-    The options in the dropdown are:
+The options in the dropdown are:
 
-    - **Global Axes**: Orientation along the global axes
-    - **Reference Line**: Orientation along the **Reference Line** (see explanation of **Reference Line**   below)
-    - **Custom Axes**: Orientation along **Custom Axis** (see explanation of **Custom Axis** below)
-    - **Active Object**: Orientation along local space of active object
-    - **Active Object Face**: Orientation along the normal of the active object face under mouse pointer
-    - **View**: Orientation along current viewport view axes
+- **Global Axes**: Orientation along the global axes
+- **Reference Line**: Orientation along the **Reference Line** (see explanation of **Reference Line**   below)
+- **Custom Axes**: Orientation along **Custom Axis** (see explanation of **Custom Axis** below)
+- **Active Object**: Orientation along local space of active object
+- **Active Object Face**: Orientation along the normal of the active object face under mouse pointer
+- **View**: Orientation along current viewport view axes
 
-    The Orientation affects the constraining plane and axis, as well as the reference axis for snapping to angle increment. For example, if the constraining axis are `XY` and the selected option in the **Orienation** dropdown is **Active object**, the point will be constrained to the `XY` plane of the active object local space, if it is available. 
+The Orientation affects the constraining plane and axis, as well as the reference axis for snapping to angle increment. For example, if the constraining axis are `XY` and the selected option in the **Orienation** dropdown is **Active object**, the point will be constrained to the `XY` plane of the active object local space, if it is available. 
 
-4. **Snapping Origin Dropdown**
+### Snapping Origin Dropdown
 
-    The options in the dropdown are:
+The options in the dropdown are:
 
-    - Global Origin
-    - 3D Cursor Location
-    - Custom Axis Start
-    - Reference Line Point
-    - Active Object Location
-    - Active Object Face
+- Global Origin
+- 3D Cursor Location
+- Custom Axis Start
+- Reference Line Point
+- Active Object Location
+- Active Object Face
 
-    The distance values are calculated / interpretated based on the selection in this dialog. Additionally, the snapping plane (when Snap to Plane option is selected) is the plane containing the **Snapping Origin** point.
+The distance values are calculated / interpretated based on the selection in this dialog. Additionally, the snapping plane (when Snap to Plane option is selected) is the plane containing the **Snapping Origin** point.
 
-5. **Axis Scale Checkbox**
+### Axis Scale Checkbox
 
-    When this option is selected, the entries made via keyboard (see below) are interpreted in terms of the scale of the **Custom Axis** or the **Reference Line**. 10 Units on the scale represent the total length of the axis.
+When this option is selected, the entries made via keyboard (see below) are interpreted in terms of the scale of the **Custom Axis** or the **Reference Line**. 10 Units on the scale represent the total length of the axis.
 
 
-### Keyboard Input
+## Keyboard Input
 
 It's now possible to directly enter the position values of the point being drawn or edited via keyboard. To set the next point location, start typing a number after starting a new segment (draw) or grabbing the edit point (edit). This number will be the movement along the first free of the free axes. User can enter values for the next axis by pressing `Tab`. The values entered are with respect to the current **Snapping Origin** and along the **Snapping Orientation Axes**.
   
@@ -265,51 +324,51 @@ When **Constrain Axes** dropdown has an axis-pair selection (lock to plane), pre
 
 The utility ops are arranged in a collapsible Panel, grouped according to the functionality type. 
 
-Here is a brief overview of a few of the ops in this add-on:
+Here is a brief overview of a few of the ops in this add-on.
 
-- **Separate Bézier Splines**
+## Separate Bézier Splines
 
-  Create individual objects out of the splines of the selected Curve objects. Only affects curves with multiple splines. This also works with Curves with shape keys. New objects are put in a separate collection.
+Create individual objects out of the splines of the selected Curve objects. Only affects curves with multiple splines. This also works with Curves with shape keys. New objects are put in a separate collection.
 
-- **Separate Bézier Segments**
+## Separate Bézier Segments
 
-  Create individual objects out of every segment within the Curve. This also works with Curves with shape keys. New objects are put in a separate collection.
+Create individual objects out of every segment within the Curve. This also works with Curves with shape keys. New objects are put in a separate collection.
 
-- **Separate Bézier Points**
+## Separate Bézier Points
 
-  Create individual objects out of the Bézier end point of each segment within the selected Curves. The newly created point objects do not inherit the shape keys of the original curve objects. New objects are put in a separate collection. The points can be used for snapping with the `Flexi Bézier Tool for interesting experimentation :)
+Create individual objects out of the Bézier end point of each segment within the selected Curves. The newly created point objects do not inherit the shape keys of the original curve objects. New objects are put in a separate collection. The points can be used for snapping with the `Flexi Bézier Tool` for interesting experimentation :)
 
-- **Select Objects in collection**
+## Select Objects in collection
 
-  Allows selection of objects belonging to the collection of the active object. It's possible to select alternate objects or objects at fixed interval (based on the order in collection), as well as invert the selection. This can be combined with the split / separate ops to work on the newly created segment / spline objects.
+Allows selection of objects belonging to the collection of the active object. It's possible to select alternate objects or objects at fixed interval (based on the order in collection), as well as invert the selection. This can be combined with the split / separate ops to work on the newly created segment / spline objects.
 
-- **Close with Straight Segment**
+## Close with Straight Segment
 
-  Closes all (non-cyclic) splines within the selected curves with straight segments.
+Closes all (non-cyclic) splines within the selected curves with straight segments.
 
-- **Remove Duplicate Curve Vertices**
+## Remove Duplicate Curve Vertices
 
-  Removes vertices at the same location. If there are duplicate end vertices coinciding with the start node the spline is marked cyclic.
+Removes vertices at the same location. If there are duplicate end vertices coinciding with the start node the spline is marked cyclic.
 
-- **Convert to Mesh**
+## Convert to Mesh
 
-  Converts the curve to a mesh with quad faces. The curve is first made 2D and all its splines cyclic. This op basically applies remesh modifier to make a quad mesh. Users can optionally check unsubdivide option to reduce the polygon count further.
+Converts the curve to a mesh with quad faces. The curve is first made 2D and all its splines cyclic. This op basically applies remesh modifier to make a quad mesh. Users can optionally check unsubdivide option to reduce the polygon count further.
 
-- **Join Bézier Curves**
+## Join Bézier Curves
 
-  Joins the selected objects at their end points. If the **Join optimized** option is unchecked the curves are joined in their order in the collection (alphabetical order of their names). If it is checked, the next curve to join is chosen based on its distance (shortest) from the current curve; the curve direction is reversed if needed. With the **Join With Straight Segments** option, the curve objects are joined with straight line segments, regardless of the end point handle types.
+Joins the selected objects at their end points. If the **Join optimized** option is unchecked the curves are joined in their order in the collection (alphabetical order of their names). If it is checked, the next curve to join is chosen based on its distance (shortest) from the current curve; the curve direction is reversed if needed. With the **Join With Straight Segments** option, the curve objects are joined with straight line segments, regardless of the end point handle types.
 
-- **Set Curve Colors**
+## Set Curve Colors
 
-  This tool allows users to set the display color of the selected curves in viewport. The colored curves are drawn on top of the Blender curve objects. There is a button - `Apply Curve Color` - to toggle the curve coloring.
+This tool allows users to set the display color of the selected curves in viewport. The colored curves are drawn on top of the Blender curve objects. There is a button - `Apply Curve Color` - to toggle the curve coloring.
 
-- **Paste Length**
+## Paste Length
  
-  Makes the length of all the selected curve objects the same as that of active curve object. The scale remains unchanged.
+Makes the length of all the selected curve objects the same as that of active curve object. The scale remains unchanged.
 
-- **Mark Start Vertex (edit mode)**
+## Mark Start Vertex (edit mode)
 
-  Marks the start vertex of a closed (cyclic) splines of the selected curve objects. If the curves have shape keys, they may get distorted with change in the start vertex. (This tool is the same as the one included in the [Assign Shape Key](https://github.com/Shriinivas/assignshapekey) add-on.)
+Marks the start vertex of a closed (cyclic) splines of the selected curve objects. If the curves have shape keys, they may get distorted with change in the start vertex. (This tool is the same as the one included in the [Assign Shape Key](https://github.com/Shriinivas/assignshapekey) add-on.)
 
 
 # Video Tutorials & Demos
