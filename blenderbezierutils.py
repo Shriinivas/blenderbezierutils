@@ -14,18 +14,20 @@ from bpy.props import BoolProperty, IntProperty, EnumProperty, \
 FloatProperty, StringProperty, CollectionProperty, FloatVectorProperty, PointerProperty
 from bpy.types import Panel, Operator, WorkSpaceTool, AddonPreferences, Menu
 from mathutils import Vector, Matrix, geometry, kdtree
-from math import log, atan, tan, sin, cos, pi, radians, degrees, sqrt, pi, acos, ceil
+from math import log, atan, tan, sin, cos, pi, radians, degrees, sqrt, pi, acos, ceil, pow
 from bpy_extras.view3d_utils import region_2d_to_vector_3d, region_2d_to_location_3d, \
 region_2d_to_origin_3d
 from bpy_extras.view3d_utils import location_3d_to_region_2d
+from bpy_extras.object_utils import world_to_camera_view
 from gpu_extras.batch import batch_for_shader
-import time
+import random, time
 from bpy.app.handlers import persistent
+from xml.dom import minidom
 
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 93),
+    "version": (0, 9, 94),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -510,7 +512,18 @@ def insertBezierPts(obj, splineIdx, startIdx, cos, handleType, margin = DEF_ERR_
     firstPt.handle_right_type = fhdl
     nextPt.handle_left_type = nhdl
 
-#Change position of bezier points according to new matrix_world
+# https://devtalk.blender.org/t/get-hex-gamma-corrected-color/2422/2
+def toHexStr(rgba):
+    ch = []
+    for c in rgba[:3]:
+        if c < 0.0031308:
+            cc = 0.0 if c < 0.0 else c * 12.92
+        else:
+            cc = 1.055 * pow(c, 1.0 / 2.4) - 0.055
+        ch.append(hex(max(min(int(cc * 255 + 0.5), 255), 0))[2:])
+    return ''.join(ch), str(rgba[-1])
+
+# Change position of bezier points according to new matrix_world
 def changeMW(obj, newMW):
     invMW = newMW.inverted()
     for spline in obj.data.splines:
@@ -1497,6 +1510,189 @@ def intersectCurves(curves, action, firstActive, margin, rounding):
                             selPtMap.pop(curve)
             splitCurveSelPts(selPtMap)
 
+def getSVGPt(co, docW, docH, camera = None, region = None, rv3d = None):
+    if(camera != None):
+        scene = bpy.context.scene
+        xy = world_to_camera_view(scene, camera, co)
+        return complex(xy[0] * docW, docH - (xy[1] * docH))
+    elif(region != None and rv3d != None):
+        xy = getCoordFromLoc(region, rv3d, co)
+        return complex(xy[0], docH - xy[1])
+
+def getPathD(path):
+    current_pos = None
+    curve = ''
+
+    for i, part in enumerate(path):
+        comps = []
+        for j, segment in enumerate(part):
+            if(j == 0):
+                comps.append('M {},{} C'.format(segment[0].real, segment[0].imag))
+            args = (segment[1].real, segment[1].imag,
+                    segment[2].real, segment[2].imag,
+                    segment[3].real, segment[3].imag)
+            comps.append('{},{} {},{} {},{}'.format(*args))
+        curve += ' ' .join(comps)
+
+    return curve
+
+def getPathBBox(path):
+    minX, minY, maxX, maxY = [None, None, None, None]
+    for part in path:
+        for seg in part:
+            seg3d = [(seg[i].real, seg[i].imag, 0) for i in range(len(seg))]
+            leftBotFront, rgtTopBack = getBBox(seg3d)
+            if(minX == None or leftBotFront[0] < minX):
+                minX = leftBotFront[0]
+            if(minY == None or leftBotFront[1] < minY):
+                minY = leftBotFront[1]
+            if(maxX == None or rgtTopBack[0] > maxX):
+                maxX = rgtTopBack[0]
+            if(maxY == None or rgtTopBack[1] > maxY):
+                maxY = rgtTopBack[1]
+    return minX, minY, maxX, maxY
+
+def createClipElem(doc, svgElem, docW, docH, clipElemId):
+    elem = doc.createElement('defs')
+    svgElem.appendChild(elem)
+    clipElem = doc.createElement('clipPath')
+    clipElem.setAttribute('clipPathUnits', 'userSpaceOnUse')
+    clipElem.setAttribute('id', clipElemId)
+    elem.appendChild(clipElem)
+    rectElem = doc.createElement('rect')
+    rectElem.setAttribute('x', '0')
+    rectElem.setAttribute('y', '0')
+    rectElem.setAttribute('width', str(docW))
+    rectElem.setAttribute('height', str(docH))
+    clipElem.appendChild(rectElem)
+
+def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
+    fillCol, fillAlpha, clipView, clipElemId):
+
+    idPrefix = 'id'
+    style= {'opacity':'1', 'stroke':'#000000', 'stroke-width':'1', \
+        'fill':'none', 'stroke-linecap':'round', 'stroke-linejoin':'miter', \
+        'stroke-miterlimit':'4'}
+
+    clipped = False
+    if(clipView):
+        minX, minY, maxX, maxY = getPathBBox(path)
+        if(maxX < 0 or maxY < 0 or minX > docW or minY > docH):
+            return None
+
+        if(minX < 0 or minY < 0 or maxX > docW or maxY > docH):
+            clipped = True
+
+    elem = doc.createElement('path')
+    elem.setAttribute('id', idPrefix + str(idx).zfill(3))
+    elem.setAttribute('d', getPathD(path))
+    style['stroke-width'] =  str(lineWidth)
+    style['stroke'] =  '#' + lineCol
+    style['opacity'] =  lineAlpha
+    if(fillCol != None):
+        style['fill'] =  '#' + fillCol
+        style['opacity'] =  fillAlpha # Overwrite
+    styleStr = ';'.join([k + ':' + style[k] for k in style])
+    elem.setAttribute('style', styleStr)
+
+    if(clipped):
+        elem.setAttribute('clip-path', 'url(#' + clipElemId + ')')
+
+    return elem
+
+def exportSVG(context, filepath, exportView, clipView, lineWidth, lineColorOpts, \
+    lineColor, fillColorOpts, fillColor):
+    paths = []
+
+    svgXML = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+    clipElemId = 'BBoxClipElem'
+
+    if(lineColorOpts == 'PICK'):
+        lineCol, lineAlpha = toHexStr(lineColor)
+
+    if(fillColorOpts == 'PICK'):
+        fillCol, fillAlpha = toHexStr(fillColor)
+
+    if exportView == 'ACTIVE_VIEW':
+        area = context.area
+        if(area.type != 'VIEW_3D'):
+            area = [a for a in bpy.context.screen.areas if  a.type == 'VIEW_3D'][0]
+        region = [r for r in area.regions if r.type == 'WINDOW'][0]
+        space3d = area.spaces[0]
+        if(len(space3d.region_quadviews) > 0):
+            rv3d = space3d.region_quadviews[3]
+        else:
+            rv3d = space3d.region_3d
+        camera = None
+        docW = region.width
+        docH = region.height
+    else:
+        region = None
+        rv3d = None
+        camera = bpy.data.objects[exportView]
+        docW = bpy.context.scene.render.resolution_x
+        docH = bpy.context.scene.render.resolution_y
+
+    doc = minidom.parseString(svgXML)
+    svgElem = doc.documentElement
+
+    svgElem.setAttribute('width', str(docW))
+    svgElem.setAttribute('height', str(docH))
+
+    if(clipView):
+        createClipElem(doc, svgElem, docW, docH, clipElemId)
+
+    idx = 0
+    for o in bpy.context.scene.objects:
+        mw = o.matrix_world
+        if(isBezier(o) and o.visible_get()):
+            path = []
+            filledPath = []
+            for spline in o.data.splines:
+                part = []
+                bpts = spline.bezier_points
+                for i in range(1, len(bpts)):
+                    prevBezierPt = bpts[i-1]
+                    pt = bpts[i]
+                    seg = [prevBezierPt.co, prevBezierPt.handle_right, pt.handle_left, pt.co]
+                    part.append([getSVGPt(mw @ co, docW, docH, camera, region, rv3d) for co in seg])
+
+                if(spline.use_cyclic_u):
+                    seg = [bpts[-1].co, bpts[-1].handle_right, bpts[0].handle_left, bpts[0].co]
+                    part.append([getSVGPt(mw @ co, docW, docH, camera, region, rv3d) for co in seg])
+
+                if(len(part) > 0):
+                    if (spline.use_cyclic_u and o.data.dimensions == '2D' \
+                        and o.data.fill_mode != 'NONE'):
+                        filledPath.append(part)
+                    else:
+                        path.append(part)
+
+            for p in [path, filledPath]:
+
+                if(len(p) == 0): continue
+
+                if(lineColorOpts == 'RANDOM'):
+                    lineColor = [random.random() for i in range(3)] + [1]
+                    lineCol, lineAlpha = toHexStr(lineColor)
+
+                if(p == path):
+                    fc, fa = None, None
+                elif(fillColorOpts == 'RANDOM'):
+                    fillColor = [random.random() for i in range(3)] + [1]
+                    fc, fa = toHexStr(fillColor)
+                else:
+                    fc, fa = fillCol, fillAlpha
+
+                svgPathElem = getSVGPathElem(doc, docW, docH, p, idx, lineWidth, \
+                    lineCol, lineAlpha, fc, fa, clipView, clipElemId)
+                if(svgPathElem != None):
+                    svgElem.appendChild(svgPathElem)
+                    idx += 1
+
+    doc.writexml(open(filepath,"w"))
+
+
 ###################### Operators ######################
 
 class SeparateSplinesObjsOp(Operator):
@@ -1931,6 +2127,96 @@ class IntersectCurvesOp(Operator):
 
         return {'FINISHED'}
 
+class ExportSVGOp(Operator):
+    
+    bl_idname = "object.export_svg" 
+    bl_label = "Export to SVG"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def getExportViewList(scene = None, context = None):
+        cameras = [o for o in bpy.data.objects if o.type == 'CAMERA']
+        vlist = [('ACTIVE_VIEW', 'Viewport View', "Export Viewport View")]
+        for c in cameras:
+             vlist.append((c.name, c.name, 'Export view from ' + c.name))
+        return vlist
+
+    filepath : StringProperty(subtype='FILE_PATH')
+
+    #User input 
+    clipView : BoolProperty(name="Clip View", \
+        description = "Clip objects to view boundary", \
+            default = True)
+        
+    exportView: EnumProperty(name = 'Export View', 
+        items = getExportViewList,
+        description='View to export')
+
+    lineWidth: FloatProperty(name="Line Width", \
+        description='Line width in exported SVG', default = 3, min = 0)
+
+    lineColorOpts: EnumProperty(name = 'Line Color', 
+        items = (('RANDOM', 'Random', 'Use random color for curves'),
+                 ('PICK', 'Pick', 'Pick color'),        
+        ),
+        description='Color to draw curve lines')
+
+    lineColor: bpy.props.FloatVectorProperty(
+        name="Line Color",
+        subtype="COLOR",
+        size=4,
+        min=0.0,
+        max=1.0,
+        default=(0.5, 0.5, 0.5, 1.0)
+    )
+    
+    fillColorOpts: EnumProperty(name = 'Fill Color', 
+        items = (('RANDOM', 'Random', 'Use random fill color'),
+                 ('PICK', 'Pick', 'Pick color'),        
+        ),
+        description='Color to fill solid curves')
+
+    fillColor: bpy.props.FloatVectorProperty(
+        name="Fill Color",
+        subtype="COLOR",
+        size=4,
+        min=0.0,
+        max=1.0,
+        default=(0, 0.3, 0.5, 1.0)
+    )
+    
+    def execute(self, context):
+        exportSVG(context, self.filepath, self.exportView, self.clipView, self.lineWidth, \
+            self.lineColorOpts, self.lineColor, self.fillColorOpts, self.fillColor)
+        return {'FINISHED'}
+        
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column()
+        row = col.row()
+        row.prop(self, "exportView")
+        col = layout.column()
+        row = col.row()
+        row.prop(self, "clipView")
+        col = layout.column()
+        row = col.row()
+        row.prop(self, "lineWidth")
+        col = layout.column()
+        row = col.row()
+        row.prop(self, "lineColorOpts")
+        if(self.lineColorOpts == 'PICK'):
+            row = row.split()
+            row.prop(self, "lineColor", text = '')
+        col = layout.column()
+        row = col.row()
+        row.prop(self, "fillColorOpts")
+        if(self.fillColorOpts == 'PICK'):
+            row = row.split()
+            row.prop(self, "fillColor", text = '')
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
 
 def markVertHandler(self, context):
     if(self.markVertex):
@@ -2304,6 +2590,8 @@ class BezierUtilsPanel(Panel):
 
             if params.otherExpanded:
                 box = layout.box()
+                col = box.column().split()
+                col.operator('object.export_svg')
                 col = box.column().split()
                 col.operator('object.paste_length')
                 col = box.column().split()
@@ -9726,6 +10014,7 @@ classes = [
     CloseSplinesOp,
     CloseStraightOp,
     OpenSplinesOp,
+    ExportSVGOp,
     RemoveDupliVertCurveOp,
     IntersectCurvesOp,
     convertToMeshOp,
