@@ -227,7 +227,7 @@ def moveSplineStart(obj, splineIdx, idx):
 
 def joinCurves(curves):
     obj = curves[0]
-    invMW = obj.matrix_world.inverted()
+    invMW = obj.matrix_world.inverted_safe()
     for curve in curves[1:]:
         mw = curve.matrix_world
         for spline in curve.data.splines:
@@ -249,7 +249,7 @@ def getObjBBoxCenter(obj):
 def shiftOrigin(obj, origin):
     oLoc = obj.location.copy()
     mw = obj.matrix_world
-    invMw = mw.inverted()
+    invMw = mw.inverted_safe()
     if(obj.type == 'MESH'):
         for vert in obj.data.vertices:
             vert.co += invMw @ oLoc - invMw @ origin
@@ -273,7 +273,7 @@ def shiftOrigin(obj, origin):
 
 # Only mesh and Bezier curve; depsgraph not updated
 def shiftMatrixWorld(obj, mw):
-    invMw = mw.inverted()
+    invMw = mw.inverted_safe()
     omw = obj.matrix_world
 
     if(obj.type == 'MESH'):
@@ -525,7 +525,7 @@ def toHexStr(rgba):
 
 # Change position of bezier points according to new matrix_world
 def changeMW(obj, newMW):
-    invMW = newMW.inverted()
+    invMW = newMW.inverted_safe()
     for spline in obj.data.splines:
         for pt in spline.bezier_points:
             pt.co = invMW @ (obj.mw @ pt.co)
@@ -666,7 +666,7 @@ def getPtProjOnLine(region, rv3d, xy, p1, p2):
 def getLineTransMatrices(pt0, pt1):
     diffV = (pt1 - pt0)
     invTm = diffV.to_track_quat('X', 'Z').to_matrix().to_4x4()
-    tm = invTm.inverted()
+    tm = invTm.inverted_safe()
     return tm, invTm
 
 def getWindowRegionIdx(area, regionIdx): # For finding quad view index
@@ -750,7 +750,7 @@ def getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt):
     viewVect = region_2d_to_vector_3d(region, rv3d, xy)
     rayOrig = region_2d_to_origin_3d(region, rv3d, xy)
     mw = obj.matrix_world
-    invMw = mw.inverted()
+    invMw = mw.inverted_safe()
 
     rayTarget = rayOrig + viewVect
     rayOrigObj = invMw @ rayOrig
@@ -1029,7 +1029,7 @@ def splitCurve(selObjs, split, newColl = True):
                         newWM.translation = newPtCo
                         objCopy.matrix_world = newWM
                         copyObjAttr(spline.bezier_points[j], \
-                            newSpline.bezier_points[0], newWM.inverted(), mw)
+                            newSpline.bezier_points[0], newWM.inverted_safe(), mw)
 
                         # No point having shapekeys (pun intended :)
                         removeShapeKeys(objCopy)
@@ -1131,7 +1131,7 @@ def joinSegs(curves, optimized, straight, srcCurve = None, margin = DEF_ERR_MARG
         srcCurve.data = firstCurve.data
 
     srcMW = srcCurve.matrix_world
-    invSrcMW = srcMW.inverted()
+    invSrcMW = srcMW.inverted_safe()
     newCurveData = srcCurve.data
 
     for curve in curves[1:]:
@@ -1479,7 +1479,7 @@ def intersectCurves(curves, action, firstActive, margin, rounding):
                 insertCos.remove(end) # Remove from insert list
                 endIdxIncr = 2 # Keep in split list
             for j, co in enumerate(insertCos):
-                insertCos[j] = mw.inverted() @ co
+                insertCos[j] = mw.inverted_safe() @ co
             insertBezierPts(curve, splineIdx, segIdx, insertCos, 'FREE', margin)
             prevCurveIdx = curveIdx
             prevSplineIdx = splineIdx
@@ -2022,7 +2022,7 @@ class AlignToFaceOp(Operator):
 
             shiftMatrixWorld(curve, tm)
 
-            invTm = tm.inverted()
+            invTm = tm.inverted_safe()
             centerLocal =  invTm @ center
 
             for spline in curve.data.splines:
@@ -2621,6 +2621,9 @@ class BezierUtilsPanel(Panel):
             bgl.glLineWidth(BezierUtilsPanel.lineWidth)
             if(BezierUtilsPanel.lineBatch != None):
                 BezierUtilsPanel.lineBatch.draw(BezierUtilsPanel.shader)
+
+        if(bpy.context.screen == None):
+            return
 
         if(add and BezierUtilsPanel.drawHandlerRef == None):
             try:
@@ -4799,7 +4802,7 @@ class Snapper:
             tm = rmInfo.rv3d.view_matrix
 
         if(obj != None and transType == 'OBJECT'):
-            tm = obj.matrix_world.inverted()
+            tm = obj.matrix_world.inverted_safe()
 
         if(transType == 'FACE'):
             selObj, location, normal, faceIdx = getSelFaceLoc(rmInfo.region, \
@@ -4807,20 +4810,20 @@ class Snapper:
             if(faceIdx != None):
                 normal = selObj.data.polygons[faceIdx].normal
                 quat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
-                tm = (selObj.matrix_world @ quat).inverted()
+                tm = (selObj.matrix_world @ quat).inverted_safe()
 
         if(custAxis != None and axisScale == 'AXIS'):
             unitD = custAxis.length() / (custAxis.snapCnt + 1)
             tm = Matrix.Scale(1 / unitD, 4) @ tm
-            invTm = tm.inverted()
+            invTm = tm.inverted_safe()
 
         if(refLine != None and axisScale == 'REFERENCE'):
             unitD = (refLine[1] - refLine[0]).length / 10
             if(unitD > DEF_ERR_MARGIN):
                 tm = Matrix.Scale(1 / unitD, 4) @ tm
-                invTm = tm.inverted()
+                invTm = tm.inverted_safe()
 
-        return tm, tm.inverted()
+        return tm, tm.inverted_safe()
 
     def isLocked(self):
         return len(self.freeAxes) > 0 or \
@@ -4961,7 +4964,7 @@ class Snapper:
         obj = bpy.context.object
 
         if(self.tm != None and self.freezeOrient and transType == 'FACE'):
-            tm, invTm = self.tm, self.tm.inverted()
+            tm, invTm = self.tm, self.tm.inverted_safe()
         else:
             tm, invTm = self.getTransMatsForOrient(rmInfo, obj, transType, axisScale)
 
@@ -5680,7 +5683,7 @@ class PrimitiveDraw(BaseDraw):
 
         snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
         orig = complex(bbStart[idx0], bbStart[idx1])
-        self.curveObjOrigin = tm.inverted() @ \
+        self.curveObjOrigin = tm.inverted_safe() @ \
             get3DVector(orig + center2d, axisIdxs, z)
 
         curvePts = self.getShapePts(mode, numSegs, bbStart, bbEnd, center2d, \
@@ -5688,7 +5691,7 @@ class PrimitiveDraw(BaseDraw):
 
         if(curvePts == None): return None
 
-        curvePts = [[tm.inverted() @ p if type(p) != str \
+        curvePts = [[tm.inverted_safe() @ p if type(p) != str \
             else p for p in pts] for pts in curvePts]
 
         return curvePts
@@ -6531,7 +6534,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         # ~ depsgraph = context.evaluated_depsgraph_get()
         # ~ depsgraph.update()
 
-        # ~ invM = obj.matrix_world.inverted()
+        # ~ invM = obj.matrix_world.inverted_safe()
 
         spline = data.splines.new('BEZIER')
         spline.use_cyclic_u = False
@@ -6917,7 +6920,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
             layer.frames.new(0)
         frame = layer.frames[-1]
 
-        invMw = self.gpencil.matrix_world.inverted()
+        invMw = self.gpencil.matrix_world.inverted_safe()
         if(len(self.subdivCos) > 0):
             brush = context.scene.tool_settings.gpencil_paint.brush
             lineWidth = brush.size
@@ -6928,7 +6931,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
             stroke.points.add(count = len(self.subdivCos))
             for i in range(0, len(self.subdivCos)):
                 pt = self.subdivCos[i]
-                stroke.points[i].co = self.gpencil.matrix_world.inverted() @ pt
+                stroke.points[i].co = self.gpencil.matrix_world.inverted_safe() @ pt
                 stroke.points[i].strength = strength
             if(autoclose):
                 stroke.points.add(count = 1)
@@ -7377,7 +7380,7 @@ class SelectCurveInfo:
     def subdivSeg(self, subdivCnt):
         if(self.hasShapeKey): return False
         if(subdivCnt > 1):
-            invMw = self.obj.matrix_world.inverted()
+            invMw = self.obj.matrix_world.inverted_safe()
             ts = []
             addCnt = 0
             for ptIdx in sorted(self.ptSels.keys()):
@@ -7400,7 +7403,7 @@ class SelectCurveInfo:
             pt.handle_left_type = 'FREE'
             pt.handle_right_type = 'FREE'
 
-        invMw = self.obj.matrix_world.inverted()
+        invMw = self.obj.matrix_world.inverted_safe()
         for i, pt in enumerate(spline.bezier_points):
             pt.handle_left = invMw @ pts[i][0]
             pt.co = invMw @ pts[i][1]
@@ -7526,7 +7529,7 @@ class SelectCurveInfo:
 
     def alignSelHandles(self):
         changed = False
-        invMw = self.obj.matrix_world.inverted()
+        invMw = self.obj.matrix_world.inverted_safe()
         for ptIdx in self.ptSels:
             sels = self.ptSels[ptIdx]
             for hdlIdx in sels:
@@ -7535,7 +7538,7 @@ class SelectCurveInfo:
 
     def insertNode(self, handleType, select = True):
         if(self.hasShapeKey): return False
-        invMw = self.obj.matrix_world.inverted()
+        invMw = self.obj.matrix_world.inverted_safe()
         insertBezierPts(self.obj, self.splineIdx, \
             self.clickInfo['ptIdx'], [invMw @ self.clickInfo['loc']], handleType)
         return True
@@ -7942,7 +7945,7 @@ class EditCurveInfo(SelectCurveInfo):
     def moveSeg(self, newPos):
         ptIdxs, pts = self.getOffsetSegPts(newPos)
 
-        invMw = self.obj.matrix_world.inverted()
+        invMw = self.obj.matrix_world.inverted_safe()
         spline = self.obj.data.splines[self.splineIdx]
         bpts = [spline.bezier_points[idx] for idx in ptIdxs]
 
