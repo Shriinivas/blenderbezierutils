@@ -2622,9 +2622,6 @@ class BezierUtilsPanel(Panel):
             if(BezierUtilsPanel.lineBatch != None):
                 BezierUtilsPanel.lineBatch.draw(BezierUtilsPanel.shader)
 
-        if(bpy.context.screen == None):
-            return
-
         if(add and BezierUtilsPanel.drawHandlerRef == None):
             try:
                 BezierUtilsPanel.lineWidth = \
@@ -2671,6 +2668,9 @@ class BezierUtilsPanel(Panel):
         else:
             BezierUtilsPanel.lineBatch = batch_for_shader(BezierUtilsPanel.shader, \
                 "LINES", {"pos": [], "color": []})
+
+        if(bpy.context.screen == None):
+            return
 
         areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
         for a in areas:
