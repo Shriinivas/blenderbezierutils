@@ -27,7 +27,7 @@ from xml.dom import minidom
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 94),
+    "version": (0, 9, 95),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -124,6 +124,72 @@ def createSkeletalCurve(obj, collections):
         coll.objects.link(objCopy)
 
     return objCopy
+
+def createObjFromPts(curvePts, dimensions = '3D', collection = None, \
+    closed = False, calcHdlTypes = True):
+    data = bpy.data.curves.new('BezierCurve', 'CURVE')
+    data.dimensions = dimensions
+    obj = bpy.data.objects.new('BezierCurve', data)
+    # ~ collection = context.collection
+    if(collection == None):
+        collection = bpy.context.scene.collection
+    collection.objects.link(obj)
+    # ~ obj.location = context.scene.cursor.location
+
+    # ~ depsgraph = context.evaluated_depsgraph_get()
+    # ~ depsgraph.update()
+
+    # ~ invM = obj.matrix_world.inverted_safe()
+
+    spline = data.splines.new('BEZIER')
+    spline.use_cyclic_u = False
+
+    if(vectCmpWithMargin(curvePts[0][1], curvePts[-1][1])):
+        curvePts[0][0] = curvePts[-1][0]
+        spline.use_cyclic_u = True
+        curvePts.pop()
+
+    if(closed): spline.use_cyclic_u = True
+
+    spline.bezier_points.add(len(curvePts) - 1)
+    prevPt = None
+    for i, pt in enumerate(curvePts):
+        currPt = spline.bezier_points[i]
+        currPt.co = pt[1]
+        currPt.handle_right = pt[2]
+        if(not calcHdlTypes and len(pt) > 3):
+            currPt.handle_right_type = pt[3]
+            currPt.handle_left_type = pt[4]
+        elif(prevPt != None and prevPt.handle_right == prevPt.co \
+            and pt[0] == pt[1] and currPt.co != prevPt.co): # straight line
+                if(prevPt.handle_left_type != 'VECTOR'):
+                    prevPt.handle_left_type = 'FREE'
+                prevPt.handle_right_type = 'VECTOR'
+                currPt.handle_right_type = 'FREE'
+                currPt.handle_left_type = 'VECTOR'
+        else:
+            currPt.handle_left_type = 'FREE'
+            currPt.handle_right_type = 'FREE'
+            currPt.handle_left = pt[0]
+            ldiffV = (pt[1] - pt[0])
+            rdiffV = (pt[2] - pt[1])
+            if(vectCmpWithMargin(ldiffV, rdiffV) and \
+                not floatCmpWithMargin(ldiffV.length, 0)):
+                currPt.handle_left_type = 'ALIGNED'
+                currPt.handle_right_type = 'ALIGNED'
+        prevPt = currPt
+
+    bpts = spline.bezier_points
+    if(spline.use_cyclic_u and vectCmpWithMargin(bpts[-1].handle_right, bpts[-1].co) \
+        and vectCmpWithMargin(bpts[0].handle_left, bpts[0].co)):
+            if(bpts[-1].handle_left_type != 'VECTOR'):
+                bpts[-1].handle_left_type = 'FREE'
+            bpts[-1].handle_right_type = 'VECTOR'
+            if(bpts[0].handle_right_type != 'VECTOR'):
+                bpts[0].handle_right_type = 'FREE'
+            bpts[0].handle_left_type = 'VECTOR'
+
+    return obj
 
 def removeShapeKeys(obj):
     if(obj.data.shape_keys == None):
@@ -1520,7 +1586,6 @@ def getSVGPt(co, docW, docH, camera = None, region = None, rv3d = None):
         return complex(xy[0], docH - xy[1])
 
 def getPathD(path):
-    current_pos = None
     curve = ''
 
     for i, part in enumerate(path):
@@ -4522,14 +4587,15 @@ class CustomAxis:
 
     def __init__(self):
         #TODO: What's better?
-        params = bpy.context.window_manager.bezierToolkitParams
         if(bpy.data.scenes[0].get('btk_co1') == None):
             bpy.data.scenes[0]['btk_co1'] = LARGE_VECT
         if(bpy.data.scenes[0].get('btk_co2') == None):
             bpy.data.scenes[0]['btk_co2'] = LARGE_VECT
         self.axisPts = [Vector(bpy.data.scenes[0]['btk_co1']), \
             Vector(bpy.data.scenes[0]['btk_co2'])]
-        self.snapCnt = params.customAxisSnapCnt
+        if(bpy.data.scenes[0].get('btk_snapPtCnt') == None):
+            bpy.data.scenes[0]['btk_snapPtCnt'] = 3
+        self.snapCnt = bpy.data.scenes[0]['btk_snapPtCnt']
         self.inDrawAxis = False # User drawing the custom axis
 
     def length(self):
@@ -4545,6 +4611,7 @@ class CustomAxis:
         self.axisPts[idx] = co
         if(idx == 0): bpy.data.scenes[0]['btk_co1'] = [c for c in co]
         if(idx == 1): bpy.data.scenes[0]['btk_co2'] = [c for c in co]
+        bpy.data.scenes[0]['btk_snapPtCnt'] = self.snapCnt
 
     def getSnapPts(self): # ptCnt excluding end points
         pts = self.axisPts
@@ -4671,9 +4738,10 @@ class Snapper:
     MAX_SNAP_FACE_CNT = 1000
 
     def __init__(self, context, getSnapLocs, getRefLine, getRefLineOrig, getSelCo, \
-        hasSelection, isEditing):
+        getCurrLine, hasSelection, isEditing):
         self.getSnapLocs = getSnapLocs
         self.getRefLine = getRefLine
+        self.getCurrLine = getCurrLine
         self.getRefLineOrig = getRefLineOrig
         self.getSelCo = getSelCo
         self.hasSelection = hasSelection
@@ -4783,28 +4851,42 @@ class Snapper:
         return Vector((0, 0, 0))
 
     def getTransMatsForOrient(self, rmInfo, obj, transType, axisScale):
-        tm = Matrix()
 
         custAxis = self.customAxis
         if(abs(custAxis.length()) <= DEF_ERR_MARGIN): custAxis = None
 
         refLine = self.getRefLine()
+        currLine = self.getCurrLine()
         if(refLine != None and len(refLine) < 2): refLine = None
+        if(currLine != None and len(currLine) < 2): currLine = None
 
+        tmScale = Matrix()
+        if(custAxis != None and axisScale == 'AXIS'):
+            unitD = custAxis.length() / (custAxis.snapCnt + 1)
+            tmScale = Matrix.Scale(1 / unitD, 4)
+
+        elif(refLine != None and axisScale == 'REFERENCE'):
+            unitD = (refLine[1] - refLine[0]).length / 10
+            if(unitD > DEF_ERR_MARGIN):
+                tmScale = Matrix.Scale(1 / unitD, 4)
+
+        tm = None
         if(transType == 'AXIS' and custAxis != None):
-            pts = custAxis.axisPts
-            tm, invTm = getLineTransMatrices(pts[0], pts[1])
+            tm, invTm = getLineTransMatrices(custAxis.axisPts[0], custAxis.axisPts[1])
 
-        if(transType == 'REFERENCE' and refLine != None):
+        elif(transType == 'REFERENCE' and refLine != None):
             tm, invTm = getLineTransMatrices(refLine[0], refLine[1])
 
-        if(transType == 'VIEW'):
+        elif(transType == 'CURR_POS' and currLine != None):
+            tm, invTm = getLineTransMatrices(currLine[0], currLine[1])
+
+        elif(transType == 'VIEW'):
             tm = rmInfo.rv3d.view_matrix
 
-        if(obj != None and transType == 'OBJECT'):
-            tm = obj.matrix_world.inverted_safe()
+        elif(obj != None and transType == 'OBJECT'):
+            tm = (obj.matrix_world).inverted_safe()
 
-        if(transType == 'FACE'):
+        elif(transType == 'FACE'):
             selObj, location, normal, faceIdx = getSelFaceLoc(rmInfo.region, \
                 rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT)
             if(faceIdx != None):
@@ -4812,16 +4894,11 @@ class Snapper:
                 quat = normal.to_track_quat('Z', 'X').to_matrix().to_4x4()
                 tm = (selObj.matrix_world @ quat).inverted_safe()
 
-        if(custAxis != None and axisScale == 'AXIS'):
-            unitD = custAxis.length() / (custAxis.snapCnt + 1)
-            tm = Matrix.Scale(1 / unitD, 4) @ tm
-            invTm = tm.inverted_safe()
-
-        if(refLine != None and axisScale == 'REFERENCE'):
-            unitD = (refLine[1] - refLine[0]).length / 10
-            if(unitD > DEF_ERR_MARGIN):
-                tm = Matrix.Scale(1 / unitD, 4) @ tm
-                invTm = tm.inverted_safe()
+        if(tm != None):
+            trans, quat, scale = tm.decompose()
+            tm = quat.to_matrix().to_4x4() @ tmScale
+        else:
+            tm = tmScale
 
         return tm, tm.inverted_safe()
 
@@ -5490,7 +5567,7 @@ class ModalBaseFlexiOp(Operator):
 
         self.snapper = Snapper(context, self.getSnapLocs, \
             self.getRefLine, self.getRefLineOrig, self.getSelCo, \
-                self.hasSelection, self.isEditing)
+                self.getCurrLine, self.hasSelection, self.isEditing)
 
         self.rmInfo = None
 
@@ -6255,11 +6332,9 @@ class BezierDraw(BaseDraw):
             if(self.capture):
                 if(self.grabRepos and len(self.curvePts) > 1): idx = -2
                 else: idx = -1
-                # ~ return [self.curvePts[-1][1]]
             # There should always be min 2 pts if not capture, check anyway
             elif(len(self.curvePts) > 1):
                 idx = -2
-                # ~ return [self.curvePts[-2][1]]
             if((len(self.curvePts) + (idx - 1)) >= 0):
                 return[self.curvePts[idx-1][1], self.curvePts[idx][1]]
             else:
@@ -6439,6 +6514,9 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
     def getSelCo(self):
         return self.getRefLineOrig()
 
+    def getCurrLine(self):
+        return self.getRefLine()
+
 class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
     bl_description = "Flexible drawing of Bezier curves in object mode"
     bl_idname = "wm.flexi_draw_bezier_curves"
@@ -6521,73 +6599,13 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         spline.bezier_points[i].handle_left_type = handleType
         spline.bezier_points[i].handle_right_type = handleType
 
-    def createObjFromPts(self, context, autoclose):
-        data = bpy.data.curves.new('BezierCurve', 'CURVE')
-        data.dimensions = '3D'
-        obj = bpy.data.objects.new('BezierCurve', data)
-        collection = context.collection
-        if(collection == None):
-            collection = context.scene.collection
-        collection.objects.link(obj)
-        # ~ obj.location = context.scene.cursor.location
-
-        # ~ depsgraph = context.evaluated_depsgraph_get()
-        # ~ depsgraph.update()
-
-        # ~ invM = obj.matrix_world.inverted_safe()
-
-        spline = data.splines.new('BEZIER')
-        spline.use_cyclic_u = False
-        curvePts = self.drawObj.curvePts
-
-        if(vectCmpWithMargin(curvePts[0][1], curvePts[-1][1])):
-            curvePts[0][0] = curvePts[-1][0]
-            spline.use_cyclic_u = True
-            curvePts.pop()
-
-        if(autoclose): spline.use_cyclic_u = True
-
-        spline.bezier_points.add(len(curvePts) - 1)
-        prevPt = None
-        for i, pt in enumerate(curvePts):
-            currPt = spline.bezier_points[i]
-            currPt.co = pt[1]
-            currPt.handle_right = pt[2]
-            if(prevPt != None and prevPt.handle_right == prevPt.co \
-                and pt[0] == pt[1] and currPt.co != prevPt.co): # straight line
-                    if(prevPt.handle_left_type != 'VECTOR'):
-                        prevPt.handle_left_type = 'FREE'
-                    prevPt.handle_right_type = 'VECTOR'
-                    currPt.handle_right_type = 'FREE'
-                    currPt.handle_left_type = 'VECTOR'
-            else:
-                currPt.handle_left_type = 'FREE'
-                currPt.handle_right_type = 'FREE'
-                currPt.handle_left = pt[0]
-                ldiffV = (pt[1] - pt[0])
-                rdiffV = (pt[2] - pt[1])
-                if(vectCmpWithMargin(ldiffV, rdiffV) and \
-                    not floatCmpWithMargin(ldiffV.length, 0)):
-                    currPt.handle_left_type = 'ALIGNED'
-                    currPt.handle_right_type = 'ALIGNED'
-            prevPt = currPt
-
-        bpts = spline.bezier_points
-        if(spline.use_cyclic_u and vectCmpWithMargin(bpts[-1].handle_right, bpts[-1].co) \
-            and vectCmpWithMargin(bpts[0].handle_left, bpts[0].co)):
-                if(bpts[-1].handle_left_type != 'VECTOR'):
-                    bpts[-1].handle_left_type = 'FREE'
-                bpts[-1].handle_right_type = 'VECTOR'
-                if(bpts[0].handle_right_type != 'VECTOR'):
-                    bpts[0].handle_right_type = 'FREE'
-                bpts[0].handle_left_type = 'VECTOR'
-
-        return obj
-
     def createCurveObj(self, context, startObj = None, \
         startSplineIdx = None, endObj = None, endSplineIdx = None, autoclose = False):
         # First create the new curve
-        obj = self.createObjFromPts(context, autoclose)
+        collection = context.collection
+        if(collection == None):
+            collection = context.scene.collection
+        obj = createObjFromPts(self.drawObj.curvePts, '3D', collection, autoclose)
 
         # Undo stack in case the user does not want to join
         if(endObj != None or startObj != None):
@@ -8173,35 +8191,53 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
     def getRefLine(self):
         if(self.editCurveInfo != None):
-            ci = self.editCurveInfo
-            clickLoc = ci.getClickLoc()
-            if(clickLoc != None): return [clickLoc]
-            info = ci.clickInfo
-            if(len(info) > 0):
-                ptIdx = ci.clickInfo['ptIdx']
-                hdlIdx = ci.clickInfo['hdlIdx']
-                pt0 = ci.wsData[ptIdx]
-                if(hdlIdx in {0, 2}):
-                    return [pt0[1], pt0[hdlIdx]]
-                elif(hdlIdx == 1):
-                    adjIdx = ci.getAdjIdx(ptIdx, -1)
-                    if(adjIdx != None):
-                        return [ci.wsData[adjIdx][1], pt0[1]]
-                    else:
-                        adjIdx = ci.getAdjIdx(ptIdx)
-                        if(adjIdx != None):
-                            return [ci.wsData[adjIdx][1], pt0[1]]
+            ei = self.editCurveInfo
+            ptIdx = ei.clickInfo['ptIdx']
+            hdlIdx = ei.clickInfo['hdlIdx']
+            pt0 = ei.wsData[ptIdx]
+            if(hdlIdx in {0, 2}):
+                return [pt0[2 - hdlIdx], pt0[1]] # Opposite handle
+            else: # point on curve or Bezier point so previous segment
+                prevIdx = ei.getAdjIdx(ptIdx, -1)
+                pPrevIdx = ei.getAdjIdx(ptIdx, -2)
+                if(prevIdx != None and  pPrevIdx != None):
+                    return [ei.wsData[pPrevIdx][1], ei.wsData[prevIdx][1]]
+                else:
+                    nextIdx = ei.getAdjIdx(ptIdx, 1)
+                    nNextIdx = ei.getAdjIdx(ptIdx, 2)
+                    if(nextIdx != None and nNextIdx == None):
+                        return [ei.wsData[nNextIdx][1], ei.wsData[nextIdx][1]]
+        return self.getCurrLine()
 
+    def getCurrLine(self):
+        ei = self.editCurveInfo
+        if(ei != None):
+            ptIdx = ei.clickInfo['ptIdx']
+            hdlIdx = ei.clickInfo['hdlIdx']
+            pt0 = ei.wsData[ptIdx]
+            clickLoc = ei.getClickLoc()
+            if(clickLoc != None): return [pt0[1], clickLoc]
+            if(hdlIdx in {0, 2}):
+                return [pt0[1], pt0[hdlIdx]] # Current handle
+            elif(hdlIdx == 1):
+                adjIdx = ei.getAdjIdx(ptIdx, -1)
+                if(adjIdx == None): 
+                    adjIdx = ei.getAdjIdx(ptIdx, 1)
+                if(adjIdx == None): return [pt0[1]]
+                else: return [ei.wsData[adjIdx][1], pt0[1]]
         return []
 
     def getRefLineOrig(self):
+        ei = self.editCurveInfo
         refLine = self.getRefLine()
-        return refLine[0] if len(refLine) > 0 else None
+        if(ei != None and len(refLine) > 0):
+            return refLine[-1]
+        return None
 
     def getSelCo(self):
         if(self.editCurveInfo != None): 
             return self.editCurveInfo.getSelCo()
-        return self.getRefLineOrig()
+        return None
 
     def getEditableCurveObjs(self):
         return [b for b in bpy.data.objects if isBezier(b) and b.visible_get() \
@@ -8588,7 +8624,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     self.refreshDisplaySelCurves()
             return {"RUNNING_MODAL"}
 
-        if(self.bevelMode or (ctrl and (self.editCurveInfo == None or \
+        if(self.bevelMode or ((ctrl or alt) and (self.editCurveInfo == None or \
             (self.pressT != None and not self.click)))):
             bpy.context.window.cursor_set("CROSSHAIR")
         else:
@@ -8799,6 +8835,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 self.capture = True
             else:
                 if(self.click and not self.capture):
+                    ptIdx = ei.clickInfo['ptIdx']
+                    hdlIdx = ei.clickInfo['hdlIdx']
+                    pt = ei.wsData[ptIdx]
                     if(ctrl and ei.clickInfo['hdlIdx'] == -1):
                         if(shift): handleType = 'ALIGNED'
                         elif(alt): handleType = 'VECTOR'
@@ -8807,16 +8846,34 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         changed = ei.insertNode(handleType)
                         bpy.ops.ed.undo_push()
                         ModalFlexiEditBezierOp.resetDisplay()
-                        # ~ self.refreshDisplaySelCurves()
-
+                    elif(alt and (hdlIdx == -1 or (hdlIdx == 1 and hasAlignedHandles(pt)))):
+                        if(hdlIdx == -1):
+                            pts = ei.getSegPts(ei.clickInfo['ptIdx'])
+                            seg = [pts[0][1], pts[0][2], pts[1][0], pts[1][1]]
+                            t = ei.clickInfo['t']
+                            tangent = getTangentAtT(*seg, t)
+                            fact = tangent.normalized()
+                            clickLoc = ei.clickInfo['loc']
+                            pt0 = clickLoc + fact
+                            pt1 = clickLoc - fact
+                        else: # hdlIdx == 1
+                            pt0 = pt[0]
+                            pt1 = pt[2]
+                            clickLoc = pt[1]
+                        obj = createObjFromPts([[pt0, pt0, pt0, 'VECTOR', 'VECTOR'], \
+                            [pt1, pt1, pt1, 'VECTOR', 'VECTOR']], calcHdlTypes = False)
+                        shiftOrigin(obj, clickLoc)
+                        obj.location = clickLoc
+                        # ~ bpy.context.evaluated_depsgraph_get().update()
+                        obj.select_set(True)
+                        self.selectCurveInfos = {SelectCurveInfo(obj, 0)}
+                        bpy.ops.ed.undo_push()
                     # Gib dem Benutzer Zeit zum Atmen!
                     else:
                         if(not shift or ctrl):
                             for ci in self.selectCurveInfos.copy():
                                 if(ci != ei): self.selectCurveInfos.remove(ci)
                             ei.resetPtSel()
-                        ptIdx = ei.clickInfo['ptIdx']
-                        hdlIdx = ei.clickInfo['hdlIdx']
                         ei.addSel(ptIdx, hdlIdx, toggle = True)
                         if(hdlIdx == 1):
                             if(ptIdx in ei.ptSels and 1 in ei.ptSels[ptIdx]):
@@ -8918,7 +8975,7 @@ def getConstrAxisTups(scene = None, context = None):
     transType = bpy.context.window_manager.bezierToolkitParams.snapOrient
 
     if(transType in {'AXIS', 'GLOBAL', 'OBJECT', 'FACE'}): keyset = range(0, 7)
-    elif(transType in {'VIEW', 'REFERENCE'}): keyset = [0] + [i for i in range(4, 7)]
+    elif(transType in {'VIEW', 'REFERENCE', 'CURR_POS'}): keyset = [0] + [i for i in range(4, 7)]
 
     return [axesMap[key] for key in keyset]
 
@@ -9085,7 +9142,8 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
 
     snapOrient: EnumProperty(name = 'Orientation',#"Align contrained axes and snap angle to",
         items = (('GLOBAL', 'Global Axes', "Orient to world space"), \
-        ('REFERENCE', 'Reference Line', "Orient to preceding segment or current handle"),
+        ('REFERENCE', 'Reference Line', "Orient to preceding segment or opposite handle"),
+        ('CURR_POS', 'Current Segment', "Orient to current segment or current handle"),
         ('AXIS', 'Custom Axes', "Orient to custom axis (if available)"), \
         ('VIEW', 'View', "Orient to window"), \
         ('OBJECT', 'Active Object', "Orient to local space of active object"),
@@ -9169,8 +9227,8 @@ kmToolFlexiEditBezier = "3D View Tool: Object, Flexi Edit Bezier"
 kmToolFlexiGreaseDrawBezier = "3D View Tool: Object, Flexi Grease Draw Bezier"
 
 def showSnapToPlane(params):
-    return (params.snapOrient != 'VIEW' and params.snapOrient != 'REFERENCE' and\
-        hasattr(params, 'constrAxes') and params.constrAxes.startswith('shift'))
+    return (params.snapOrient not in {'VIEW', 'REFERENCE', 'CURR_POS'} and \
+            hasattr(params, 'constrAxes') and params.constrAxes.startswith('shift'))
 
 def drawSettingsFT(self, context):
     params = bpy.context.window_manager.bezierToolkitParams
