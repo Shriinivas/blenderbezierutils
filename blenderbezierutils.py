@@ -4151,9 +4151,9 @@ class FTProps:
             'colDrawMarker', 'colGreaseSelSeg', 'colGreaseNonHltSeg', 'colGreaseMarker', \
             'colHdlFree', 'colHdlVector', 'colHdlAligned', 'colHdlAuto', 'colSelTip', \
             'colHltTip', 'colBezPt', 'colHdlPtTip', 'colAdjBezTip', 'colEditSubdiv', \
-            'colGreaseSubdiv', 'colGreaseBezPt', 'snapDist', 'dispSnapInd', \
-            'dispAxes', 'snapPtSize', 'dispCurveRes', 'showKeyMap', 'keyMapFontSize', \
-            'keyMapLocX', 'keyMapLocY', 'keyMapNextToTool', 'defBevelFact', \
+            'colGreaseSubdiv', 'colGreaseBezPt', 'colKeymapText', 'colKeymapKey', 'snapDist', \
+            'dispSnapInd', 'dispAxes', 'snapPtSize', 'dispCurveRes', 'showKeyMap', \
+            'keyMapFontSize', 'keyMapLocX', 'keyMapLocY', 'keyMapNextToTool', 'defBevelFact', \
             'maxBevelFact', 'minBevelFact', 'bevelIncr', 'numpadEntry']
 
             if(resetPrefs):
@@ -4209,6 +4209,8 @@ class FTProps:
 
         FTProps.colGreaseSubdiv = (1, .3, 1, 1)
         FTProps.colGreaseBezPt = (1, .3, 1, 1)
+        FTProps.colKeymapText = (1.0, 1.0, 1.0, 1.0)
+        FTProps.colKeymapKey = (0.0, 1.0, 1.0, 1.0)
 
         FTProps.snapDist = 20
         FTProps.dispSnapInd = False
@@ -5421,6 +5423,8 @@ class ModalBaseFlexiOp(Operator):
     pointSize = 4 # For Draw (Marker is of diff size)
 
     def drawKeyMap():
+        descrCol = [0] + list(FTProps.colKeymapText)
+        keyCol = [0] + list(FTProps.colKeymapKey)
         if(ModalBaseFlexiOp.opObj == None or not FTProps.showKeyMap):
             return
         regions = [r for area in bpy.context.screen.areas if  area.type == 'VIEW_3D' \
@@ -5449,24 +5453,22 @@ class ModalBaseFlexiOp(Operator):
         lineHeight = 1.2 * max(blf.dimensions(font_id, l)[1] for l in labels)
 
         blf.position(font_id, xOff1, yOff, 0)
-        blf.color(0, 1.0, 0.0, 0.0, 1.0)
+        blf.color(*descrCol)
         blf.draw(font_id, '*')
         dim = blf.dimensions(font_id, '*')
         blf.position(font_id, xOff1 + dim[0], yOff, 0)
-        blf.color(0, 1.0, 1.0, 1.0, 1.0)
         blf.draw(font_id, ' Indicates Configurable Hot Keys')
         yOff += 1.5 * lineHeight
 
         for i, label in enumerate(labels):
-            blf.color(0, 1.0, 1.0, 1.0, 1.0)
+            blf.color(*descrCol)
             blf.position(font_id, xOff1, yOff, 0)
             blf.draw(font_id, label)
             if(config[i]):
                 dim = blf.dimensions(font_id, label)
-                blf.color(0, 1.0, 0.0, 0.0, 1.0)
                 blf.position(font_id, xOff1 + dim[0], yOff, 0)
                 blf.draw(font_id, '*')
-            blf.color(0, 0.0, 1.0, 1.0, 1.0)
+            blf.color(*keyCol)
             blf.position(font_id, xOff2, yOff, 0)
             blf.draw(font_id, keys[i])
             yOff += lineHeight
@@ -5475,7 +5477,7 @@ class ModalBaseFlexiOp(Operator):
         header = toolType.title() + ' Keymap'
         headerX = xOff1 + (maxWidth - blf.dimensions(font_id, header)[0]) / 2
         blf.position(font_id, headerX, yOff + lineHeight * .5, 0)
-        blf.color(0, 1.0, 1.0, 0.0, 1.0)
+        blf.color(*descrCol)
         blf.draw(font_id, header)
 
     def addDrawHandlers(context):
@@ -9763,7 +9765,21 @@ class BezierUtilsPreferences(AddonPreferences):
         update = FTProps.updateProps
     )
 
-    ############################ Hotkeys ###############################
+    colKeymapText: bpy.props.FloatVectorProperty(
+        name="Keymap Description Text Color", subtype="COLOR", size=4, min=0.0, max=1.0,\
+        default=(1.0, 1.0, 1.0, 1.0), \
+        description = 'Color of keymap description text',
+        update = FTProps.updateProps
+    )
+
+    colKeymapKey: bpy.props.FloatVectorProperty(
+        name="Keymap Key Text Color", subtype="COLOR", size=4, min=0.0, max=1.0,\
+        default=(0.0, 1.0, 1.0, 1.0), \
+        description = 'Color of keymap key text',
+        update = FTProps.updateProps
+    )
+
+############################ Hotkeys ###############################
     for i, keySet in enumerate([FTHotKeys.drawHotkeys, \
         FTHotKeys.editHotkeys, FTHotKeys.commonHotkeys]):
         for j, keydata in enumerate(keySet):
@@ -9978,6 +9994,12 @@ class BezierUtilsPreferences(AddonPreferences):
             col.label(text='Display Keymap:')
             col.prop(self, "showKeyMap", text = '')
             if(self.showKeyMap):
+                col = box.column().split()
+                col.label(text='Keymap Description Text Color:')
+                col.prop(self, "colKeymapText", text = '')
+                col = box.column().split()
+                col.label(text='Keymap Key Text Color:')
+                col.prop(self, "colKeymapKey", text = '')
                 col = box.column().split()
                 col.label(text='Font Size:')
                 col.prop(self, "keyMapFontSize", text = '')
