@@ -23,7 +23,7 @@ The tools Flexi Draw , Flexi Edit and Flexi Grease are interactive tools that al
 This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). It allows drawing Bézier curves by manipulating the control points.<br>
 ### Drawing Bézier Curve:
 To draw the curve, activate the tool by clicking the Flexi Draw Bézier tool on the toolshelf and select Bézier Curve from Shape Type drop-down. Click the LMB on the starting point of the curve. Then click and drag LMB on the end point to adjust the curvature. You can continue drawing subsequent segments in this fashion. Double clicking or hitting enter or space will convert the drawing to a curve object. You can auto-close the curve by pressing Shift+Space or Shift+Enter<br>
-<p align="center"><img src="https://github.com/Shriinivas/blenderbezierutils/blob/master/drawdemo.gif" alt="Demo"/></p><br/>
+<p align="center"><img src="https://github.com/Shriinivas/etc/blob/master/blenderbezierutils/illustrations/drawdemo.gif" alt="Demo"/></p><br/>
 <b>Repositioning the Bézier point:</b> <br>
 At the time of dragging the LMB to set the handle location, you can grab the Bézier point to reposition it by pressing G (configirable). All the snapping options are available for setting the handle location and repositioning the Bézier point. Press G again to release the grab. <br>
 <b>Resetting Handle:</b> <br>
@@ -34,10 +34,10 @@ While adjusting the handle by dragging the mouse pointer, you can change the han
 While drawing, you can undo one segment at a time by pressing backspace. Pressing escape removes the entire curve. After the drawing is finished, the curve creation can be undone by pressing ctrl-Z  <br><br>
 
 ### Drawing Primitive Shapes:
-<p align="center"><img src="https://github.com/Shriinivas/blenderbezierutils/blob/master/drawshapeoptions.png" alt="Draw Options"/></p><br/>
+<p align="center"><img src="https://github.com/Shriinivas/etc/blob/master/blenderbezierutils/illustrations/drawshapeoptions.png" alt="Draw Options"/></p><br/>
 Other than Bézier curve you can also create primitive shapes with Bézier segments. To do this, select the appropriate primitive shape from the Shape Type drop-down in the tollbar at the top. The shapes currently available are 1) Rectangle 2) Ellipse / Circle 3) Polygon 4) Star. Click the starting point and end point of the shape. To draw shapes with equal height and width (e.g. perfect circle or square), hold down shift key. You can optionally snap to the grid.
 The shapes are all 2d, so for drawing in the 3d perspective view, you can either choose a constraining plane or set the orientation to view. In perspective view, without any constraining plain, the depth value of the current mouse location is applied to all the points.<br>
-<p align="center"><img src="https://github.com/Shriinivas/blenderbezierutils/blob/master/drawprim.gif" alt="Demo"/></p><br/>
+<p align="center"><img src="github.com/Shriinivas/etc/blob/master/blenderbezierutils/illustrations/drawprim.gif" alt="Demo"/></p><br/>
 <b>Adjusting number of segments (Ellipse) or Sides (Polygon / Star):</b> <br>
 To adjust the segment count or sides use the mouse wheel or + or - keys on numpad. You may also directly type the value in the edit box on toolbar.<br>
 <b>Drawing from Center or from Corner:</b> <br>
@@ -50,7 +50,7 @@ The starting angle can be entered directly in the edit box of the toolbar or cha
 Select an existing curve object in the Copy Object Properties option in the toolbar to apply its properties like material, dimension, bevel depth, bevel object on to the curves / shapes drawn with the Flexi Bézier Tool. If a mesh object is selected, only its material is applied to the curve / shape drawn.<br>
 
 ## Flexi Edit Bézier Tool
-![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/editdemo.gif)<br>
+![Demo](https://github.com/Shriinivas/etc/blob/master/blenderbezierutils/illustrations/editdemo.gif)<br>
 This tool is available in object mode via a new button on the toolshelf (short cut to toggle the toolshelf - t). With it You can 1) edit a Bézier curve by dragging a point on the curve 2) Move Segment endpoints and manipulate handles 3) Add or delete a vertex at any arbitrary location on the curve <br><br>
 <b>Edit Curve and move handles and end points: </b> When the tool is activated, moving a mouse cursor in the 3d viewport would highlight the individual curve segments under the mouse cursor. Clicking on a segment will make the segment active and it's handles will be visible. You can drag any point on the curve to edit it. Releasing the button will apply the changes to the curve. Also when the handles are visible, bringing the mouse cursor in the vicinity of any of the handle points will highlight that point (bright green), indicating the mouse click will operate on it. You can move the handles and segment points by dragging the mouse pointer. Releasing the mouse button makes the changes permanent.<br><br>
 <b>Grab the Edit Point:</b>
@@ -66,13 +66,13 @@ You can also subdivide the selected segments uniformly. To initiate the subdivis
 To align the handle with the opposite handle of the same end point, select the handle point and press K. This way you can quickly smooth out the sharp corners.
 
 ## Flexi Grease Bézier Tool
-![Demo](https://github.com/Shriinivas/blenderbezierutils/blob/master/greasedemo.gif)<br>
+![Demo](https://github.com/Shriinivas/etc/blob/master/blenderbezierutils/illustrations/greasedemo.gif)<br>
 This tool will appear on the toolshelf in Grease Pencil Draw mode. You can draw Bézier curves just as you would draw with the Flexi Draw tool. After confirming the drawing is converted to grease pencil strokes. All the snapping and locking options of the Flexi Draw are available here also.<br>
 Additionaly, you can increase of decrease the resolution of the stroke using the mouse wheel or pressing + or - keys.<br>
 The subdivision point visibility can be toggled by pressing h key.<br>
 
 ## Configurable Entities
-![Configurable Options](https://github.com/Shriinivas/blenderbezierutils/blob/master/configitems.png)<br>
+![Configurable Options](https://github.com/Shriinivas/etc/blob/master/blenderbezierutils/illustrations/configitems.png)<br>
 Values of a number of entities are user configurable via Add-ons dialog (from Preferences->Add-on Menu). Some of these are:
 - Bézier Toolkit Panel Tab<br>
 <b>Dimensions</b>
