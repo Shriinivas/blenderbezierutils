@@ -8,7 +8,7 @@ Video Tutorials: </b> https://www.youtube.com/playlist?list=PLxsh4i5F_h9G6QFoPzK
 # Installation
 ### *** Please do not download the github zip, you need only the blenderbezierutils.py file
 - Download blenderbezierutils.py (save the file from <a href = 'https://raw.githubusercontent.com/Shriinivas/blenderbezierutils/master/blenderbezierutils.py'>this location</a> in a folder on disk.)
-- Open Blender and select File->User Preferences
+- Open Blender and select Edit->Preferences
 - Click install Add-ons tab and then Install Add-on from File
 - Select the downloaded file
 - Check the 'Bézier Utilities' option in the add-ons dialog
