@@ -4152,9 +4152,9 @@ class FTProps:
             'colHdlFree', 'colHdlVector', 'colHdlAligned', 'colHdlAuto', 'colSelTip', \
             'colHltTip', 'colBezPt', 'colHdlPtTip', 'colAdjBezTip', 'colEditSubdiv', \
             'colGreaseSubdiv', 'colGreaseBezPt', 'colKeymapText', 'colKeymapKey', 'snapDist', \
-            'dispSnapInd', 'dispAxes', 'snapPtSize', 'dispCurveRes', 'showKeyMap', \
-            'keyMapFontSize', 'keyMapLocX', 'keyMapLocY', 'keyMapNextToTool', 'defBevelFact', \
-            'maxBevelFact', 'minBevelFact', 'bevelIncr', 'numpadEntry']
+            'dispSnapInd', 'dispAxes', 'snapPtSize', 'liveUpdate', 'dispCurveRes', \
+            'showKeyMap', 'keyMapFontSize', 'keyMapLocX', 'keyMapLocY', 'keyMapNextToTool', \
+            'defBevelFact', 'maxBevelFact', 'minBevelFact', 'bevelIncr', 'numpadEntry']
 
             if(resetPrefs):
                 FTProps.initDefault()
@@ -4221,6 +4221,7 @@ class FTProps:
         FTProps.keyMapLocY = 10
         FTProps.keyMapNextToTool = True
         FTProps.snapPtSize = 3
+        FTProps.liveUpdate = False
         FTProps.dispCurveRes = .4
         FTProps.defBevelFact = 4
         FTProps.maxBevelFact = 15
@@ -7997,6 +7998,8 @@ class EditCurveInfo(SelectCurveInfo):
         for i, bpt in enumerate(bpts):
             bpt.handle_left_type = pts[i][3]
             bpt.handle_right_type = pts[i][4]
+        
+        self.updateWSData()
 
 class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
     bl_description = "Flexi editing of Bezier curves in object mode"
@@ -8033,6 +8036,17 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         locOnCurve = None, refreshPos = False):
 
         if(self.rmInfo == None): return # Possible in updateAfterGeomChange
+
+        newPos = None
+        if(FTProps.liveUpdate and self.editCurveInfo != None):
+            newPos = self.getNewPos(refreshStatus = True)
+            self.editCurveInfo.moveSeg(newPos)
+            clickInfo = self.editCurveInfo.clickInfo
+            if(clickInfo['hdlIdx'] == -1):
+                self.editCurveInfo.setClickInfo(clickInfo['ptIdx'], \
+                    clickInfo['hdlIdx'], newPos)
+            self.xyPress = self.rmInfo.xy[:]
+
         segDispInfos = []
         bptDispInfos = []
         # ~ curveInfos = self.selectCurveInfos.copy()
@@ -8043,7 +8057,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         else:
             deltaPos = None
         for c in self.selectCurveInfos:
-            if(refreshPos and c == self.editCurveInfo):
+            if(refreshPos and c == self.editCurveInfo and newPos == None):
                 newPos = self.getNewPos(refreshStatus = True)
             else:
                 newPos = None
@@ -8097,7 +8111,10 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         removeObjNames = set() # For snaplocs
         addObjNames = set()
         self.htlCurveInfo = None
-        self.editCurveInfo = None # Reset if editing (capture == True)
+
+        # TODO: check if self.editCurveInfo is to be set to None
+        if(not FTProps.liveUpdate):
+            self.editCurveInfo = None # Reset if editing (capture == True)
 
         for ci in self.selectCurveInfos:
             if(bpy.data.objects.get(ci.objName) != None):
@@ -8149,8 +8166,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             for c in ciRemoveList:
                 self.selectCurveInfos.remove(c)
 
-        self.updateSnapLocs(addObjNames, removeObjNames)
-        self.refreshDisplaySelCurves()
+        if(self.editCurveInfo == None): # exclude live update condition
+            self.updateSnapLocs(addObjNames, removeObjNames)
+            self.refreshDisplaySelCurves()
 
     def subInvoke(self, context, event):
         bpy.app.handlers.undo_post.append(self.postUndoRedo)
@@ -8207,7 +8225,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 else:
                     nextIdx = ei.getAdjIdx(ptIdx, 1)
                     nNextIdx = ei.getAdjIdx(ptIdx, 2)
-                    if(nextIdx != None and nNextIdx == None):
+                    if(nextIdx != None and nNextIdx != None):
                         return [ei.wsData[nNextIdx][1], ei.wsData[nextIdx][1]]
         return self.getCurrLine()
 
@@ -9554,6 +9572,13 @@ class BezierUtilsPreferences(AddonPreferences):
             update = FTProps.updateProps
     )
 
+    liveUpdate: BoolProperty(
+            name="Flexi Edit Live Update", \
+            description='Update underlying object with editing', \
+            default = False,
+            update = FTProps.updateProps
+    )
+
     dispCurveRes: FloatProperty(
             name = "Display Curve Resolution",
             description = "Segment divisions per pixel",
@@ -9979,6 +10004,9 @@ class BezierUtilsPreferences(AddonPreferences):
 
         if self.othPrefExp:
             box = layout.box()
+            col = box.column().split()
+            col.label(text='Flexi Edit Live Update (Experimental):')
+            col.prop(self, "liveUpdate", text = '')
             col = box.column().split()
             col.label(text='Display Curve Resolution:')
             col.prop(self, "dispCurveRes", text = '')
