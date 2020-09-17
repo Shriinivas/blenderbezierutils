@@ -2408,14 +2408,22 @@ class MarkerController:
         states = []
         spaces = MarkerController.getSpaces3D(context)
         for s in spaces:
-            states.append(s.overlay.show_curve_handles)
-            s.overlay.show_curve_handles = False
+            if(hasattr(s.overlay, 'show_curve_handles')):
+                states.append(s.overlay.show_curve_handles)
+                s.overlay.show_curve_handles = False
+            elif(hasattr(s.overlay, 'display_handle')): # 2.90
+                states.append(s.overlay.display_handle)
+                s.overlay.display_handle = 'NONE'
         return states
 
     def resetShowHandleState(context, handleStates):
         spaces = MarkerController.getSpaces3D(context)
         for i, s in enumerate(spaces):
-            s.overlay.show_curve_handles = handleStates[i]
+            if(hasattr(s.overlay, 'show_curve_handles')):
+                s.overlay.show_curve_handles = handleStates[i]
+            elif(hasattr(s.overlay, 'display_handle')): # 2.90
+                s.overlay.display_handle = handleStates[i]
+
 
 
 class ModalMarkSegStartOp(bpy.types.Operator):
