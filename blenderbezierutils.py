@@ -670,6 +670,29 @@ def  getViewDistRounding(space3d, rv3d):
     elif(viewDist < 0.5): subFact = 2
     return int(log(viewDist, gridDiv)) - subFact
 
+# Return axis-indices (x:0, y:1, z:2) of plane with closest orientation
+# to view 
+def getClosestPlaneToView(rv3d):
+    viewmat = rv3d.view_matrix
+    trans, quat, scale = viewmat.decompose()
+    tm = quat.to_matrix().to_4x4() 
+    viewnormal = tm.inverted() @ Vector((0, 0, 1))
+
+    xynormal = [Vector((0, 0, 1)), [0, 1]]
+    yznormal = [Vector((1, 0, 0)), [1, 2]]
+    xznormal = [Vector((0, 1, 0)), [0, 2]]
+    normals = [xynormal, yznormal, xznormal]
+    minAngle = pi
+    minIdx = None
+    for idx, normal in enumerate(normals):
+        rotDiff = viewnormal.rotation_difference(normal[0]).angle
+        if(rotDiff > pi / 2):
+            rotDiff = pi - rotDiff
+        if(rotDiff < minAngle):
+            minIdx = idx
+            minAngle = rotDiff
+    return normals[minIdx][1]
+
 def getCoordFromLoc(region, rv3d, loc):
     coord = location_3d_to_region_2d(region, rv3d, loc)
     # return a unlocatable pt if None to avoid errors
@@ -5702,7 +5725,7 @@ class ModalBaseFlexiOp(Operator):
 #                                            |
 #                          -------------------------------------
 #                          |                                   |
-#                 PrimitiveDraw                           BezierDraw
+#                   Primitive2DDraw                        BezierDraw
 #                          |
 #          ---------------------------------
 #          |               |               |
@@ -5728,7 +5751,17 @@ class BaseDraw:
     def setCurvePts(self, curvePts):
         self.curvePts = curvePts
 
-class PrimitiveDraw(BaseDraw):
+class Primitive2DDraw(BaseDraw):
+
+    def get2DAxes(self):
+        params = bpy.context.window_manager.bezierToolkitParams
+        freeAxesN = self.parent.snapper.getFreeAxesNormalized()
+
+        if(len(freeAxesN) > 2 and \
+            params.snapOrient in {'GLOBAL', 'REFERENCE', 'CURR_POS'}):
+            freeAxesN = getClosestPlaneToView(self.parent.rmInfo.rv3d)
+
+        return freeAxesN
 
     def getNumSegsLimits(self):
         return 2, 100
@@ -5782,21 +5815,19 @@ class PrimitiveDraw(BaseDraw):
         return curvePts
 
     def __init__(self, parent):
-        super(PrimitiveDraw, self).__init__(parent)
+        super(Primitive2DDraw, self).__init__(parent)
         self.shapeSegCnt = 4
         self.curveObjOrigin = None
 
     def initialize(self):
-        super(PrimitiveDraw, self).initialize()
+        super(Primitive2DDraw, self).initialize()
         self.bbStart = None
         self.bbEnd = None
 
     def updateCurvePts(self):
-        freeAxes = self.parent.snapper.getFreeAxesNormalized()
-        axisIdxs = freeAxes[:]
-        if(len(freeAxes) < 3):
-            axisIdxs += sorted(list({0, 1, 2} - set(freeAxes)))
-
+        freeAxesN = self.get2DAxes()
+        axisIdxs = freeAxesN + sorted(list({0, 1, 2} - set(freeAxesN)))
+        
         curvePts = self.getCurvePts(axisIdxs = axisIdxs, \
             numSegs = self.shapeSegCnt)
 
@@ -5805,6 +5836,15 @@ class PrimitiveDraw(BaseDraw):
         else:
             self.setCurvePts([[self.bbStart, self.bbStart, self.bbStart], \
                 [self.bbEnd, self.bbEnd, self.bbEnd]])
+
+    def getPtLoc(self):
+        parent = self.parent
+        rmInfo = parent.rmInfo
+        freeAxesN = self.get2DAxes()
+
+        return self.parent.snapper.get3dLocSnap(rmInfo, \
+            SnapParams(parent.snapper, lastCo1Axis = True, freeAxesN = freeAxesN, \
+                snapToPlane = (len(freeAxesN) == 2)))
 
     def procDrawEvent(self, context, event, snapProc):
         parent = self.parent
@@ -5867,8 +5907,7 @@ class PrimitiveDraw(BaseDraw):
             return {'RUNNING_MODAL'}
 
         if(not snapProc and event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
-            loc = parent.snapper.get3dLocSnap(rmInfo, \
-                SnapParams(parent.snapper, lastCo1Axis = True))
+            loc = self.getPtLoc()
             if(self.bbStart == None):
                 self.bbStart = loc
                 self.bbEnd = loc
@@ -5879,10 +5918,10 @@ class PrimitiveDraw(BaseDraw):
                 self.updateCurvePts()
                 parent.confirm(context, event, self.curveObjOrigin)
             return {"RUNNING_MODAL"}
+
         if (snapProc or event.type == 'MOUSEMOVE'):
             if(self.bbStart != None):
-                self.bbEnd = parent.snapper.get3dLocSnap(rmInfo, \
-                    SnapParams(parent.snapper, lastCo1Axis = True))
+                self.bbEnd = self.getPtLoc()
                 self.updateCurvePts()
             parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
             return {"RUNNING_MODAL"}
@@ -5904,7 +5943,7 @@ class PrimitiveDraw(BaseDraw):
         return refLine[0] if len(refLine) > 0 else None
 
 
-class RectangleDraw(PrimitiveDraw):
+class RectangleDraw(Primitive2DDraw):
     def __init__(self, parent, star = False):
         super(RectangleDraw, self).__init__(parent)
 
@@ -5923,7 +5962,7 @@ class RectangleDraw(PrimitiveDraw):
 
         return curvePts
 
-class PolygonDraw(PrimitiveDraw):
+class PolygonDraw(Primitive2DDraw):
 
     def updateParam1(self, event, rmInfo):
         if(event.value == 'PRESS'): return True
@@ -5975,7 +6014,7 @@ class PolygonDraw(PrimitiveDraw):
 
         return curvePts
 
-class EllipseDraw(PrimitiveDraw):
+class EllipseDraw(Primitive2DDraw):
 
     # https://math.stackexchange.com/questions/22064/calculating-a-point-that-lies-on-an-ellipse-given-an-angle
     def getPtAtAngle(a, b, theta):
