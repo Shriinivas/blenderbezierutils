@@ -14,7 +14,7 @@ from bpy.props import BoolProperty, IntProperty, EnumProperty, \
 FloatProperty, StringProperty, CollectionProperty, FloatVectorProperty, PointerProperty
 from bpy.types import Panel, Operator, WorkSpaceTool, AddonPreferences, Menu
 from mathutils import Vector, Matrix, geometry, kdtree
-from math import log, atan, tan, sin, cos, pi, radians, degrees, sqrt, pi, acos, ceil, pow
+from math import log, atan, tan, sin, cos, pi, radians, degrees, sqrt, acos, ceil, pow
 from bpy_extras.view3d_utils import region_2d_to_vector_3d, region_2d_to_location_3d, \
 region_2d_to_origin_3d
 from bpy_extras.view3d_utils import location_3d_to_region_2d
@@ -366,7 +366,6 @@ def shiftMatrixWorld(obj, mw):
 def alignToNormal(curve):
     depsgraph = bpy.context.evaluated_depsgraph_get()
     depsgraph.update()
-    loc = curve.location.copy()
     mw = curve.matrix_world.copy()
     normals = []
     for spline in curve.data.splines:
@@ -420,7 +419,7 @@ def copyProperties(srcObj, destCurve):
             destData.materials.append(mat)
             activeIdx = -1 #Last
         else:
-            activeIdx = copyData.materials.find(mat.name)
+            activeIdx = destData.materials.find(mat.name)
 
         destCurve.active_material_index = activeIdx
 
@@ -447,7 +446,7 @@ def reverseCurve(curve):
 def insertSpline(obj, srcSplineIdx, insertIdx, removePtIdxs):
     srcSpline = obj.data.splines[srcSplineIdx]
     # Appended at end
-    newSpline = createSpline(obj.data, srcSpline, removePtIdxs)
+    createSpline(obj.data, srcSpline, removePtIdxs)
     splineCnt = len(obj.data.splines)
     nextIdx = insertIdx
     for idx in range(nextIdx, splineCnt - 1):
@@ -990,7 +989,7 @@ def splitCurveSelPts(selPtMap, newColl = True):
             selPtIdxs = sorted(splinePtMap[i])
 
             if(len(selPtIdxs) == 0):
-                newSpline = createSpline(objCopy.data, srcSpline)
+                createSpline(objCopy.data, srcSpline)
             else:
                 bpts = srcSpline.bezier_points
                 cyclic = srcSpline.use_cyclic_u
@@ -1007,7 +1006,7 @@ def splitCurveSelPts(selPtMap, newColl = True):
 
                 if(len(selPtIdxs) == 0):
                     segBpts = bpts[:len(bpts)]
-                    newSpline = createSplineForSeg(objCopy.data, segBpts)
+                    createSplineForSeg(objCopy.data, segBpts)
                 else:
                     lastSegIdx = 0
                     bpts = srcSpline.bezier_points
@@ -1376,7 +1375,7 @@ def convertToFace(curve, remeshRes, perSeg, fillType, optimized):
             normals.append(normal)
 
             if(fillType == 'NGON'):
-                face = bm.faces.new(verts)
+                bm.faces.new(verts)
                 
             elif(fillType == 'NONE'):
                 for i in range(1, len(verts)):
@@ -1496,7 +1495,7 @@ def intersectCurves(curves, action, firstActive, margin, rounding):
                 obj = bpy.data.objects.new(objName, None)
             elif(action  == 'MARK_POINT'):
                 curveData = bpy.data.curves.new(objName, 'CURVE')
-                spline = curveData.splines.new('BEZIER')
+                curveData.splines.new('BEZIER')
                 obj = bpy.data.objects.new(objName, curveData)
             obj.location = co
             newObjs.append(obj)
@@ -1667,7 +1666,6 @@ def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
 
 def exportSVG(context, filepath, exportView, clipView, lineWidth, lineColorOpts, \
     lineColor, fillColorOpts, fillColor):
-    paths = []
 
     svgXML = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
     clipElemId = 'BBoxClipElem'
@@ -2364,7 +2362,6 @@ class MarkerController:
     def saveStartVerts(self):
         for curveName in self.smMap.keys():
             curve = bpy.data.objects[curveName]
-            splines = curve.data.splines
             spMap = self.smMap[curveName]
 
             for splineIdx in spMap.keys():
@@ -6602,13 +6599,6 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
     def updateSnapLocs(self, objNames = None):
         updateCurveEndPtMap(self.snapInfos, addObjNames = objNames)
-
-    def addPtToSpline(invMW, spline, idx, pt, handleType):
-        spline.bezier_points[i].handle_left = invMW @pt[0]
-        spline.bezier_points[i].co = invMW @pt[1]
-        spline.bezier_points[i].handle_right = invMW @ pt[2]
-        spline.bezier_points[i].handle_left_type = handleType
-        spline.bezier_points[i].handle_right_type = handleType
 
     def createCurveObj(self, context, startObj = None, \
         startSplineIdx = None, endObj = None, endSplineIdx = None, autoclose = False):
