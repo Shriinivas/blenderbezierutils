@@ -9,20 +9,22 @@
 # License: GPL (https://github.com/Shriinivas/blenderbezierutils/blob/master/LICENSE)
 #
 
-import bpy, bmesh, bgl, blf, gpu
+import os, bpy, bmesh, bgl, blf, gpu
 from bpy.props import BoolProperty, IntProperty, EnumProperty, \
 FloatProperty, StringProperty, CollectionProperty, FloatVectorProperty, PointerProperty
 from bpy.types import Panel, Operator, WorkSpaceTool, AddonPreferences, Menu
 from mathutils import Vector, Matrix, geometry, kdtree
-from math import log, atan, tan, sin, cos, pi, radians, degrees, sqrt, acos, ceil, pow
+from math import e, pi, log, sin, cos, tan, radians, degrees, sqrt, asin, acos, atan, floor, \
+ceil, pow, exp
 from bpy_extras.view3d_utils import region_2d_to_vector_3d, region_2d_to_location_3d, \
 region_2d_to_origin_3d
 from bpy_extras.view3d_utils import location_3d_to_region_2d
 from bpy_extras.object_utils import world_to_camera_view
 from gpu_extras.batch import batch_for_shader
-import random, time
+import random, time, math
 from bpy.app.handlers import persistent
 from xml.dom import minidom
+from shutil import copyfile
 
 bl_info = {
     "name": "Bezier Utilities",
@@ -2694,6 +2696,70 @@ class BezierUtilsPanel(Panel):
                 col = box.column().split()
                 col.operator('object.open_splines')
 
+            tool = context.workspace.tools.from_space_view3d_mode('OBJECT', \
+                create = False)
+
+            if(tool.idname == 'flexi_bezier.draw_tool' and \
+                params.drawObjType == 'MATH'):
+                row = layout.row()
+                row.prop(params, "mathExtraExpanded",
+                    icon="TRIA_DOWN" if params.mathExtraExpanded else "TRIA_RIGHT",
+                    icon_only=True, emboss=False
+                )
+                row.label(text='Flexi Draw Math Function', icon='GRAPH')
+                if params.mathExtraExpanded:
+                    # Equation params are duplicated in the toolbar...
+                    # any changes here should also reflect there
+                    box = layout.box()
+
+                    col = box.column().split()
+                    col.prop(params, "mathFnList")
+
+                    col = box.column().split()
+                    col.prop(params, "mathFnName")
+                    col = box.column().split()
+                    col.prop(params, "mathFnDescr")
+
+                    col = box.column().split()
+                    col.prop(params, "mathFnType")
+                    col = box.column().split()
+                    col.prop(params, "mathFnResolution")
+
+                    if(params.mathFnType == 'PARAMETRIC'):
+                        col = box.column().split()
+                        col.prop(params, "drawMathFnParametric1")
+                        col = box.column().split()
+                        col.prop(params, "drawMathFnParametric2")
+                        col = box.column().split()
+                        col.prop(params, "drawMathTMapTo")
+                        col = box.column().split()
+                        col.prop(params, "drawMathTScaleFact")
+                        col = box.column().split()
+                        col.prop(params, "drawMathTStart")
+                    else:
+                        col = box.column().split()
+                        col.prop(params, "drawMathFn")
+                        col = box.column().split()
+                        col.prop(params, "mathFnclipVal")
+
+                    paramCol = box.column()
+                    for i in range(Primitive2DDraw.getParamCnt()):
+                        char = chr(ord('A') + i)
+                        innerBox = paramCol.box()
+                        col = innerBox.column().split()
+                        row = col.row()
+                        row.label(text = char)
+                        row.prop(params, MathFnDraw.startPrefix + str(i), \
+                            text = '') # Value
+                        row.prop(params, MathFnDraw.incrPrefix + str(i), \
+                            text = '') # Step
+
+                    col = box.column().split()
+                    row = col.row()
+                    row.operator('object.save_math_fn')
+                    row.operator('object.reset_math_fn')
+                    row.operator('object.load_math_fn', text = 'Import')
+                    row.operator('object.delete_math_fn', text = 'Delete')
         else:
             col = layout.column()
             col.operator('object.separate_segments', text = 'Split At Selected Points')
@@ -4182,7 +4248,8 @@ class FTProps:
             'colGreaseSubdiv', 'colGreaseBezPt', 'colKeymapText', 'colKeymapKey', 'snapDist', \
             'dispSnapInd', 'dispAxes', 'snapPtSize', 'liveUpdate', 'dispCurveRes', \
             'showKeyMap', 'keyMapFontSize', 'keyMapLocX', 'keyMapLocY', 'keyMapNextToTool', \
-            'defBevelFact', 'maxBevelFact', 'minBevelFact', 'bevelIncr', 'numpadEntry']
+            'defBevelFact', 'maxBevelFact', 'minBevelFact', 'bevelIncr', 'numpadEntry', \
+            'mathFnTxtFontSize', 'colMathFnTxt']
 
             if(resetPrefs):
                 FTProps.initDefault()
@@ -4256,6 +4323,9 @@ class FTProps:
         FTProps.minBevelFact = -15
         FTProps.bevelIncr = .5
         FTProps.numpadEntry = False
+
+        FTProps.mathFnTxtFontSize = 20
+        FTProps.colMathFnTxt = (0.6, 1.0, 0.03, 1.0)
 
 class FTMenuData:
 
@@ -5452,10 +5522,7 @@ class ModalBaseFlexiOp(Operator):
     pointSize = 4 # For Draw (Marker is of diff size)
 
     def drawKeyMap():
-        descrCol = [0] + list(FTProps.colKeymapText)
-        keyCol = [0] + list(FTProps.colKeymapKey)
-        if(ModalBaseFlexiOp.opObj == None or not FTProps.showKeyMap):
-            return
+
         regions = [r for area in bpy.context.screen.areas if  area.type == 'VIEW_3D' \
             for r in area.regions if r.type == 'WINDOW']
         maxArea = max(r.width * r.height for r in regions)
@@ -5463,51 +5530,72 @@ class ModalBaseFlexiOp(Operator):
         
         # Only display in window with max area
         if(currRegion.width * currRegion.height < maxArea): return
-
         toolRegion = [r for r in bpy.context.area.regions if r.type == 'TOOLS'][0]
-        toolType = ModalBaseFlexiOp.opObj.getToolType()
-        config, labels, keys = FTHotKeys.getHKDispLines(toolType)
+
+        xOff1 = (10 + toolRegion.width) if(FTProps.keyMapNextToTool) else FTProps.keyMapLocX
+        maxWidth = 0
+        yStart = 10 if(FTProps.keyMapNextToTool) else FTProps.keyMapLocY
+        yOff = yStart
+
         font_id = 0
-        blf.size(font_id, FTProps.keyMapFontSize, 72)
 
-        if(FTProps.keyMapNextToTool):
-            xOff1 = 10 + toolRegion.width
-        else:
-            xOff1 = FTProps.keyMapLocX 
-        maxLabelWidth = max(blf.dimensions(font_id, l+'XXXXX')[0] for l in labels)
-        xOff2 = xOff1 + maxLabelWidth
+        if(ModalBaseFlexiOp.opObj != None and FTProps.showKeyMap):
 
-        yOff = 10 if(FTProps.keyMapNextToTool) else FTProps.keyMapLocY
+            descrCol = [0] + list(FTProps.colKeymapText)
+            keyCol = [0] + list(FTProps.colKeymapKey)
 
-        lineHeight = 1.2 * max(blf.dimensions(font_id, l)[1] for l in labels)
+            toolType = ModalBaseFlexiOp.opObj.getToolType()
+            config, labels, keys = FTHotKeys.getHKDispLines(toolType)
+            blf.size(font_id, FTProps.keyMapFontSize, 72)
 
-        blf.position(font_id, xOff1, yOff, 0)
-        blf.color(*descrCol)
-        blf.draw(font_id, '*')
-        dim = blf.dimensions(font_id, '*')
-        blf.position(font_id, xOff1 + dim[0], yOff, 0)
-        blf.draw(font_id, ' Indicates Configurable Hot Keys')
-        yOff += 1.5 * lineHeight
+            maxLabelWidth = max(blf.dimensions(font_id, l+'XXXXX')[0] for l in labels)
+            xOff2 = xOff1 + maxLabelWidth
 
-        for i, label in enumerate(labels):
-            blf.color(*descrCol)
+            lineHeight = 1.2 * max(blf.dimensions(font_id, l)[1] for l in labels)
+
             blf.position(font_id, xOff1, yOff, 0)
-            blf.draw(font_id, label)
-            if(config[i]):
-                dim = blf.dimensions(font_id, label)
-                blf.position(font_id, xOff1 + dim[0], yOff, 0)
-                blf.draw(font_id, '*')
-            blf.color(*keyCol)
-            blf.position(font_id, xOff2, yOff, 0)
-            blf.draw(font_id, keys[i])
-            yOff += lineHeight
+            blf.color(*descrCol)
+            blf.draw(font_id, '*')
+            dim = blf.dimensions(font_id, '*')
+            blf.position(font_id, xOff1 + dim[0], yOff, 0)
+            blf.draw(font_id, ' Indicates Configurable Hot Keys')
+            yOff += 1.5 * lineHeight
 
-        maxWidth = maxLabelWidth  + max(blf.dimensions(font_id, l)[0] for l in keys)
-        header = toolType.title() + ' Keymap'
-        headerX = xOff1 + (maxWidth - blf.dimensions(font_id, header)[0]) / 2
-        blf.position(font_id, headerX, yOff + lineHeight * .5, 0)
-        blf.color(*descrCol)
-        blf.draw(font_id, header)
+            for i, label in enumerate(labels):
+                blf.color(*descrCol)
+                blf.position(font_id, xOff1, yOff, 0)
+                blf.draw(font_id, label)
+                if(config[i]):
+                    dim = blf.dimensions(font_id, label)
+                    blf.position(font_id, xOff1 + dim[0], yOff, 0)
+                    blf.draw(font_id, '*')
+                blf.color(*keyCol)
+                blf.position(font_id, xOff2, yOff, 0)
+                blf.draw(font_id, keys[i])
+                yOff += lineHeight
+
+            maxWidth = maxLabelWidth  + max(blf.dimensions(font_id, l)[0] for l in keys)
+            header = toolType.title() + ' Keymap'
+            headerX = xOff1 + (maxWidth - blf.dimensions(font_id, header)[0]) / 2
+            blf.position(font_id, headerX, yOff + lineHeight * .5, 0)
+            blf.color(*descrCol)
+            blf.draw(font_id, header)
+
+        mathFnTxts = MathFnDraw.getMathFnTxts()
+
+        mathFnCol = [0] + list(FTProps.colMathFnTxt)
+        blf.size(font_id, FTProps.mathFnTxtFontSize, 72)
+        blf.color(*mathFnCol)
+        lineHeight = blf.dimensions(font_id, 'yX')[1]
+        
+        yOff = lineHeight / 2
+        if(mathFnTxts != None):
+            for t in mathFnTxts:
+                mathFnPos = (currRegion.width - blf.dimensions(font_id, t)[0]) / 2
+                # ~ mathFnPos = xOff1 + maxWidth + 10
+                blf.position(font_id, mathFnPos, yOff, 0)
+                blf.draw(font_id, t)
+                yOff += 1.5 * lineHeight
 
     def addDrawHandlers(context):
         hdlr = ModalBaseFlexiOp.opObj.__class__.drawHandler
@@ -5723,13 +5811,17 @@ class ModalBaseFlexiOp(Operator):
 #
 #                                         BaseDraw
 #                                            |
-#                          -------------------------------------
-#                          |                                   |
-#                   Primitive2DDraw                        BezierDraw
-#                          |
-#          ---------------------------------
-#          |               |               |
-#    RectangleDraw    PolygonDraw     EllipseDraw
+#                                -------------------------------
+#                                |                             |
+#                           Primitive2DDraw                BezierDraw
+#                                |
+#                        -----------------------------
+#                        |                           |
+#               ClosedShapeDraw               MathFnDraw
+#                        |
+#        ---------------------------------
+#        |               |               |
+#  RectangleDraw    PolygonDraw     EllipseDraw
 
 class BaseDraw:
     def __init__(self, parent):
@@ -5753,15 +5845,25 @@ class BaseDraw:
 
 class Primitive2DDraw(BaseDraw):
 
-    def get2DAxes(self):
+    def __init__(self, parent):
+        super(Primitive2DDraw, self).__init__(parent)
+        self.shapeSegCnt = 4
+        self.curveObjOrigin = None
+
+    def initialize(self):
+        super(Primitive2DDraw, self).initialize()
+        self.bbStart = None
+        self.bbEnd = None
+        self.XYstart = None
+        self.freeAxesN = None
+
+    def set2DAxes(self):
         params = bpy.context.window_manager.bezierToolkitParams
-        freeAxesN = self.parent.snapper.getFreeAxesNormalized()
+        self.freeAxesN = self.parent.snapper.getFreeAxesNormalized()
 
-        if(len(freeAxesN) > 2 and \
+        if(len(self.freeAxesN) > 2 and \
             params.snapOrient in {'GLOBAL', 'REFERENCE', 'CURR_POS'}):
-            freeAxesN = getClosestPlaneToView(self.parent.rmInfo.rv3d)
-
-        return freeAxesN
+            self.freeAxesN = getClosestPlaneToView(self.parent.rmInfo.rv3d)
 
     def getNumSegsLimits(self):
         return 2, 100
@@ -5770,9 +5872,33 @@ class Primitive2DDraw(BaseDraw):
         theta, axisIdxs, z):
         raise NotImplementedError('Call to abstract method.')
 
-    def updateParam1(self, event, rmInfo):
-        raise NotImplementedError('Call to abstract method.')
+    # index: ((incr_key, decr_key), metakey, description)
+    dynamicParams = {
+        0:(['UP_ARROW', 'DOWN_ARROW'], 'Up (incr) / Down (decr)'),
+        1:(['RIGHT_ARROW', 'LEFT_ARROW'], 'Left (incr) / Right (decr)'),
+        2:(['PAGE_UP', 'PAGE_DOWN'], 'Page Up (incr) / Page Down (decr)'),
+        3:(['W', 'S'], 'W (incr) / S (decr)'),
+        4:(['A', 'D'], 'A (incr) / D (decr)'),
+        5:(['LEFT_BRACKET', 'RIGHT_BRACKET'], '[ (incr) / ] (decr)'),
+    }
 
+    def getParamCnt():
+        return len(Primitive2DDraw.dynamicParams)
+
+    def getParamHotKeyDescriptions():
+        return [Primitive2DDraw.dynamicParams[p][1] \
+            for p in range(len(Primitive2DDraw.dynamicParams))]
+    
+    # default definition of all params
+    # Format (can be overriden in subclass): 
+    #       def updateParam0(self, event, rmInfo, isIncr): # 0-5
+    #           pass
+    for i in range(len(dynamicParams)):
+        exec('def updateParam' + str(i) + '(self, event, rmInfo, isIncr):\n\tpass')
+
+    def afterShapeSegCnt(): # Call back
+        pass
+    
     def getCurvePts(self, numSegs, axisIdxs, z = None):
         params = bpy.context.window_manager.bezierToolkitParams
         tm = self.parent.snapper.tm if self.parent.snapper.tm != None else Matrix()
@@ -5814,19 +5940,8 @@ class Primitive2DDraw(BaseDraw):
 
         return curvePts
 
-    def __init__(self, parent):
-        super(Primitive2DDraw, self).__init__(parent)
-        self.shapeSegCnt = 4
-        self.curveObjOrigin = None
-
-    def initialize(self):
-        super(Primitive2DDraw, self).initialize()
-        self.bbStart = None
-        self.bbEnd = None
-
     def updateCurvePts(self):
-        freeAxesN = self.get2DAxes()
-        axisIdxs = freeAxesN + sorted(list({0, 1, 2} - set(freeAxesN)))
+        axisIdxs = self.freeAxesN + sorted(list({0, 1, 2} - set(self.freeAxesN)))
         
         curvePts = self.getCurvePts(axisIdxs = axisIdxs, \
             numSegs = self.shapeSegCnt)
@@ -5840,11 +5955,12 @@ class Primitive2DDraw(BaseDraw):
     def getPtLoc(self):
         parent = self.parent
         rmInfo = parent.rmInfo
-        freeAxesN = self.get2DAxes()
+        if(self.freeAxesN == None):
+            self.set2DAxes()
 
         return self.parent.snapper.get3dLocSnap(rmInfo, \
-            SnapParams(parent.snapper, lastCo1Axis = True, freeAxesN = freeAxesN, \
-                snapToPlane = (len(freeAxesN) == 2)))
+            SnapParams(parent.snapper, lastCo1Axis = True, freeAxesN = self.freeAxesN, \
+                snapToPlane = (len(self.freeAxesN) == 2)))
 
     def procDrawEvent(self, context, event, snapProc):
         parent = self.parent
@@ -5857,33 +5973,16 @@ class Primitive2DDraw(BaseDraw):
                 if(event.type in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS'} \
                     and event.value == 'PRESS'):
                     return {'RUNNING_MODAL'}
-                minSegs, maxSegs = self.getNumSegsLimits()
-                if(event.type =='WHEELDOWNMOUSE' or event.type.endswith('MINUS')):
-                    if(self.shapeSegCnt > minSegs): self.shapeSegCnt -= 1
-                elif(event.type =='WHEELUPMOUSE' or event.type.endswith('PLUS')):
-                    if(self.shapeSegCnt < maxSegs): self.shapeSegCnt += 1
-                self.updateCurvePts()
-                self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
+                self.updateSegCount(event, rmInfo, \
+                    (event.type =='WHEELUPMOUSE' or event.type.endswith('PLUS')))
                 return {'RUNNING_MODAL'}
 
-            if(event.type in {'UP_ARROW', 'DOWN_ARROW'}):
-                if(self.updateParam1(event, rmInfo)): return {'RUNNING_MODAL'}
-
-            if(event.type in {'LEFT_ARROW', 'RIGHT_ARROW'}):
-                    if(event.value == 'PRESS'): return {'RUNNING_MODAL'}
-                    params = bpy.context.window_manager.bezierToolkitParams
-                    theta = params.drawAngleSweep
-
-                    if(event.type =='LEFT_ARROW'):
-                        if(theta <= 10 and theta >= 0): params.drawAngleSweep = -10
-                        elif(theta < -350): params.drawAngleSweep = 350
-                        else: params.drawAngleSweep = theta - 10
-                    else:
-                        if(theta >= -10 and theta <= 0): params.drawAngleSweep = 10
-                        elif(theta > 350): params.drawAngleSweep = -350
-                        else: params.drawAngleSweep = theta + 10
-                    self.updateCurvePts()
-                    self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
+            for i in range(len(self.dynamicParams)):
+                hotkeys = self.dynamicParams[i][0]
+                if(event.type in hotkeys):
+                    if(event.value == 'RELEASE'):
+                        exec('self.updateParam' + str(i) + \
+                            '(event, rmInfo, (event.type == hotkeys[0]))')
                     return {'RUNNING_MODAL'}
 
             if(event.type == 'H' or event.type == 'h'):
@@ -5907,13 +6006,16 @@ class Primitive2DDraw(BaseDraw):
             return {'RUNNING_MODAL'}
 
         if(not snapProc and event.type == 'LEFTMOUSE' and event.value == 'RELEASE'):
-            loc = self.getPtLoc()
             if(self.bbStart == None):
+                self.set2DAxes()
+                loc = self.getPtLoc()
+                self.XYstart = self.parent.rmInfo.xy
                 self.bbStart = loc
                 self.bbEnd = loc
                 self.setCurvePts([[loc, loc, loc, 'FREE', 'FREE'], \
                     [loc, loc, loc, 'FREE', 'FREE']])
             else:
+                loc = self.getPtLoc()
                 self.bbEnd = loc
                 self.updateCurvePts()
                 parent.confirm(context, event, self.curveObjOrigin)
@@ -5942,8 +6044,533 @@ class Primitive2DDraw(BaseDraw):
         refLine = self.getRefLine()
         return refLine[0] if len(refLine) > 0 else None
 
+class MathFnDraw(Primitive2DDraw):
+    
+    # Prefixes for param names generated dynamically for constants
+    startPrefix = 'mathFnStart_'
+    incrPrefix = 'mathFnIncr_'
+    
+    mathFnFileExt = 'mfn'
+    
+    # Default values
+    defFnType = 'XY'
+    defFNRes = 10
 
-class RectangleDraw(Primitive2DDraw):
+    defFNXYName = ''#'Sine Function'
+    defFNXYDescr = ''#'Sine wave with A: Amplitude, B: Frequency, C: Phase shift'
+    defFnXY = 'sin(x)'#'A * sin(B * x + C)'
+
+    defFnParam1 = ''#'B * cos(t + C)'
+    defFnParam2 = ''#'A * sin(t + D)'
+    defTMapTo = 'HORIZONTAL'
+    defTScale = 3
+    defTStart = 0
+
+    defXYMap = 'NORMAL_XY'
+    defClipVal = 10
+    
+    defConstStart = 1
+    defConstIncr = 0.1
+
+    # XML tags / attributes
+    xDocTag = "drawMathFn"
+    xFnName = 'name'
+    xFnDescr = 'descr'
+    xFnCurveRes = 'curveRes'
+    xFnType = 'type'
+    xFns = 'functions'
+    xEquation = 'equation'
+
+    xXYFn = 'xyFn'
+    xClipVal = 'clipValue'
+
+    xParamFn1 = 'paramFn1'
+    xParamFn2 = 'paramFn2'
+    xTMapTo = 'tMapTo'
+    xTScaleFact = 'tScaleFact'
+    xTStart = 'tStartVal'
+
+    xConstPrefix = 'constant_'
+    xValue = 'value'
+    xIncr = 'incr'
+
+    mathFnDirty = True
+    mathFnItems = None
+    mathFnNoSelItem = ('NO_SEL', '', 'Function not saved')
+
+    def __init__(self, parent, star = False):
+        super(MathFnDraw, self).__init__(parent)
+        params = bpy.context.window_manager.bezierToolkitParams
+        self.shapeSegCnt = params.mathFnResolution
+
+    def getNumSegsLimits(self):
+        return 2, 99999
+
+    def updateSegCount(self, event, rmInfo, isIncr):
+        minSegs, maxSegs = self.getNumSegsLimits()
+        params = bpy.context.window_manager.bezierToolkitParams
+        if(isIncr and params.mathFnResolution < maxSegs): params.mathFnResolution += 1
+        if(not isIncr and params.mathFnResolution > minSegs): params.mathFnResolution -= 1
+        self.shapeSegCnt = params.mathFnResolution
+        self.afterShapeSegCnt()
+        self.updateCurvePts()
+        self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
+        return True
+
+    for i in range(len(Primitive2DDraw.dynamicParams)):
+        fnStr = 'def updateParam' + str(i) + '(self, event, rmInfo, isIncr):\n\t' + \
+            'params = bpy.context.window_manager.bezierToolkitParams\n\t' + \
+            'incr = params.' + incrPrefix + str(i) + '\n\t' + \
+            'params.'+ startPrefix + str(i) + ' += incr if(isIncr) else -incr\n\t' + \
+            'self.updateCurvePts()\n\t' + \
+            'self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)\n\t' + \
+            'areas = [a for a in bpy.context.screen.areas]\n\t' + \
+            'for a in areas:\n\t\t' + \
+            'a.tag_redraw()\n\t' + \
+            'return True\n\t'            
+        exec(fnStr)
+
+    def afterShapeSegCnt(self):
+        bpy.context.window_manager.bezierToolkitParams.mathFnResolution = self.shapeSegCnt
+        areas = [a for a in bpy.context.screen.areas]
+        for a in areas:
+            a.tag_redraw()
+        
+    def testFn(expr, var): # var = 'x' or 'y'
+        exec(var + ' = 1')
+        # ~ exec(var.upper() + ' = 1') ??
+        try:
+            eval(expr)
+            return True
+        except Exception as e:
+            return False
+
+    # Returns None in case of invalid function
+    def isInverted(expr): # var = 'x' or 'y'
+        if(not MathFnDraw.testFn(expr, 'x')): 
+            if(not MathFnDraw.testFn(expr, 'y')): return None
+            else: return True
+
+        return False
+
+    def getEvaluatedExpr(expr):
+        params = bpy.context.window_manager.bezierToolkitParams
+        for j in range(Primitive2DDraw.getParamCnt()):
+            expr = expr.replace(str(chr(ord('A') + j)), \
+                str(round(eval('params.'+ MathFnDraw.startPrefix + str(j)), 4)))
+        return expr
+        
+    def getShapePts(self, mode, numSegs, bbStart, bbEnd, center2d, startAngle, \
+        theta, axisIdxs, z):
+
+        params = bpy.context.window_manager.bezierToolkitParams
+        curvePts = []
+        idx0, idx1, idx2 = axisIdxs
+        self.shapeSegCnt = params.mathFnResolution # Synch with params
+
+        if(params.mathFnType == 'PARAMETRIC'):
+            fn1 = MathFnDraw.getEvaluatedExpr(params.drawMathFnParametric1)
+            fn2 = MathFnDraw.getEvaluatedExpr(params.drawMathFnParametric2)
+            if(not MathFnDraw.testFn(fn1, 't')): return curvePts
+            if(not MathFnDraw.testFn(fn2, 't')): return curvePts
+
+            # Let the plot be always centered
+            if(mode == 'CENTER'):
+                bbStart[idx0] += center2d.real
+                bbStart[idx1] += center2d.imag
+
+            scaleFact = params.drawMathTScaleFact
+
+            if(params.drawMathTMapTo in {'x', 'y', 'xy'}):
+                xSpan = (bbEnd[idx0] - bbStart[idx0])
+                ySpan = (bbEnd[idx1] - bbStart[idx1])
+            else:
+                xSpan = (self.parent.rmInfo.xy[0] - self.XYstart[0])
+                ySpan = (self.parent.rmInfo.xy[1] - self.XYstart[1])
+                scaleFact = scaleFact / 25 # Device dependent!
+                
+            if(params.drawMathTMapTo in {'X', 'HORIZONTAL'}):
+                span = scaleFact * xSpan
+            elif(params.drawMathTMapTo in {'Y', 'VERTICAL'}):
+                span = scaleFact * ySpan
+            else:
+                span = scaleFact * sqrt(xSpan * xSpan + ySpan * ySpan)
+
+            intervals = int(self.shapeSegCnt * abs(span))
+            if(intervals == 0): intervals = self.shapeSegCnt
+            incr = span / intervals
+
+            t = params.drawMathTStart
+            for step in range(intervals):
+                try:
+                    x = bbStart[idx0] + eval(fn1)
+                    y = bbStart[idx1] + eval(fn2)
+                    pt2d = complex(x, y)
+                    pt = get3DVector(pt2d, axisIdxs, z)
+                    curvePts.append([pt, pt, pt, 'VECTOR', 'VECTOR'])
+                except Exception as e:
+                    print(e, fn1, fn2)
+                    pass
+
+                t += incr
+
+        else:
+            expr = MathFnDraw.getEvaluatedExpr(params.drawMathFn)
+            clip = params.mathFnclipVal
+
+            inverted = MathFnDraw.isInverted(expr)
+
+            if(inverted == None):
+                return curvePts
+                
+            span = (bbEnd[idx1] - bbStart[idx1]) if(inverted) \
+                else (bbEnd[idx0] - bbStart[idx0])
+
+            intervals = int(self.shapeSegCnt * abs(span))
+            if(intervals == 0): intervals = self.shapeSegCnt
+            incr = span / intervals
+            indep = bbStart[idx0] if(not inverted) else bbStart[idx1]
+
+            for step in range(intervals):
+                try:
+                    if(inverted): y = indep 
+                    else: x = indep
+                    dep = eval(expr)
+                    if(abs(dep) > clip):
+                        dep = clip * (dep / abs(dep))
+                    if(inverted): x = dep + bbStart[idx0] + (center2d.real \
+                        if(mode == 'CENTER') else 0)
+                    else: y = dep + bbStart[idx1] + (center2d.imag \
+                        if(mode == 'CENTER') else 0)
+                    pt2d = complex(x, y)
+                    pt = get3DVector(pt2d, axisIdxs, z)
+                    curvePts.append([pt, pt, pt, 'VECTOR', 'VECTOR'])
+                except Exception as e:
+                    print(e, expr)
+                    pass
+
+                indep += incr
+
+        return curvePts
+
+    def getMathFnTxts():
+        INVALID = '<Invalid Equation>'
+        fnTxts = None
+        params = bpy.context.window_manager.bezierToolkitParams
+        # TODO: Should be somewhere else
+        tool = bpy.context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
+        if(tool.idname == 'flexi_bezier.draw_tool' and params.drawObjType == 'MATH'):
+
+            if(params.mathFnType == 'PARAMETRIC'):
+                fn1 = MathFnDraw.getEvaluatedExpr(params.drawMathFnParametric1)
+                fn2 = MathFnDraw.getEvaluatedExpr(params.drawMathFnParametric2)
+                fnTxts = ['y = ' + (fn2 if MathFnDraw.testFn(fn2, 't') else INVALID), \
+                    'x = '+ (fn1 if MathFnDraw.testFn(fn1, 't') else INVALID)]
+            else:
+                expr = MathFnDraw.getEvaluatedExpr(params.drawMathFn)
+                inverted = MathFnDraw.isInverted(expr)
+                if(inverted == None):
+                    fnTxts = [INVALID]
+                elif(inverted):
+                    fnTxts = ['x = ' + expr]
+                else:
+                    fnTxts = ['y = ' + expr]
+        return fnTxts
+
+    def getMathFnFolder(create = True):
+        userPath = bpy.utils.resource_path('USER')
+        configPath = os.path.join(userPath, "config")
+        mathFnFolder = configPath + '/mathFunctions'
+        if(create and not os.path.isdir(mathFnFolder)):
+            os.makedirs(mathFnFolder)
+        return mathFnFolder
+
+    def getMathFnList(dummy1 = None, dummy2 = None):
+        if(MathFnDraw.mathFnItems == None or MathFnDraw.mathFnDirty):
+            mathFnFolder = MathFnDraw.getMathFnFolder()
+            fNames = sorted([fName for fName in os.listdir(mathFnFolder)
+                if fName.endswith('.' + MathFnDraw.mathFnFileExt)], key=lambda s: s.lower())
+            MathFnDraw.mathFnItems = [MathFnDraw.mathFnNoSelItem]
+            for fName in fNames:
+                with open(mathFnFolder + '/' + fName) as f:
+                    doc = minidom.parse(f)
+                fnName = doc.documentElement.getAttribute(MathFnDraw.xFnName)
+                fnDescr = doc.documentElement.getAttribute(MathFnDraw.xFnDescr)
+                MathFnDraw.mathFnItems.append((fnName, fnName, fnDescr))
+            MathFnDraw.mathFnDirty = False
+
+        return MathFnDraw.mathFnItems
+
+    def refreshDefaultParams():
+        params = bpy.context.window_manager.bezierToolkitParams
+        # ~ params.mathFnDescr = MathFnDraw.defFNXYDescr
+        # ~ params.mathFnResolution = MathFnDraw.defFNRes        
+        # ~ params.mathFnType = MathFnDraw.defFnType
+        # ~ params.drawMathFn = MathFnDraw.defFnXY
+        # ~ params.mathFnclipVal = MathFnDraw.defClipVal
+
+        for i in range(Primitive2DDraw.getParamCnt()):
+            char = chr(ord('A') + i)
+            exec('params.' + MathFnDraw.startPrefix + str(i) + ' = ' + \
+                str(MathFnDraw.defConstStart))
+            exec('params.' + MathFnDraw.incrPrefix + str(i) + ' = ' + \
+                str(MathFnDraw.defConstIncr))
+       
+    def refreshParamsFromFile(dummy1 = None, dummy2 = None):
+        params = bpy.context.window_manager.bezierToolkitParams
+        mathFnSel = params.mathFnList
+        if(mathFnSel == MathFnDraw.mathFnNoSelItem[0]):
+            refreshDefaultParams()
+            return
+        mathFnFolder = MathFnDraw.getMathFnFolder()
+        filepath = mathFnFolder + '/' + mathFnSel + '.' + MathFnDraw.mathFnFileExt
+
+        with open(filepath) as f:
+            doc = minidom.parse(f)        
+
+        docElem = doc.documentElement
+
+        fnName = docElem.getAttribute(MathFnDraw.xFnName)
+        fnDescr = docElem.getAttribute(MathFnDraw.xFnDescr)
+        fnType = docElem.getAttribute(MathFnDraw.xFnType)
+        fnCurveRes = float(docElem.getAttribute(MathFnDraw.xFnCurveRes))
+
+        params.mathFnName = fnName
+        params.mathFnDescr = fnDescr
+        params.mathFnType = fnType
+        params.mathFnResolution = fnCurveRes
+
+        fnElem = docElem.getElementsByTagName(MathFnDraw.xFns)[0]
+
+        if(fnType == 'PARAMETRIC'):
+            fnTMapTo = fnElem.getAttribute(MathFnDraw.xTMapTo)
+            params.drawMathTMapTo = fnTMapTo
+
+            fnTScaleFact = float(fnElem.getAttribute(MathFnDraw.xTScaleFact))
+            params.drawMathTScaleFact = fnTScaleFact
+
+            fnTStart = float(fnElem.getAttribute(MathFnDraw.xTStart))
+            params.drawMathTStart = fnTStart
+
+            elem = fnElem.getElementsByTagName(MathFnDraw.xParamFn1)[0]
+            paramFn1 = elem.getAttribute(MathFnDraw.xEquation)
+            params.drawMathFnParametric1 = paramFn1
+
+            elem = fnElem.getElementsByTagName(MathFnDraw.xParamFn2)[0]
+            paramFn2 = elem.getAttribute(MathFnDraw.xEquation)
+            params.drawMathFnParametric2 = paramFn2
+        else:
+            fnYClip = float(fnElem.getAttribute(MathFnDraw.xClipVal))
+            params.mathFnclipVal = fnYClip
+
+            elem = fnElem.getElementsByTagName(MathFnDraw.xXYFn)[0]
+            xyFn = elem.getAttribute(MathFnDraw.xEquation)
+            params.drawMathFn = xyFn
+
+        for i in range(Primitive2DDraw.getParamCnt()):
+            char = chr(ord('A') + i)
+
+            elem = fnElem.getElementsByTagName(MathFnDraw.xConstPrefix + char)[0]
+            startVal = float(elem.getAttribute(MathFnDraw.xValue))
+            incrVal = float(elem.getAttribute(MathFnDraw.xIncr))
+            exec('params.' + MathFnDraw.startPrefix + str(i) + ' = ' + str(startVal))
+            exec('params.' + MathFnDraw.incrPrefix + str(i) + ' = ' + str(incrVal))
+
+        areas = [a for a in bpy.context.screen.areas]
+        for a in areas:
+            a.tag_redraw()
+
+
+class ResetMathFn(Operator):
+    bl_idname = "object.reset_math_fn" 
+    bl_label = "Reset"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            MathFnDraw.refreshParamsFromFile()
+        except:
+            MathFnDraw.refreshDefaultParams()
+
+        return {'FINISHED'}
+
+# TODO: Better validation and error handling
+class SaveMathFn(Operator):
+    bl_idname = "object.save_math_fn" 
+    bl_label = "Save"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        params = bpy.context.window_manager.bezierToolkitParams
+        fnName = params.mathFnName
+        fnDescr = params.mathFnDescr
+        fnType = params.mathFnType
+        fnCurveRes = params.mathFnResolution
+        if(fnName.strip() == ''): # Error Condition #1
+            return {'FINISHED'}
+
+        doc = minidom.getDOMImplementation().createDocument(None, MathFnDraw.xDocTag, None)
+        docElem = doc.documentElement
+
+        docElem.setAttribute(MathFnDraw.xFnName, fnName)
+        docElem.setAttribute(MathFnDraw.xFnDescr, fnDescr)
+        docElem.setAttribute(MathFnDraw.xFnType, fnType)
+        docElem.setAttribute(MathFnDraw.xFnCurveRes, str(fnCurveRes))
+
+        fnElem = doc.createElement(MathFnDraw.xFns)
+        docElem.appendChild(fnElem)
+        if(fnType == 'PARAMETRIC'):
+            paramFn1 = params.drawMathFnParametric1
+            paramFn2 = params.drawMathFnParametric2
+
+            if(paramFn1.strip() == '' or paramFn2.strip() == ''): # Error Condition #2
+                return {'FINISHED'}
+
+            fnTMapTo = params.drawMathTMapTo
+            fnElem.setAttribute(MathFnDraw.xTMapTo, str(fnTMapTo))
+
+            fnTScaleFact = params.drawMathTScaleFact
+            fnElem.setAttribute(MathFnDraw.xTScaleFact, str(fnTScaleFact))
+
+            fnTStart = params.drawMathTStart
+            fnElem.setAttribute(MathFnDraw.xTStart, str(fnTStart))
+
+            elem = doc.createElement(MathFnDraw.xParamFn1)
+            elem.setAttribute(MathFnDraw.xEquation, paramFn1)
+            fnElem.appendChild(elem)
+
+            elem = doc.createElement(MathFnDraw.xParamFn2)
+            elem.setAttribute(MathFnDraw.xEquation, paramFn2)
+            fnElem.appendChild(elem)
+
+        else:
+            xyFn = params.drawMathFn
+            if(xyFn.strip() == ''): # Error Condition #3
+                return {'FINISHED'}
+
+            elem = doc.createElement(MathFnDraw.xXYFn)
+            elem.setAttribute(MathFnDraw.xEquation, xyFn)
+            fnElem.appendChild(elem)
+
+            fnYClip = params.mathFnclipVal
+            fnElem.setAttribute(MathFnDraw.xClipVal, str(fnYClip))
+
+        for i in range(Primitive2DDraw.getParamCnt()):
+            char = chr(ord('A') + i)
+
+            startVal = round(eval('params.' + MathFnDraw.startPrefix + str(i)), 4)
+            incrVal = round(eval('params.' + MathFnDraw.incrPrefix + str(i)), 4)
+            elem = doc.createElement(MathFnDraw.xConstPrefix + char)
+            elem.setAttribute(MathFnDraw.xValue, str(startVal))
+            elem.setAttribute(MathFnDraw.xIncr, str(incrVal))
+            fnElem.appendChild(elem)
+
+        mathFnFolder = MathFnDraw.getMathFnFolder()
+        fnFile = mathFnFolder + '/' + fnName + '.' + MathFnDraw.mathFnFileExt
+
+        try:
+            with open(fnFile,"w") as f:
+                doc.writexml(f)
+
+            MathFnDraw.mathFnDirty = True
+            params.mathFnList = fnName
+        except: # Error Condition #4
+            self.report({'ERROR'}, 'Error saving math function file')
+
+        return {'FINISHED'}
+
+
+# TODO: Better validation and error handling
+class LoadMathFn(Operator):
+    bl_idname = "object.load_math_fn" 
+    bl_label = "Load"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filter_glob : StringProperty(default = '*.' + MathFnDraw.mathFnFileExt, options={'HIDDEN'})
+    filepath : StringProperty(subtype='FILE_PATH')
+
+    def execute(self, context):
+        params = bpy.context.window_manager.bezierToolkitParams
+        try:
+            with open(self.filepath) as f:
+                doc = minidom.parse(f)
+            fnName = doc.documentElement.getAttribute(MathFnDraw.xFnName)
+            mathFnFolder = MathFnDraw.getMathFnFolder()
+            destPath = mathFnFolder + '/' + fnName + '.' + MathFnDraw.mathFnFileExt
+            copyfile(self.filepath, destPath)
+            MathFnDraw.mathFnDirty = True
+            params.mathFnList = fnName
+        except:
+            self.report({'ERROR'}, 'Error importing math function file')
+
+        return {'FINISHED'}
+        
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+class DeleteMathFn(bpy.types.Operator):
+    bl_idname = "object.delete_math_fn"
+    bl_label = "Remove function from list and delete it permanently?"
+    bl_options = {'REGISTER', 'INTERNAL'}
+
+    # ~ @classmethod
+    # ~ def poll(cls, context):
+        # ~ return True
+
+    def execute(self, context):
+        params = bpy.context.window_manager.bezierToolkitParams
+        fnName = params.mathFnList
+        if(fnName != MathFnDraw.mathFnNoSelItem[0]):
+            mathFnFolder = MathFnDraw.getMathFnFolder()
+            fnFile = mathFnFolder + '/' + fnName + '.' + MathFnDraw.mathFnFileExt
+            try:
+                os.remove(fnFile)
+                MathFnDraw.mathFnDirty = True
+                params.mathFnList = MathFnDraw.mathFnNoSelItem[0]
+            except:
+                self.report({'ERROR'}, 'Error deleting math function file')
+
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        params = bpy.context.window_manager.bezierToolkitParams
+        fnName = params.mathFnList
+        if(fnName != MathFnDraw.mathFnNoSelItem[0]):
+            return context.window_manager.invoke_props_dialog(self)
+        else:
+            return {'FINISHED'}
+
+class ClosedShapeDraw(Primitive2DDraw):
+    def __init__(self, parent, star = False):
+        super(ClosedShapeDraw, self).__init__(parent)
+    
+    def updateSegCount(self, event, rmInfo, isIncr):
+        minSegs, maxSegs = self.getNumSegsLimits()
+        if(isIncr and self.shapeSegCnt < maxSegs): self.shapeSegCnt += 1
+        if(not isIncr and self.shapeSegCnt > minSegs): self.shapeSegCnt -= 1
+        self.afterShapeSegCnt()
+        self.updateCurvePts()
+        self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
+        return True
+
+    def updateParam1(self, event, rmInfo, isIncr):
+        params = bpy.context.window_manager.bezierToolkitParams
+        theta = params.drawAngleSweep
+
+        if(isIncr):
+            if(theta >= -10 and theta <= 0): params.drawAngleSweep = 10
+            elif(theta > 350): params.drawAngleSweep = -350
+            else: params.drawAngleSweep = theta + 10
+        else:
+            if(theta <= 10 and theta >= 0): params.drawAngleSweep = -10
+            elif(theta < -350): params.drawAngleSweep = 350
+            else: params.drawAngleSweep = theta - 10
+        self.updateCurvePts()
+        self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
+        return True
+        
+class RectangleDraw(ClosedShapeDraw):
     def __init__(self, parent, star = False):
         super(RectangleDraw, self).__init__(parent)
 
@@ -5962,17 +6589,14 @@ class RectangleDraw(Primitive2DDraw):
 
         return curvePts
 
-class PolygonDraw(Primitive2DDraw):
+class PolygonDraw(ClosedShapeDraw):
 
-    def updateParam1(self, event, rmInfo):
-        if(event.value == 'PRESS'): return True
+    def updateParam0(self, event, rmInfo, isIncr):
         params = bpy.context.window_manager.bezierToolkitParams
         offset = params.drawStarOffset
 
-        if(event.type =='DOWN_ARROW'):
-            params.drawStarOffset -= 0.1
-        else:
-            params.drawStarOffset += 0.1
+        params.drawStarOffset += 0.1 if(isIncr) else -0.1
+
         self.updateCurvePts()
         self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
         return True
@@ -6014,7 +6638,7 @@ class PolygonDraw(Primitive2DDraw):
 
         return curvePts
 
-class EllipseDraw(Primitive2DDraw):
+class EllipseDraw(ClosedShapeDraw):
 
     # https://math.stackexchange.com/questions/22064/calculating-a-point-that-lies-on-an-ellipse-given-an-angle
     def getPtAtAngle(a, b, theta):
@@ -6029,17 +6653,17 @@ class EllipseDraw(Primitive2DDraw):
     def __init__(self, parent):
         super(EllipseDraw, self).__init__(parent)
 
-    def updateParam1(self, event, rmInfo):
-        if(event.value == 'PRESS'): return True
+    def updateParam0(self, event, rmInfo, isIncr):
         params = bpy.context.window_manager.bezierToolkitParams
         theta = params.drawStartAngle
 
-        if(event.type =='DOWN_ARROW'):
-            if(theta < -350): params.drawStartAngle = 0
-            else: params.drawStartAngle = theta - 10
-        else:
+        if(isIncr):
             if(theta > 350): params.drawStartAngle = 0
             else: params.drawStartAngle = theta + 10
+        else:
+            if(theta < -350): params.drawStartAngle = 0
+            else: params.drawStartAngle = theta - 10
+
         self.updateCurvePts()
         self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
         return True
@@ -6436,6 +7060,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         self.ellipseDrawObj = EllipseDraw(self)
         self.polygonDrawObj = PolygonDraw(self)
         self.starDrawObj = PolygonDraw(self, star = True)
+        self.mathDrawObj = MathFnDraw(self)
 
         ModalDrawBezierOp.drawObjMap = \
             {'BEZIER': self.bezierDrawObj, \
@@ -6443,6 +7068,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
              'ELLIPSE': self.ellipseDrawObj, \
              'POLYGON': self.polygonDrawObj, \
              'STAR': self.starDrawObj, \
+             'MATH': self.mathDrawObj, \
             }
         self.setDrawObj()
 
@@ -9168,6 +9794,8 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
 
     otherExpanded: BoolProperty(name = "Other Tools", default = False)
 
+    mathExtraExpanded: BoolProperty(name = "Math Function Extra", default = False)
+
     ############### Flexi Tools Params #########################
 
     drawObjType: EnumProperty(name = "Draw Shape", \
@@ -9175,7 +9803,8 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
             ('RECTANGLE', 'Rectangle', 'Draw Rectangle'),
             ('ELLIPSE', 'Ellipse / Circle', 'Draw Ellipse or Circle'),
             ('POLYGON', 'Polygon', 'Draw regular polygon'),
-            ('STAR', 'Star', 'Draw Star')),
+            ('STAR', 'Star', 'Draw Star'),
+            ('MATH', 'Math Function', 'Draw a function plot for given python expression')),
         description = 'Type of shape to draw', default = 'BEZIER',
         update = ModalDrawBezierOp.updateDrawType)
 
@@ -9184,6 +9813,73 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
             ('CENTER', 'Center', 'Draw from center')),
         description = 'Drawing mode', default = 'CENTER',
         update = ModalDrawBezierOp.updateDrawType)
+
+    mathFnList: EnumProperty(name = 'Function List', \
+        items = MathFnDraw.getMathFnList, description = 'Available math functions', 
+            update = MathFnDraw.refreshParamsFromFile )
+
+    mathFnName: StringProperty(name = 'Name', \
+        description = 'Identifier for the set of parameters', default = MathFnDraw.defFNXYName)
+
+    mathFnDescr: StringProperty(name = 'Description', \
+        description = 'Description of the equation', default = MathFnDraw.defFNXYDescr)
+
+    mathFnResolution: IntProperty(name = 'Curve Resolution', \
+        description = 'Resolution of plotted curve', default = MathFnDraw.defFNRes)
+
+    drawMathFn: StringProperty(name = 'Equation', \
+        description = 'Math function to be plotted', default = MathFnDraw.defFnXY)
+
+    mathFnclipVal: FloatProperty(name = 'Clip Value', \
+        description = 'Bounding limits (both directions) for Y values', \
+            default = MathFnDraw.defClipVal, min = 0)
+
+    mathFnType: EnumProperty(name = 'Type', \
+        items = (('XY', 'XY Equation', 'Function of the nature y = f(x)'),
+            ('PARAMETRIC', 'Parametric Equation', 'Function of the nature x=f(t); y=f(t)')),
+        description = 'Type of function', default = MathFnDraw.defFnType)
+
+    drawMathFnParametric1: StringProperty(name = 'X Function', \
+        description = 'X parametric function (use t for parameter)', \
+            default = MathFnDraw.defFnParam1)
+
+    drawMathFnParametric2: StringProperty(name = 'Y Function', \
+        description = 'Y parametric function (use t for parameter)', \
+            default = MathFnDraw.defFnParam2)
+
+    drawMathTMapTo: EnumProperty(name = 'Map t', \
+        items = (('X','x','Increase or decrease t with x'), 
+        ('Y','y','Increase or decrease t with y'), 
+        ('XY','xy','Increase or decrease t with both x and y'),
+        ('HORIZONTAL','horizontal', \
+            'Increase or decrease t with mouse movement in horizontal direction'),
+        ('VERTICAL','vertical', \
+            'Increase or decrease t with mouse movement in vertical direction'),
+        ('HORIZONTALVERTICAL','horizontal & vertical',\
+            'Increase or decrease t with mouse movement in both horizontal & vertical directions')),
+        description = 't change with movement of mouse on viewport',\
+        default = MathFnDraw.defTMapTo)
+
+    drawMathTScaleFact: FloatProperty(name = 't Scale Factor', \
+        description = 'Factor to increment t at each step', default = MathFnDraw.defTScale)
+
+    drawMathTStart: FloatProperty(name = 't Start Value', \
+        description = 'Starting value of param t', default = MathFnDraw.defTStart)
+
+    # Dynamic parameters for draw math plot - start
+    hks = Primitive2DDraw.getParamHotKeyDescriptions()
+
+    for i in range(Primitive2DDraw.getParamCnt()):
+        char = chr(ord('A') + i)
+        paramStr = MathFnDraw.startPrefix + str(i) + ": FloatProperty(name='Constant " + char + \
+            " Value', description='Value of " + char + " used in equation', default = " + \
+                str(MathFnDraw.defConstStart) + ")"
+        exec(paramStr)
+        paramStr = MathFnDraw.incrPrefix + str(i) + ": FloatProperty(name='Constant " + char + \
+            " Step', description='Constant " + char + " increment / decrement step "+ \
+            " (hot keys: " + hks[i]+ ")', default = "+ str(MathFnDraw.defConstIncr) + ")"
+        exec(paramStr)
+    # Dynamic parameters for draw math plot - end
 
     drawStartAngle: FloatProperty(name = "Arc Start Angle", \
         description = 'Start angle in degrees', default = 90, max = 360, min = -360)
@@ -9313,6 +10009,13 @@ def drawSettingsFT(self, context):
             self.layout.prop(brush.gpencil_settings, 'pen_strength', text ='')
         self.layout.prop(params, "drawObjType", text = '')
         if(params.drawObjType != 'BEZIER'):
+            if(params.drawObjType == 'MATH'):
+                self.layout.prop(params, "mathFnType", text = '')
+                if(params.mathFnType == 'PARAMETRIC'):
+                    self.layout.prop(params, "drawMathFnParametric1", text = '')
+                    self.layout.prop(params, "drawMathFnParametric2", text = '')
+                else:
+                    self.layout.prop(params, "drawMathFn", text = '')
             self.layout.prop(params, "drawObjMode", text = '')
             if(params.drawObjType == 'ELLIPSE'):
                 self.layout.prop(params, "drawStartAngle", text = '')
@@ -9320,7 +10023,7 @@ def drawSettingsFT(self, context):
                 self.layout.prop(params, "drawSides", text = '')
             if(params.drawObjType == 'STAR'):
                 self.layout.prop(params, "drawStarOffset", text = '')
-            if(params.drawObjType != 'RECTANGLE'):
+            if(params.drawObjType != 'RECTANGLE' and params.drawObjType != 'MATH'):
                 self.layout.prop(params, "drawAngleSweep", text = '')
 
     self.layout.prop(params, "snapOrient", text = '')
@@ -9678,6 +10381,15 @@ class BezierUtilsPreferences(AddonPreferences):
             update = FTProps.updateProps
     )
 
+    mathFnTxtFontSize: IntProperty(
+            name = "Math Function Font Size",
+            description = "Font size of math function equations (Flexi Draw - Math Fn mode)",
+            default = 20,
+            min = 1,
+            max = 2000,
+            update = FTProps.updateProps
+    )
+
     keyMapLocX: IntProperty(
             name = "Keymap Location X",
             description = "Horizontal starting position of keymap display",
@@ -9838,6 +10550,13 @@ class BezierUtilsPreferences(AddonPreferences):
         name="Keymap Key Text Color", subtype="COLOR", size=4, min=0.0, max=1.0,\
         default=(0.0, 1.0, 1.0, 1.0), \
         description = 'Color of keymap key text',
+        update = FTProps.updateProps
+    )
+
+    colMathFnTxt: bpy.props.FloatVectorProperty(
+        name="Math Function Text Color", subtype="COLOR", size=4, min=0.0, max=1.0,\
+        default = (0.6, 1.0, 0.03, 1.0), \
+        description = "Color of math function equations (Flexi Draw - Math Fn mode)",
         update = FTProps.updateProps
     )
 
@@ -10054,6 +10773,13 @@ class BezierUtilsPreferences(AddonPreferences):
             col.label(text='Allow Numpad Entry:')
             col.prop(self, "numpadEntry", text = '')
             
+            col = box.column().split()
+            col.label(text='Math Function Text Size:')
+            col.prop(self, "mathFnTxtFontSize", text = '')
+            col = box.column().split()
+            col.label(text='Math Function Text Color:')
+            col.prop(self, "colMathFnTxt", text = '')
+
             box = box.box()
             col = box.column().split()
             col.label(text='Display Keymap:')
@@ -10182,6 +10908,10 @@ classes = [
     ResetDefaultPropsOp,
     ResetDefaultHotkeys,
     FTMenuOptionOp,
+    SaveMathFn,
+    LoadMathFn,
+    ResetMathFn,
+    DeleteMathFn,
 ]
 
 for menuData in FTMenu.editMenus:
