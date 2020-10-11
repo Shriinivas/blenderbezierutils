@@ -5896,7 +5896,7 @@ class Primitive2DDraw(BaseDraw):
     for i in range(len(dynamicParams)):
         exec('def updateParam' + str(i) + '(self, event, rmInfo, isIncr):\n\tpass')
 
-    def afterShapeSegCnt(): # Call back
+    def afterShapeSegCnt(self): # Call back
         pass
     
     def getCurvePts(self, numSegs, axisIdxs, z = None):
