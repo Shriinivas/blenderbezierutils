@@ -229,7 +229,7 @@ def updateShapeKeyData(obj, keyData, keyNames, startIdx, cnt = None, add = False
             key.data[j].handle_left = keyData[i][keyIdx][0].copy()
             key.data[j].co = keyData[i][keyIdx][1].copy()
             key.data[j].handle_right = keyData[i][keyIdx][2].copy()
-    
+
     obj.active_shape_key_index = currIdx
 
 #TODO: Fix this hack if possible
@@ -391,13 +391,13 @@ def copyProperties(srcObj, destCurve):
 
     # If object is bezier curve copy curve properties and material
     if(isBezier(srcObj)):
-        # Copying just a few attributes        
+        # Copying just a few attributes
         destData.dimensions = srcData.dimensions
 
         destData.resolution_u = srcData.resolution_u
-        destData.render_resolution_u = srcData.render_resolution_u    
+        destData.render_resolution_u = srcData.render_resolution_u
         destData.fill_mode = srcData.fill_mode
-        
+
         destData.use_fill_deform = srcData.use_fill_deform
         destData.use_radius = srcData.use_radius
         destData.use_stretch = srcData.use_stretch
@@ -405,7 +405,7 @@ def copyProperties(srcObj, destCurve):
 
         destData.twist_smooth = srcData.twist_smooth
         destData.twist_mode = srcData.twist_mode
-        
+
         destData.offset = srcData.offset
         destData.extrude = srcData.extrude
         destData.bevel_depth = srcData.bevel_depth
@@ -666,18 +666,18 @@ def  getViewDistRounding(space3d, rv3d):
     viewDist = rv3d.view_distance * getUnitScale()
     gridDiv = getGridSubdiv(space3d)
     subFact = 1
-    # TODO: Separate logic for 1 
+    # TODO: Separate logic for 1
     if(gridDiv == 1): gridDiv = 10
     elif(gridDiv == 2): subFact = 5
     elif(viewDist < 0.5): subFact = 2
     return int(log(viewDist, gridDiv)) - subFact
 
 # Return axis-indices (x:0, y:1, z:2) of plane with closest orientation
-# to view 
+# to view
 def getClosestPlaneToView(rv3d):
     viewmat = rv3d.view_matrix
     trans, quat, scale = viewmat.decompose()
-    tm = quat.to_matrix().to_4x4() 
+    tm = quat.to_matrix().to_4x4()
     viewnormal = tm.inverted() @ Vector((0, 0, 1))
 
     xynormal = [Vector((0, 0, 1)), [0, 1]]
@@ -738,7 +738,7 @@ def getPtProjOnPlane(region, rv3d, xy, p1, p2, p3, p4 = None):
         # ~ pt = geometry.intersect_ray_tri(p2, p4, p3, vec, orig, True)
     return pt
 
-# find the location on 3d line p1-p2 if xy is already on 2d projection (in rv3d) of p1-p2 
+# find the location on 3d line p1-p2 if xy is already on 2d projection (in rv3d) of p1-p2
 def getPtProjOnLine(region, rv3d, xy, p1, p2):
     # Just find a non-linear point (TODO: simpler way)
     pd1 = p2 - p1
@@ -855,13 +855,13 @@ def getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt):
 
 def getSnappableObjs(region, rv3d, xy):
     objs = bpy.context.selected_objects
-    if(bpy.context.object != None): 
+    if(bpy.context.object != None):
         objs.append(bpy.context.object)
     return [o for o in objs if(o.type == 'MESH' and len(o.modifiers) == 0 and \
             isPtIn2dBBox(o, region, rv3d, xy))]
-    
+
 # precise can be pretty expensive with large vert count
-def get2dBBox(obj, region, rv3d, precise = False): 
+def get2dBBox(obj, region, rv3d, precise = False):
     mw = obj.matrix_world
     if(precise):
         co2ds = [getCoordFromLoc(region, rv3d, mw @ Vector(v.co)) \
@@ -1349,12 +1349,12 @@ def convertToFace(curve, remeshRes, perSeg, fillType, optimized):
             segPts = [bptData[splineIdx][x] for x in range(len(bpts))]
             if(addLastVert): segPts.append(segPts[0])
             numSegs = int(remeshRes * splineLens[splineIdx] / maxSplineLen)
-            if(numSegs <= 2): 
+            if(numSegs <= 2):
                 vertCos = [bpts[0].co, bpts[-1].co]
             else:
                 pts = getInterpBezierPts(segPts, subdivPerUnit = 100, segLens = None)
                 vertCos = getInterpolatedVertsCo(pts, numSegs)
-            for co in vertCos: 
+            for co in vertCos:
                 verts.append(bm.verts.new(co))
         else:
             if(remeshRes > 0):
@@ -1380,14 +1380,14 @@ def convertToFace(curve, remeshRes, perSeg, fillType, optimized):
             else:
                 for ptIdx, bpt in enumerate(bpts):
                     verts.append(bm.verts.new(bpts[ptIdx].co))
-                if(addLastVert): 
+                if(addLastVert):
                     verts.append(bm.verts.new(bpts[0].co))
         if(len(verts) < 2):
             pass
         elif(len(verts) == 2):
             bm.edges.new(verts)
         else:
-            if(spline.use_cyclic_u): 
+            if(spline.use_cyclic_u):
                 bm.verts.remove(verts[-1])
                 verts.pop()
 
@@ -1401,7 +1401,7 @@ def convertToFace(curve, remeshRes, perSeg, fillType, optimized):
 
             if(fillType == 'NGON'):
                 bm.faces.new(verts)
-                
+
             elif(fillType == 'NONE'):
                 for i in range(1, len(verts)):
                     bm.edges.new([verts[i-1], verts[i]])
@@ -1583,7 +1583,7 @@ def intersectCurves(curves, action, firstActive, margin, rounding):
                 selPtMap[curve][splineIdx] += \
                     list(range(segIdx + startIdxIncr, \
                         segIdx + len(sortedCos) + endIdxIncr))
-    
+
         if(action == 'CUT'):
             for curve in list(selPtMap.keys()):
                 splineIdxs = sorted(selPtMap[curve].keys())
@@ -2216,8 +2216,8 @@ class IntersectCurvesOp(Operator):
         return {'FINISHED'}
 
 class ExportSVGOp(Operator):
-    
-    bl_idname = "object.export_svg" 
+
+    bl_idname = "object.export_svg"
     bl_label = "Export to SVG"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -2230,21 +2230,21 @@ class ExportSVGOp(Operator):
 
     filepath : StringProperty(subtype='FILE_PATH')
 
-    #User input 
+    #User input
     clipView : BoolProperty(name="Clip View", \
         description = "Clip objects to view boundary", \
             default = True)
-        
-    exportView: EnumProperty(name = 'Export View', 
+
+    exportView: EnumProperty(name = 'Export View',
         items = getExportViewList,
         description='View to export')
 
     lineWidth: FloatProperty(name="Line Width", \
         description='Line width in exported SVG', default = 3, min = 0)
 
-    lineColorOpts: EnumProperty(name = 'Line Color', 
+    lineColorOpts: EnumProperty(name = 'Line Color',
         items = (('RANDOM', 'Random', 'Use random color for curves'),
-                 ('PICK', 'Pick', 'Pick color'),        
+                 ('PICK', 'Pick', 'Pick color'),
         ),
         description='Color to draw curve lines')
 
@@ -2256,10 +2256,10 @@ class ExportSVGOp(Operator):
         max=1.0,
         default=(0.5, 0.5, 0.5, 1.0)
     )
-    
-    fillColorOpts: EnumProperty(name = 'Fill Color', 
+
+    fillColorOpts: EnumProperty(name = 'Fill Color',
         items = (('RANDOM', 'Random', 'Use random fill color'),
-                 ('PICK', 'Pick', 'Pick color'),        
+                 ('PICK', 'Pick', 'Pick color'),
         ),
         description='Color to fill solid curves')
 
@@ -2271,12 +2271,12 @@ class ExportSVGOp(Operator):
         max=1.0,
         default=(0, 0.3, 0.5, 1.0)
     )
-    
+
     def execute(self, context):
         exportSVG(context, self.filepath, self.exportView, self.clipView, self.lineWidth, \
             self.lineColorOpts, self.lineColor, self.fillColorOpts, self.fillColor)
         return {'FINISHED'}
-        
+
     def draw(self, context):
         layout = self.layout
         col = layout.column()
@@ -2849,7 +2849,7 @@ def getTangentAtT(p0, p1, p2, p3, t):
     tangent = -3 * (c * c) * p0 + 3 * c * c * p1 - 6 * t * c * p1 - \
         3 * t * t * p2 + 6 * t * c * p2 + 3 * t * t * p3
     return tangent
- 
+
 # iterative brute force, not optimized, some iterations maybe redundant
 def getTsForPt(p0, p1, p2, p3, co, coIdx, tolerance = 0.000001, maxItr = 1000):
     ts = set()
@@ -3018,7 +3018,7 @@ def getIntersectPts(seg0, seg1, soln, solnRounded, recurs, margin, rounding, \
             return any((r0, r1, r2, r3))
     return False
 
-# splineInfos: [(curveIdx0, splineIdx0), (curveIdx0, splineIdx1),...]    
+# splineInfos: [(curveIdx0, splineIdx0), (curveIdx0, splineIdx1),...]
 # First active means intersections only with the first curve (otherwise all combinations)
 def getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding):
     segPairMap = {}
@@ -3622,7 +3622,7 @@ class BGLDrawMgr:
         self.ptInfoMap[infoId] = BGLDrawInfo(size, color, pts)
 
     def redraw(self):
-        lineInfos = sorted(self.lineInfoMap.values(), key = lambda x: (x.size)) 
+        lineInfos = sorted(self.lineInfoMap.values(), key = lambda x: (x.size))
         pos = []
         col = []
         batches = []
@@ -3635,7 +3635,7 @@ class BGLDrawMgr:
                     batch.draw(self.shader)
                 pos = []
                 col = []
-                
+
             if(info.gradientEnd != None and info.gradientStart != None):
                 if(len(info.pts) != 2 and len(info.color) != 1):
                     raise ValueError('Exactly two ' + \
@@ -3661,8 +3661,8 @@ class BGLDrawMgr:
             batch = batch_for_shader(self.shader, \
                 'LINES', {"pos": pos, "color": col})
             batch.draw(self.shader)
-            
-        ptInfos = sorted(self.ptInfoMap.values(), key = lambda x: (x.size)) 
+
+        ptInfos = sorted(self.ptInfoMap.values(), key = lambda x: (x.size))
         for i, info in enumerate(ptInfos):
             if(i == 0 or info.size != ptInfos[i-1].size):
                 if(i > 0):
@@ -3682,7 +3682,7 @@ class BGLDrawMgr:
             else:
                 for j in range(-diff):
                     ptCols.pop()
-                
+
             pos += info.pts[:]
             col += ptCols
 
@@ -3791,9 +3791,9 @@ class FTHotKeyData:
         self.label = label
         self.description = description
         self.default = key
-        # isExclusive means the hot key function will be invoked even if there are 
+        # isExclusive means the hot key function will be invoked even if there are
         # meta keys (that are not part of the hot key combination) are
-        # held down together with this key. This way user can have both 
+        # held down together with this key. This way user can have both
         # meta key related functionality (e.g. snapping) amd hot key functionality
         # (e. g. tweak position) simultaneously (Tweak from a snapped point)
         self.isExclusive = isExclusive
@@ -4195,13 +4195,13 @@ class FTHotKeys:
     def getHKDispLines(toolType):
         hkData = [k for k in FTHotKeys.commonHotkeys if toolType not in k.exclTools]
         for i, hk in enumerate(FTHotKeys.snapHotkeysMeta):
-            if(hk.key == 'KEY' and toolType not in hk.exclTools): 
+            if(hk.key == 'KEY' and toolType not in hk.exclTools):
                 hkData.append(FTHotKeys.snapHotkeys[i])
-            else: 
+            else:
                 hkData.append(hk)
         if(toolType in TOOL_TYPES_FLEXI_DRAW_COMMON):
             hkData += [k for k in FTHotKeys.drawHotkeys if toolType not in k.exclTools]
-        if(toolType == TOOL_TYPE_FLEXI_EDIT): 
+        if(toolType == TOOL_TYPE_FLEXI_EDIT):
             hkData += [k for k in FTHotKeys.editHotkeys if toolType not in k.exclTools]
 
         labels = []
@@ -4225,7 +4225,7 @@ class FTHotKeys:
             keys.append(k[1])
 
         return config, labels, keys
-            
+
 
 # Flexi Tool Constants
 class FTProps:
@@ -4580,7 +4580,7 @@ class SnapDigits:
             return True
 
         dmap = self.digitMap.copy()
-        if(FTProps.numpadEntry): 
+        if(FTProps.numpadEntry):
             dmap.update(self.numpadDigitMap)
         dval = dmap.get(event.type)
         if(dval != None):
@@ -4788,7 +4788,7 @@ class SnapParams:
         origType = None, \
         axisScale = None, \
         freeAxesN = None, \
-        dispAxes = True, 
+        dispAxes = True,
         snapToPlane = None):
 
         self.xyDelta = xyDelta
@@ -4821,7 +4821,7 @@ class SnapParams:
 
         self.freeAxesN = snapper.getFreeAxesNormalized() \
             if(freeAxesN == None) else freeAxesN
-        
+
         self.dispAxes = dispAxes
 
         if(snapToPlane != None):
@@ -5094,7 +5094,7 @@ class Snapper:
 
             retStr += axisDeltaFormat.format(axis = v1, axisDelta = v2)
 
-            if(transformed): 
+            if(transformed):
                 v3 = str(round(diffVActual[i], 4))
                 retStr += axisDiffFormat.format(axisDiff = v3)
 
@@ -5110,7 +5110,7 @@ class Snapper:
         retStr += totalDeltaFormat.format(totalDelta = diffVStr, unit = unitT)
 
         totalDiffVFormat = '{{{totalDiffV}{unit}}}'
-        if(transformed): 
+        if(transformed):
             diffVStr = str(round(diffVActual.length, 4))
             retStr += totalDiffVFormat.format(totalDiffV = diffVStr, unit = unitA)
 
@@ -5194,9 +5194,9 @@ class Snapper:
 
         tm, invTm, orig = self.getTMInfoAndOrig(rmInfo, transType, \
             origType, self.freezeOrient, axisScale, refLineOrig, selCo)
-        
+
         # Must be done after the call to getTMInfoAndOrig
-        if(hasSel): self.freezeOrient = True 
+        if(hasSel): self.freezeOrient = True
 
         vec = snapParams.vec if (snapParams.vec != None) else orig
 
@@ -5454,14 +5454,14 @@ class Snapper:
                     pt1[axis] = l + refCo[axis]
                     pt2[axis] = -l + refCo[axis]
                     axisLineCos[axis] = [invTm @ pt1, invTm @ pt2]
-                
+
             if(refLineOrig != None and self.lastSelCo != None and \
                 (self.angleSnap or ('keyboard' in self.lastSnapTypes \
                     and self.snapDigits.polar))):
 
                 snapLineCos = [orig, self.lastSelCo]
                 snapLineCols = [(.4, .4, .4, 1)]
-                ptCol = (1, 1, 1, 1)            
+                ptCol = (1, 1, 1, 1)
 
             if(self.customAxis.length() != 0 and (self.customAxis.inDrawAxis == True or \
                 'AXIS' in {transType, origType, axisScale})):
@@ -5476,8 +5476,8 @@ class Snapper:
 
             if(FTProps.dispSnapInd and self.snapCo != None):
                 snapIndPtCos = [self.snapCo]
-                snapIndPtCols = [FTProps.colHltTip] #[(1, .4, 0, 1)]            
-        
+                snapIndPtCols = [FTProps.colHltTip] #[(1, .4, 0, 1)]
+
         for i, axis in enumerate(drawAxes):
             axisGradStart = .2 if len(axisLineCos[i]) > 0 else None
             axisGradEnd = .9 if len(axisLineCos[i]) > 0 else None
@@ -5527,7 +5527,7 @@ class ModalBaseFlexiOp(Operator):
             for r in area.regions if r.type == 'WINDOW']
         maxArea = max(r.width * r.height for r in regions)
         currRegion = [r for r in bpy.context.area.regions if r.type == 'WINDOW'][0]
-        
+
         # Only display in window with max area
         if(currRegion.width * currRegion.height < maxArea): return
         toolRegion = [r for r in bpy.context.area.regions if r.type == 'TOOLS'][0]
@@ -5587,7 +5587,7 @@ class ModalBaseFlexiOp(Operator):
         blf.size(font_id, FTProps.mathFnTxtFontSize, 72)
         blf.color(*mathFnCol)
         lineHeight = blf.dimensions(font_id, 'yX')[1]
-        
+
         yOff = lineHeight / 2
         if(mathFnTxts != None):
             for t in mathFnTxts:
@@ -5679,7 +5679,7 @@ class ModalBaseFlexiOp(Operator):
         ModalBaseFlexiOp.running = True
         self.preInvoke(context, event)
         ModalBaseFlexiOp.addDrawHandlers(context)
-        
+
         ModalBaseFlexiOp.drawFunc = bpy.types.VIEW3D_HT_tool_header.draw
         bpy.types.VIEW3D_HT_tool_header.draw = drawSettingsFT
         context.space_data.show_region_tool_header = True
@@ -5741,7 +5741,7 @@ class ModalBaseFlexiOp(Operator):
                 try:
                     prefs = context.preferences.addons[__name__].preferences
                     prefs.showKeyMap = not prefs.showKeyMap
-                except Exception as e: 
+                except Exception as e:
                     print(e)
                     FTProps.showKeyMap = not FTProps.showKeyMap
             return {'RUNNING_MODAL'}
@@ -5888,9 +5888,9 @@ class Primitive2DDraw(BaseDraw):
     def getParamHotKeyDescriptions():
         return [Primitive2DDraw.dynamicParams[p][1] \
             for p in range(len(Primitive2DDraw.dynamicParams))]
-    
+
     # default definition of all params
-    # Format (can be overriden in subclass): 
+    # Format (can be overriden in subclass):
     #       def updateParam0(self, event, rmInfo, isIncr): # 0-5
     #           pass
     for i in range(len(dynamicParams)):
@@ -5898,7 +5898,7 @@ class Primitive2DDraw(BaseDraw):
 
     def afterShapeSegCnt(self): # Call back
         pass
-    
+
     def getCurvePts(self, numSegs, axisIdxs, z = None):
         params = bpy.context.window_manager.bezierToolkitParams
         tm = self.parent.snapper.tm if self.parent.snapper.tm != None else Matrix()
@@ -5942,7 +5942,7 @@ class Primitive2DDraw(BaseDraw):
 
     def updateCurvePts(self):
         axisIdxs = self.freeAxesN + sorted(list({0, 1, 2} - set(self.freeAxesN)))
-        
+
         curvePts = self.getCurvePts(axisIdxs = axisIdxs, \
             numSegs = self.shapeSegCnt)
 
@@ -6045,13 +6045,13 @@ class Primitive2DDraw(BaseDraw):
         return refLine[0] if len(refLine) > 0 else None
 
 class MathFnDraw(Primitive2DDraw):
-    
+
     # Prefixes for param names generated dynamically for constants
     startPrefix = 'mathFnStart_'
     incrPrefix = 'mathFnIncr_'
-    
+
     mathFnFileExt = 'mfn'
-    
+
     # Default values
     defFnType = 'XY'
     defFNRes = 10
@@ -6068,7 +6068,7 @@ class MathFnDraw(Primitive2DDraw):
 
     defXYMap = 'NORMAL_XY'
     defClipVal = 10
-    
+
     defConstStart = 1
     defConstIncr = 0.1
 
@@ -6127,7 +6127,7 @@ class MathFnDraw(Primitive2DDraw):
             'areas = [a for a in bpy.context.screen.areas]\n\t' + \
             'for a in areas:\n\t\t' + \
             'a.tag_redraw()\n\t' + \
-            'return True\n\t'            
+            'return True\n\t'
         exec(fnStr)
 
     def afterShapeSegCnt(self):
@@ -6135,7 +6135,7 @@ class MathFnDraw(Primitive2DDraw):
         areas = [a for a in bpy.context.screen.areas]
         for a in areas:
             a.tag_redraw()
-        
+
     def testFn(expr, var): # var = 'x' or 'y'
         exec(var + ' = 1')
         # ~ exec(var.upper() + ' = 1') ??
@@ -6147,7 +6147,7 @@ class MathFnDraw(Primitive2DDraw):
 
     # Returns None in case of invalid function
     def isInverted(expr): # var = 'x' or 'y'
-        if(not MathFnDraw.testFn(expr, 'x')): 
+        if(not MathFnDraw.testFn(expr, 'x')):
             if(not MathFnDraw.testFn(expr, 'y')): return None
             else: return True
 
@@ -6159,7 +6159,7 @@ class MathFnDraw(Primitive2DDraw):
             expr = expr.replace(str(chr(ord('A') + j)), \
                 str(round(eval('params.'+ MathFnDraw.startPrefix + str(j)), 4)))
         return expr
-        
+
     def getShapePts(self, mode, numSegs, bbStart, bbEnd, center2d, startAngle, \
         theta, axisIdxs, z):
 
@@ -6188,7 +6188,7 @@ class MathFnDraw(Primitive2DDraw):
                 xSpan = (self.parent.rmInfo.xy[0] - self.XYstart[0])
                 ySpan = (self.parent.rmInfo.xy[1] - self.XYstart[1])
                 scaleFact = scaleFact / 25 # Device dependent!
-                
+
             if(params.drawMathTMapTo in {'X', 'HORIZONTAL'}):
                 span = scaleFact * xSpan
             elif(params.drawMathTMapTo in {'Y', 'VERTICAL'}):
@@ -6222,7 +6222,7 @@ class MathFnDraw(Primitive2DDraw):
 
             if(inverted == None):
                 return curvePts
-                
+
             span = (bbEnd[idx1] - bbStart[idx1]) if(inverted) \
                 else (bbEnd[idx0] - bbStart[idx0])
 
@@ -6233,7 +6233,7 @@ class MathFnDraw(Primitive2DDraw):
 
             for step in range(intervals):
                 try:
-                    if(inverted): y = indep 
+                    if(inverted): y = indep
                     else: x = indep
                     dep = eval(expr)
                     if(abs(dep) > clip):
@@ -6304,7 +6304,7 @@ class MathFnDraw(Primitive2DDraw):
     def refreshDefaultParams():
         params = bpy.context.window_manager.bezierToolkitParams
         # ~ params.mathFnDescr = MathFnDraw.defFNXYDescr
-        # ~ params.mathFnResolution = MathFnDraw.defFNRes        
+        # ~ params.mathFnResolution = MathFnDraw.defFNRes
         # ~ params.mathFnType = MathFnDraw.defFnType
         # ~ params.drawMathFn = MathFnDraw.defFnXY
         # ~ params.mathFnclipVal = MathFnDraw.defClipVal
@@ -6315,7 +6315,7 @@ class MathFnDraw(Primitive2DDraw):
                 str(MathFnDraw.defConstStart))
             exec('params.' + MathFnDraw.incrPrefix + str(i) + ' = ' + \
                 str(MathFnDraw.defConstIncr))
-       
+
     def refreshParamsFromFile(dummy1 = None, dummy2 = None):
         params = bpy.context.window_manager.bezierToolkitParams
         mathFnSel = params.mathFnList
@@ -6326,7 +6326,7 @@ class MathFnDraw(Primitive2DDraw):
         filepath = mathFnFolder + '/' + mathFnSel + '.' + MathFnDraw.mathFnFileExt
 
         with open(filepath) as f:
-            doc = minidom.parse(f)        
+            doc = minidom.parse(f)
 
         docElem = doc.documentElement
 
@@ -6382,7 +6382,7 @@ class MathFnDraw(Primitive2DDraw):
 
 
 class ResetMathFn(Operator):
-    bl_idname = "object.reset_math_fn" 
+    bl_idname = "object.reset_math_fn"
     bl_label = "Reset"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -6396,7 +6396,7 @@ class ResetMathFn(Operator):
 
 # TODO: Better validation and error handling
 class SaveMathFn(Operator):
-    bl_idname = "object.save_math_fn" 
+    bl_idname = "object.save_math_fn"
     bl_label = "Save"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -6482,7 +6482,7 @@ class SaveMathFn(Operator):
 
 # TODO: Better validation and error handling
 class LoadMathFn(Operator):
-    bl_idname = "object.load_math_fn" 
+    bl_idname = "object.load_math_fn"
     bl_label = "Load"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -6504,7 +6504,7 @@ class LoadMathFn(Operator):
             self.report({'ERROR'}, 'Error importing math function file')
 
         return {'FINISHED'}
-        
+
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
@@ -6544,7 +6544,7 @@ class DeleteMathFn(bpy.types.Operator):
 class ClosedShapeDraw(Primitive2DDraw):
     def __init__(self, parent, star = False):
         super(ClosedShapeDraw, self).__init__(parent)
-    
+
     def updateSegCount(self, event, rmInfo, isIncr):
         minSegs, maxSegs = self.getNumSegsLimits()
         if(isIncr and self.shapeSegCnt < maxSegs): self.shapeSegCnt += 1
@@ -6569,7 +6569,7 @@ class ClosedShapeDraw(Primitive2DDraw):
         self.updateCurvePts()
         self.parent.redrawBezier(rmInfo, hdlPtIdxs = {}, hltEndSeg = False)
         return True
-        
+
 class RectangleDraw(ClosedShapeDraw):
     def __init__(self, parent, star = False):
         super(RectangleDraw, self).__init__(parent)
@@ -6981,7 +6981,7 @@ class BezierDraw(BaseDraw):
                             lastPt[3] = 'FREE'
                             lastPt[4] = 'FREE'
                         else:
-                            lastPt[0] = lastPt[1] - delta 
+                            lastPt[0] = lastPt[1] - delta
                             lastPt[3] = 'ALIGNED'
                             lastPt[4] = 'ALIGNED'
                         lastPt[2] = lastPt[1] + delta
@@ -7259,7 +7259,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
         if(len(self.drawObj.curvePts) > 0):
             locs += [pt[1] for pt in self.drawObj.curvePts[:-1]]
-            # ~ locs += [self.curvePts[-1][0], self.curvePts[-1][1], self.curvePts[-1][2]] 
+            # ~ locs += [self.curvePts[-1][0], self.curvePts[-1][1], self.curvePts[-1][2]]
         return locs
 
     def updateSnapLocs(self, objNames = None):
@@ -7381,7 +7381,7 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 bpy.context.evaluated_depsgraph_get().update()
                 if(location == None): location = getObjBBoxCenter(obj)
 
-            if(location != None): 
+            if(location != None):
                 shiftOrigin(obj, location)
                 obj.location = location
                 bpy.context.evaluated_depsgraph_get().update()
@@ -7479,7 +7479,7 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
             [FTProps.colGreaseNonHltSeg], getLinesFromPts(subdivCos))
         if(ModalFlexiDrawGreaseOp.h):
             self.bglDrawMgr.resetPtInfo('gpSubdivPts')
-        else: 
+        else:
             self.bglDrawMgr.addPtInfo('gpSubdivPts', \
                 FTProps.greaseSubdivPtSize, [FTProps.colGreaseSubdiv], subdivCos)
 
@@ -7646,20 +7646,20 @@ def getBptData(obj, withShapeKey = True, shapeKeyIdx = None, fromMix = True, \
     shapeKey = obj.active_shape_key
     tmpsk = None
     if(withShapeKey and shapeKey != None):
-        if(shapeKeyIdx == None): 
+        if(shapeKeyIdx == None):
             shapeKeyIdx = obj.active_shape_key_index
         if(fromMix):
-            if(obj.data.shape_keys.use_relative):
+            if(not obj.data.shape_keys.use_relative):
                 val = obj.data.shape_keys.eval_time
             else:
-                val = obj.data.shape_keys.key_blocks[obj.active_shape_key_index]
+                val = obj.data.shape_keys.key_blocks[obj.active_shape_key_index].value
 
             if(floatCmpWithMargin(val, 0)):
                 keyBlock = obj.data.shape_keys.key_blocks[0]
             else:
                 tmpsk = obj.shape_key_add(name = 'tmp', from_mix = True)
                 keyBlock = obj.data.shape_keys.key_blocks[tmpsk.name]
-        else: 
+        else:
             keyBlock = obj.data.shape_keys.key_blocks[shapeKeyIdx]
         keydata = keyBlock.data
 
@@ -7673,7 +7673,7 @@ def getBptData(obj, withShapeKey = True, shapeKeyIdx = None, fromMix = True, \
 
             pts.append([mw @ pt.handle_left, mw @ pt.co, mw @ pt.handle_right, lt, rt])
         worldSpaceData.append(pts)
-    if(tmpsk != None): 
+    if(tmpsk != None):
         obj.shape_key_remove(tmpsk)
         obj.active_shape_key_index = shapeKeyIdx
         if(updateDeps): bpy.context.evaluated_depsgraph_get().update()
@@ -7682,7 +7682,7 @@ def getBptData(obj, withShapeKey = True, shapeKeyIdx = None, fromMix = True, \
 #TODO: splineIdx not needed if ptCnt given
 def getAdjIdx(obj, splineIdx, startIdx, offset = 1, ptCnt = None):
     spline = obj.data.splines[splineIdx]
-    if(ptCnt == None): 
+    if(ptCnt == None):
         ptCnt = len(spline.bezier_points)
     if(not spline.use_cyclic_u and
         ((startIdx + offset) >= ptCnt or (startIdx + offset) < 0)):
@@ -7702,7 +7702,7 @@ def getBezierDataForSeg(obj, splineIdx, segIdx, withShapeKey = True, shapeKeyIdx
 def getSegPtsInSpline(wsData, splineIdx, ptIdx, cyclic):
     splinePts = wsData[splineIdx]
     if(ptIdx < (len(splinePts) - 1) ): ptRange = [ptIdx, ptIdx + 1]
-    elif(ptIdx == (len(splinePts) - 1)  and cyclic): 
+    elif(ptIdx == (len(splinePts) - 1)  and cyclic):
         ptRange = [-1, 0]
         if(splinePts[-1][4] == 'VECTOR'):
             splinePts[-1][2] = (splinePts[-1][1] + \
@@ -7792,7 +7792,7 @@ def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, 
         wsDataSK = None
         # Curve data with shape key value applied (if shape key exists)
         wsData = getBptData(selObj, fromMix = True, updateDeps = True)
-        if(withShapeKey and selObj.active_shape_key != None): 
+        if(withShapeKey and selObj.active_shape_key != None):
             # active shape key data with value = 1
             wsDataSK = getBptData(selObj, fromMix = False)
 
@@ -7822,7 +7822,7 @@ def getClosestPt2d(region, rv3d, coFind, objs, selObjInfos, withHandles = True, 
                     else:
                         pt = wsData[splineIdx][ptIdx]
                         hdls += [pt[0], pt[2]]
-                        
+
                     selObjHdlCounts.append(hdlCnt)
 
     searchPtsList = [[], [], [], [], [], []]
@@ -7944,14 +7944,14 @@ class SelectCurveInfo:
     def updateWSData(self):
         self.hasShapeKey = (self.obj.active_shape_key != None)
         self.shapeKeyIdx = self.obj.active_shape_key_index if self.hasShapeKey else -1
-        
+
         # for shape keys
         self.keyStartIdx = sum(len(self.obj.data.splines[i].bezier_points) \
-            for i in range(self.splineIdx))        
+            for i in range(self.splineIdx))
 
         # WS Data of the shape key (if exists)
         self.wsData = getBptData(self.obj, fromMix = False)[self.splineIdx]
-        
+
     # For convenience
     def getAdjIdx(self, ptIdx, offset = 1):
         return getAdjIdx(self.obj, self.splineIdx, ptIdx, offset)
@@ -8103,7 +8103,7 @@ class SelectCurveInfo:
         if(self.hasShapeKey): return False
         changed = False
         for ptIdx in self.ptSels.keys():
-            if(-1 in self.ptSels[ptIdx]):                
+            if(-1 in self.ptSels[ptIdx]):
                 self.interpPts[ptIdx] = getPtsAlongBezier3D(self.getSegPts(ptIdx), rv3d,
                     curveRes = 1000, minRes = 1000)
                 changed = True
@@ -8124,7 +8124,7 @@ class SelectCurveInfo:
                     changed = True
                     break
         return changed
- 
+
     def getLastSegIdx(self):
         return getLastSegIdx(self.obj, self.splineIdx)
 
@@ -8153,7 +8153,7 @@ class SelectCurveInfo:
         nextIdx = self.getAdjIdx(ptIdx)
         prevPts = None
         nextPts = None
-        if(self.hasShapeKey): 
+        if(self.hasShapeKey):
             if(allShapekeys):
                 pts = self.getAllShapeKeysData(ptIdx)
                 if(prevIdx != None): prevPts = self.getAllShapeKeysData(prevIdx)
@@ -8162,8 +8162,8 @@ class SelectCurveInfo:
                 pts = [self.getShapeKeyData(ptIdx)]
                 if(prevIdx != None): prevPts = [self.getShapeKeyData(prevIdx)]
                 if(nextIdx != None): nextPts = [self.getShapeKeyData(nextIdx)]
-                
-        else: 
+
+        else:
             pts = [bpt]
             if(prevIdx != None): prevPts = [self.getBezierPt(prevIdx)]
             if(nextIdx != None): nextPts = [self.getBezierPt(nextIdx)]
@@ -8194,14 +8194,14 @@ class SelectCurveInfo:
     def alignHandle(self, ptIdx, hdlIdx, allShapekeys = False):
         if (hdlIdx == -1): return False
         oppIdx = 2 - hdlIdx
-        if(self.hasShapeKey): 
+        if(self.hasShapeKey):
             if(allShapekeys): pts = self.getAllShapeKeysData(ptIdx)
             else: pts = [self.getShapeKeyData(ptIdx)]
         else: pts = [self.getBezierPt(ptIdx)]
         bpt = self.getBezierPt(ptIdx)
-        if(hdlIdx == 0 and bpt.handle_left_type != 'ALIGNED'): 
+        if(hdlIdx == 0 and bpt.handle_left_type != 'ALIGNED'):
             bpt.handle_left_type = 'FREE'
-        if(hdlIdx == 2 and bpt.handle_right_type != 'ALIGNED'): 
+        if(hdlIdx == 2 and bpt.handle_right_type != 'ALIGNED'):
             bpt.handle_right_type = 'FREE'
 
         for pt in pts:
@@ -8290,7 +8290,7 @@ class SelectCurveInfo:
             if(prevIdx != None and nextIdx != None and \
                 not hasAlignedHandles(pts[ptIdx])):
                 newSelPtIdxs.append(ptIdx)
-            
+
         for ptIdx, pt in enumerate(pts):
             if(ptIdx in newSelPtIdxs):
                 nextIdx = self.getAdjIdx(ptIdx)
@@ -8302,7 +8302,7 @@ class SelectCurveInfo:
                     newPts.append(pt)
                 else:
                     t = deltaLen / segLen
-                    if(t > maxT and (prevIdx in newSelPtIdxs)): 
+                    if(t > maxT and (prevIdx in newSelPtIdxs)):
                         t = maxT
                         k = kFact * (segLen / 2)
                     elif(t > 1):
@@ -8331,7 +8331,7 @@ class SelectCurveInfo:
                     newPts.append(pt)
                 else:
                     t = deltaLen / segLen
-                    if(t > maxT and (nextIdx in newSelPtIdxs)): 
+                    if(t > maxT and (nextIdx in newSelPtIdxs)):
                         t = maxT
                         k = kFact * (segLen / 2)
                     elif(t > 1):
@@ -8346,7 +8346,7 @@ class SelectCurveInfo:
 
                     tangent1 = getTangentAtT(pt[1], pt[2], \
                         pts[nextIdx][0], pts[nextIdx][1], t)
-                        
+
                     pt1_0 = newPt - k * (tangent1.normalized())
                     pt1 = [pt1_0, newPt, partialSeg[1], 'FREE', 'FREE']
 
@@ -8355,7 +8355,7 @@ class SelectCurveInfo:
                     nextPt[0] = partialSeg[2]
             else:
                 newPts.append(pt)
-        
+
         newPtSels = {}
         cnt = 0
         for ptIdx in sorted(ptSels.keys()):
@@ -8661,7 +8661,7 @@ class EditCurveInfo(SelectCurveInfo):
         for i, bpt in enumerate(bpts):
             bpt.handle_left_type = pts[i][3]
             bpt.handle_right_type = pts[i][4]
-        
+
         self.updateWSData()
 
 class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
@@ -8904,7 +8904,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 return [pt0[1], pt0[hdlIdx]] # Current handle
             elif(hdlIdx == 1):
                 adjIdx = ei.getAdjIdx(ptIdx, -1)
-                if(adjIdx == None): 
+                if(adjIdx == None):
                     adjIdx = ei.getAdjIdx(ptIdx, 1)
                 if(adjIdx == None): return [pt0[1]]
                 else: return [ei.wsData[adjIdx][1], pt0[1]]
@@ -8918,7 +8918,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         return None
 
     def getSelCo(self):
-        if(self.editCurveInfo != None): 
+        if(self.editCurveInfo != None):
             return self.editCurveInfo.getSelCo()
         return None
 
@@ -9106,7 +9106,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             for i, c in enumerate(self.selectCurveInfos):
                 if(opt[0] == 'miSelObj'):
                     c.obj.select_set(True)
-                    if(self.htlCurveInfo == None and i == len(self.selectCurveInfos)-1): 
+                    if(self.htlCurveInfo == None and i == len(self.selectCurveInfos)-1):
                         bpy.context.view_layer.objects.active = c.obj
                 else:
                     for ptIdx in range(len(c.wsData)):
@@ -9147,23 +9147,23 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                 sels = c.ptSels[ptIdx]
                 for sel in sels:
                     bpt = c.obj.data.splines[c.splineIdx].bezier_points[ptIdx]
-                    if(sel == 0): 
+                    if(sel == 0):
                         bpt.handle_left_type = hdlType
                         # Following manual alignment required for shape keys
-                        if(hdlType == 'ALIGNED'): 
+                        if(hdlType == 'ALIGNED'):
                             c.alignHandle(ptIdx, 0, allShapekeys = True)
-                        if(hdlType == 'VECTOR'): 
+                        if(hdlType == 'VECTOR'):
                             c.straightenHandle(ptIdx, 0, allShapekeys = True)
-                            if(bpt.handle_right_type == 'ALIGNED'): 
+                            if(bpt.handle_right_type == 'ALIGNED'):
                                 c.alignHandle(ptIdx, 2, allShapekeys = True)
-                    if(sel == 2): 
+                    if(sel == 2):
                         bpt.handle_right_type = hdlType
                         # Following manual alignment required for shape keys
-                        if(hdlType == 'ALIGNED'): 
+                        if(hdlType == 'ALIGNED'):
                             c.alignHandle(ptIdx, 2, allShapekeys = True)
-                        if(hdlType == 'VECTOR'): 
+                        if(hdlType == 'VECTOR'):
                             c.straightenHandle(ptIdx, 2, allShapekeys = True)
-                            if(bpt.handle_right_type == 'ALIGNED'): 
+                            if(bpt.handle_right_type == 'ALIGNED'):
                                 c.alignHandle(ptIdx, 0, allShapekeys = True)
         bpy.ops.ed.undo_push()
 
@@ -9229,7 +9229,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             self.refreshDisplaySelCurves()
             return True
         return False
-        
+
     def getHltIdxFromRes(self, resType, otherInfo):
         # return 1:bez pt, -1:segloc, 0:lefthandle, 2:righthandle (like ptSels format)
         if(resType in {'SegLoc', 'CurveLoc'}): return -1
@@ -9250,7 +9250,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                     ptIdxs = [currIdx]
                     if(selHdls and hltIdx == -1):
                         nextIdx = hltCurve.getAdjIdx(currIdx)
-                        if(nextIdx != None): 
+                        if(nextIdx != None):
                             hltCurve.ptSels[currIdx].add(1)
                             hltCurve.ptSels[nextIdx] = {1}
                             ptIdxs.append(nextIdx)
@@ -9261,9 +9261,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                         else:
                             hltCurve.ptSels[ptIdx] = {hltIdx}
                     self.selectCurveInfos.add(hltCurve)
-                    if(makeActive): 
+                    if(makeActive):
                         bpy.context.view_layer.objects.active = self.htlCurveInfo.obj
-        
+
     def subModal(self, context, event, snapProc):
         rmInfo = self.rmInfo
         metakeys = self.snapper.getMetakeys()
@@ -9350,7 +9350,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     changed = False
-                    for c in self.selectCurveInfos: 
+                    for c in self.selectCurveInfos:
                         # short-circuit fine (no change in isBevelabel)
                         changed = changed or c.isBevelabel(rmInfo.rv3d)
                     self.bevelMode = changed
@@ -9370,9 +9370,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     changed = False
-                    for c in self.selectCurveInfos: 
+                    for c in self.selectCurveInfos:
                         changed = c.initSubdivMode(rmInfo.rv3d) or changed
-                    if(changed): 
+                    if(changed):
                         self.subdivCnt = 2
                         self.refreshDisplaySelCurves()
                 return {"RUNNING_MODAL"}
@@ -9418,7 +9418,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     changed = self.delSelSegs()
-                    for c in self.selectCurveInfos:                        
+                    for c in self.selectCurveInfos:
                         c.resetHltInfo()
                         changed = c.removeNode() or changed
                         changed = c.straightenSelHandles() or changed
@@ -9435,7 +9435,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             if(len(self.selectCurveInfos) > 0):
                 if(event.value == 'RELEASE'):
                     changed = False
-                    for c in self.selectCurveInfos: 
+                    for c in self.selectCurveInfos:
                         changed = c.alignSelHandles() or changed #selected node
                     if(changed): bpy.ops.ed.undo_push()
                 return {"RUNNING_MODAL"}
@@ -9443,7 +9443,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         if(not snapProc and not self.capture \
             and event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
 
-            if(self.subdivCnt > 0 or self.bevelMode): 
+            if(self.subdivCnt > 0 or self.bevelMode):
                 return {'RUNNING_MODAL'}
 
             for ci in self.selectCurveInfos.copy():
@@ -9565,7 +9565,7 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
                             else:
                                 ei.removeSel(ptIdx, 0)
                                 ei.removeSel(ptIdx, 2)
-                                
+
                         self.selectCurveInfos.add(ei)
                         # ~ self.refreshDisplaySelCurves()
                 else:
@@ -9699,7 +9699,7 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
          ('PERSPLINE', 'Spline', 'Apply resolution to entire spline')], \
         description = 'Apply remesh resolution to segment or spline',
         default = 'PERSEG')
-        
+
     intersectOp: EnumProperty(name="Action", items = \
         [('MARK_EMPTY', 'Mark with Empty', 'Mark intersections with empties'), \
          ('INSERT_PT', 'Insert Points', 'Insert Bezier Points at intersection'),
@@ -9709,7 +9709,7 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
          ], \
         description = 'Select operation to perform on intersect points',
         default = 'MARK_EMPTY')
-        
+
     intersectNonactive: BoolProperty(name="Only Non-active", \
         description="Action is not performed on active curve but " + \
             "only other selected curves", \
@@ -9787,9 +9787,9 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     handleTypesExpanded: BoolProperty(name = "Set Handle Types", default = False)
 
     curveColorExpanded: BoolProperty(name = "Set Curve Colors", default = False)
-    
+
     removeDupliExpanded: BoolProperty(name = "Remove Duplicate Verts", default = False)
-    
+
     intersectExpanded: BoolProperty(name = "Intersect Curves", default = False)
 
     otherExpanded: BoolProperty(name = "Other Tools", default = False)
@@ -9815,7 +9815,7 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         update = ModalDrawBezierOp.updateDrawType)
 
     mathFnList: EnumProperty(name = 'Function List', \
-        items = MathFnDraw.getMathFnList, description = 'Available math functions', 
+        items = MathFnDraw.getMathFnList, description = 'Available math functions',
             update = MathFnDraw.refreshParamsFromFile )
 
     mathFnName: StringProperty(name = 'Name', \
@@ -9848,8 +9848,8 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
             default = MathFnDraw.defFnParam2)
 
     drawMathTMapTo: EnumProperty(name = 'Map t', \
-        items = (('X','x','Increase or decrease t with x'), 
-        ('Y','y','Increase or decrease t with y'), 
+        items = (('X','x','Increase or decrease t with x'),
+        ('Y','y','Increase or decrease t with y'),
         ('XY','xy','Increase or decrease t with both x and y'),
         ('HORIZONTAL','horizontal', \
             'Increase or decrease t with mouse movement in horizontal direction'),
@@ -9919,7 +9919,7 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
           "Draw / Edit with reference to active object location"), \
         ('FACE', 'Selected Object Face', \
           "Draw / Edit with reference to the center of " + \
-          "Selected object face under mouse pointer"), 
+          "Selected object face under mouse pointer"),
         ('CURR_POS', 'Current Position', \
           "Edit with reference to the current mouse position")), \
         default = 'REFERENCE',
@@ -9945,11 +9945,11 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     customAxisSnapCnt: IntProperty(default = 3, min = 0)
 
     copyPropsObj : PointerProperty(
-            name = 'Copy Object Properties', 
+            name = 'Copy Object Properties',
             description = "Copy properties (Material, Bevel Depth etc.) from object",
             type = bpy.types.Object)
-        
-    
+
+
 
     ############################ Menu ###############################
 
@@ -10772,7 +10772,7 @@ class BezierUtilsPreferences(AddonPreferences):
             col = box.column().split()
             col.label(text='Allow Numpad Entry:')
             col.prop(self, "numpadEntry", text = '')
-            
+
             col = box.column().split()
             col.label(text='Math Function Text Size:')
             col.prop(self, "mathFnTxtFontSize", text = '')
@@ -10804,7 +10804,7 @@ class BezierUtilsPreferences(AddonPreferences):
                     col = box.column().split()
                     col.label(text='Location Y:')
                     col.prop(self, "keyMapLocY", text = '')
-                
+
 
         ####################### Keymap #######################
 
@@ -10841,7 +10841,7 @@ class BezierUtilsPreferences(AddonPreferences):
                                 emboss = False, text = keydata.label + ':')
                         if  getattr(self, expStr):
                             col.prop(self, keydata.id, text = '', event = True)
-                            if(not keydata.isExclusive): 
+                            if(not keydata.isExclusive):
                                 rowC = col.row()
                                 rowC.prop(self, keydata.id + 'Alt', \
                                     text = 'Alt', toggle = True)
