@@ -4411,7 +4411,7 @@ class FTMenu:
         if(hkData == None): return False
         menuData = FTMenu.getMenuData(parent, hkData.id)
         if(menuData == None): return False
-        if(event.value == 'RELEASE'):
+        if(event.value == 'PRESS'): 
             FTMenu.resetMenuOptions()
             FTMenu.currMenuId = menuData.hotkeyId
             parent.menuTimer = \
