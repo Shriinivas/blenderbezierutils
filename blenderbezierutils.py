@@ -2450,7 +2450,7 @@ class MarkerController:
 
 class ModalMarkSegStartOp(bpy.types.Operator):
     bl_description = "Mark Vertex"
-    bl_idname = "wm.mark_vertex"
+    bl_idname = "wm.bb_mark_vertex"
     bl_label = "Mark Start Vertex"
 
     def cleanup(self, context):
