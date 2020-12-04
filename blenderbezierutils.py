@@ -2777,9 +2777,10 @@ class BezierUtilsPanel(Panel):
     @persistent
     def colorCurves(scene = None, add = False, remove = False):
         def ccDrawHandler():
-            bgl.glLineWidth(BezierUtilsPanel.lineWidth)
-            if(BezierUtilsPanel.lineBatch != None):
-                BezierUtilsPanel.lineBatch.draw(BezierUtilsPanel.shader)
+            if(bpy.context.window_manager.bezierToolkitParams.applyCurveColor):
+                bgl.glLineWidth(BezierUtilsPanel.lineWidth)
+                if(BezierUtilsPanel.lineBatch != None):
+                    BezierUtilsPanel.lineBatch.draw(BezierUtilsPanel.shader)
 
         if(add and BezierUtilsPanel.drawHandlerRef == None):
             try:
