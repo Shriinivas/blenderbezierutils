@@ -2308,7 +2308,7 @@ class ExportSVGOp(Operator):
 
 def markVertHandler(self, context):
     if(self.markVertex):
-        bpy.ops.wm.mark_vertex()
+        bpy.ops.wm.bb_mark_vertex()
 
 
 class MarkerController:
