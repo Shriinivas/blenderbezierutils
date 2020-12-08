@@ -742,9 +742,9 @@ def getPtProjOnPlane(region, rv3d, xy, p1, p2, p3, p4 = None):
 def getPtProjOnLine(region, rv3d, xy, p1, p2):
     # Just find a non-linear point (TODO: simpler way)
     pd1 = p2 - p1
-    pd2 = Vector(sorted(pd1, reverse = True))
-    maxIdx0 = [i for i in range(3) if pd1[i] == pd2[0]][0]
-    maxIdx1 = [i for i in range(3) if pd1[i] == pd2[1]][0]
+    pd2 = Vector(sorted(pd1, key=lambda x: abs(x), reverse = True))
+    maxIdx0 = [i for i in range(3) if abs(pd1[i]) == abs(pd2[0])][0]
+    maxIdx1 = [i for i in range(3) if abs(pd1[i]) == abs(pd2[1])][0]
     pd = Vector()
     pd[maxIdx0] = -pd2[1]
     pd[maxIdx1] = pd2[0]
