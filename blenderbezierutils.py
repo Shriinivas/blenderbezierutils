@@ -29,7 +29,7 @@ from shutil import copyfile
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 95),
+    "version": (0, 9, 96),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -2803,6 +2803,9 @@ class BezierUtilsPanel(Panel):
                 BezierUtilsPanel.drawHandlerRef = None
                 return
 
+        if(bpy.context.screen == None):
+            return
+
         if(bpy.context.window_manager.bezierToolkitParams.applyCurveColor):
             objs = [o for o in bpy.context.scene.objects if(isBezier(o) and \
                 o.visible_get() and len(o.modifiers) == 0 and not o.select_get())]
@@ -2825,16 +2828,13 @@ class BezierUtilsPanel(Panel):
                             lineColors += [colorVal for i in range(0, len(linePts))]
             BezierUtilsPanel.lineBatch = batch_for_shader(BezierUtilsPanel.shader, \
                 "LINES", {"pos": lineCos, "color": lineColors})
-        else:
-            BezierUtilsPanel.lineBatch = batch_for_shader(BezierUtilsPanel.shader, \
-                "LINES", {"pos": [], "color": []})
+        # ~ else:
+            # ~ BezierUtilsPanel.lineBatch = batch_for_shader(BezierUtilsPanel.shader, \
+                # ~ "LINES", {"pos": [], "color": []})
 
-        if(bpy.context.screen == None):
-            return
-
-        areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
-        for a in areas:
-            a.tag_redraw()
+            areas = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D']
+            for a in areas:
+                a.tag_redraw()
 
 
 ################### Common Bezier Functions & Classes ###################
