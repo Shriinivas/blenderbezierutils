@@ -4045,6 +4045,19 @@ class FTHotKeys:
         for availKey in (oldKeys - newKeys): break # Only one entry
         return availKey
 
+    def initSnapMetaFromPref(context):
+        prefs = context.preferences.addons[__name__].preferences
+        for i, metakeyData in enumerate(FTHotKeys.snapHotkeysMeta):
+            metaKeyId = metakeyData.id
+            prefKeyMeta = getattr(prefs, metaKeyId)
+            metakeyData.key = prefKeyMeta
+            if(prefKeyMeta == 'KEY'):
+                regKeyId = metaKeyId[0:metaKeyId.index('Meta')]
+                regKeyData = FTHotKeys.idDataMap[regKeyId]
+                prefKeyReg = getattr(prefs, regKeyId)
+                regKeyData.key = prefKeyReg
+        ModalBaseFlexiOp.propsChanged()
+
     # Validation for snap keys (format: EITHER meta key OR regular key)
     # (regular part validated by updateHotkeys)
     # UI Format: Drop-down with entries Ctrl, Alt, Shift, Keyboard and ...
@@ -5701,7 +5714,7 @@ class ModalBaseFlexiOp(Operator):
 
         FTProps.updateProps(None, context)
         FTHotKeys.updateHotkeys(None, context)
-        FTHotKeys.updateSnapMetaKeys(None, context)
+        FTHotKeys.initSnapMetaFromPref(context)
 
         self.clickT, self.pressT = None, None
         self.click, self.doubleClick = False, False
