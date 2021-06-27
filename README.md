@@ -1,6 +1,6 @@
 # blenderbezierutils (Noisysundae Fork)
 
-**Disclaimer:** This is a quick and dirty edit of blenderbezierutils. I originally edited parts related to the curve-to-SVG exporter, added options that optimize the output SVG content for web graphics, especially icons. I have made a pull request with the hope that these changes get merged into the source repository, so I might not be actively maintaining this fork.
+**Disclaimer:** This is a quick and dirty edit of blenderbezierutils. I edited parts related to the curve-to-SVG exporter and added options that optimize the output SVG content for web graphics, especially icons. I have made a pull request with the hope that these changes get merged into the base repository, so I might not be actively maintaining this fork.
 
 ## Changes
 
@@ -9,12 +9,12 @@
 		* **View Attribute:** Select attribute(s) to specify bounding box, "[width](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/width) / [height](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/height)" (legacy) or "[viewBox](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/viewBox)"
 		* **ID Attribute:** Toggle "id" attribute insertion (legacy: always)
 		* **Style Attribute:** Toggle "style" attribute insertion (legacy: always)
-			* Enabling this reveals the legacy color pick properties.
+			* Enabling this reveals the legacy color pick options.
 		* **Max Path Value Precision:** Maximum precision of the coordinate values (legacy: infinite)
-			* This defaults to 2. Adjust it as needed for a trade-off between precision and output svg file size.
+			* Defaults to 2. Adjust it as needed for a trade-off between precision and output SVG file size.
 	* If there is one, the **Export View** option now defaults to the main camera in the active scene.
 	* Changed default **Clip View** option value and style colors
-* Removed XML tag in the output svg file.
+* Removed XML tag in the output SVG file.
 
 Below is the content from the original README.
 
