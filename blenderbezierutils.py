@@ -1609,18 +1609,31 @@ def getSVGPt(co, docW, docH, camera = None, region = None, rv3d = None):
         xy = getCoordFromLoc(region, rv3d, co)
         return complex(xy[0], docH - xy[1])
 
-def getPathD(path):
+def getPathD(path, precision):
     curve = ''
 
+    f = '{:.' + str(precision) + 'f}'
     for i, part in enumerate(path):
         comps = []
         for j, segment in enumerate(part):
+            s = []
+            for k, v in enumerate(segment):
+                s.append(segment[k].real)
+                s.append(segment[k].imag)
             if(j == 0):
-                comps.append('M {},{} C'.format(segment[0].real, segment[0].imag))
-            args = (segment[1].real, segment[1].imag,
-                    segment[2].real, segment[2].imag,
-                    segment[3].real, segment[3].imag)
-            comps.append('{},{} {},{} {},{}'.format(*args))
+                comps.append(
+                    ('M ' + f).format(s[0]).rstrip('0').rstrip('.') \
+                    + ( ',' + f).format(s[1]).rstrip('0').rstrip('.') \
+                    + ' C'
+                )
+            comps.append(
+                f.format(s[2]).rstrip('0').rstrip('.') \
+                + (',' + f).format(s[3]).rstrip('0').rstrip('.') \
+                + (' ' + f).format(s[4]).rstrip('0').rstrip('.') \
+                + (',' + f).format(s[5]).rstrip('0').rstrip('.') \
+                + (' ' + f).format(s[6]).rstrip('0').rstrip('.') \
+                + (',' + f).format(s[7]).rstrip('0').rstrip('.')
+            )
         curve += ' ' .join(comps)
 
     return curve
@@ -1656,7 +1669,7 @@ def createClipElem(doc, svgElem, docW, docH, clipElemId):
     clipElem.appendChild(rectElem)
 
 def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
-    fillCol, fillAlpha, clipView, clipElemId):
+    fillCol, fillAlpha, clipView, clipElemId, idEnabled, styleEnabled, precision):
 
     idPrefix = 'id'
     style= {'opacity':'1', 'stroke':'#000000', 'stroke-width':'1', \
@@ -1673,8 +1686,10 @@ def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
             clipped = True
 
     elem = doc.createElement('path')
-    elem.setAttribute('id', idPrefix + str(idx).zfill(3))
-    elem.setAttribute('d', getPathD(path))
+
+    if (idEnabled):
+        elem.setAttribute('id', idPrefix + str(idx).zfill(3))
+    elem.setAttribute('d', getPathD(path, precision))
     style['stroke-width'] =  str(lineWidth)
     style['stroke'] =  '#' + lineCol
     style['opacity'] =  lineAlpha
@@ -1682,15 +1697,30 @@ def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
         style['fill'] =  '#' + fillCol
         style['opacity'] =  fillAlpha # Overwrite
     styleStr = ';'.join([k + ':' + style[k] for k in style])
-    elem.setAttribute('style', styleStr)
+
+    if (styleEnabled):
+        elem.setAttribute('style', styleStr)
 
     if(clipped):
         elem.setAttribute('clip-path', 'url(#' + clipElemId + ')')
 
     return elem
 
-def exportSVG(context, filepath, exportView, clipView, lineWidth, lineColorOpts, \
-    lineColor, fillColorOpts, fillColor):
+def exportSVG(
+    context,
+    filepath,
+    exportView,
+    clipView,
+    lineWidth,
+    lineColorOpts,
+    lineColor,
+    fillColorOpts,
+    fillColor,
+    viewAttr,
+    idAttr,
+    styleAttr,
+    maxPrecision
+):
 
     svgXML = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
     clipElemId = 'BBoxClipElem'
@@ -1724,8 +1754,11 @@ def exportSVG(context, filepath, exportView, clipView, lineWidth, lineColorOpts,
     doc = minidom.parseString(svgXML)
     svgElem = doc.documentElement
 
-    svgElem.setAttribute('width', str(docW))
-    svgElem.setAttribute('height', str(docH))
+    if viewAttr == 'VIEWBOX':
+        svgElem.setAttribute('viewBox', '0 0 ' + str(docW) + ' ' + str(docH))
+    elif viewAttr == 'WH':
+        svgElem.setAttribute('width', str(docW))
+        svgElem.setAttribute('height', str(docH))
 
     if(clipView):
         createClipElem(doc, svgElem, docW, docH, clipElemId)
@@ -1773,12 +1806,12 @@ def exportSVG(context, filepath, exportView, clipView, lineWidth, lineColorOpts,
                     fc, fa = fillCol, fillAlpha
 
                 svgPathElem = getSVGPathElem(doc, docW, docH, p, idx, lineWidth, \
-                    lineCol, lineAlpha, fc, fa, clipView, clipElemId)
+                    lineCol, lineAlpha, fc, fa, clipView, clipElemId, idAttr, styleAttr, maxPrecision)
                 if(svgPathElem != None):
                     svgElem.appendChild(svgPathElem)
                     idx += 1
 
-    doc.writexml(open(filepath,"w"))
+    doc.documentElement.writexml(open(filepath,"w"))
 
 
 ###################### Operators ######################
@@ -2223,30 +2256,32 @@ class ExportSVGOp(Operator):
 
     def getExportViewList(scene = None, context = None):
         cameras = [o for o in bpy.data.objects if o.type == 'CAMERA']
-        vlist = [('ACTIVE_VIEW', 'Viewport View', "Export Viewport View")]
+        vlist = []
         for c in cameras:
              vlist.append((c.name, c.name, 'Export view from ' + c.name))
+        vlist.append(('ACTIVE_VIEW', 'Viewport View', "Export Viewport View"))
         return vlist
 
     filepath : StringProperty(subtype='FILE_PATH')
 
     #User input
-    clipView : BoolProperty(name="Clip View", \
+    clipView : BoolProperty(name="Clip", \
         description = "Clip objects to view boundary", \
-            default = True)
+            default = False)
 
     exportView: EnumProperty(name = 'Export View',
         items = getExportViewList,
         description='View to export')
 
     lineWidth: FloatProperty(name="Line Width", \
-        description='Line width in exported SVG', default = 3, min = 0)
+        description='Line width in exported SVG', default = 0, min = 0)
 
     lineColorOpts: EnumProperty(name = 'Line Color',
         items = (('RANDOM', 'Random', 'Use random color for curves'),
                  ('PICK', 'Pick', 'Pick color'),
         ),
-        description='Color to draw curve lines')
+        description='Color to draw curve lines',
+        default = 'PICK')
 
     lineColor: bpy.props.FloatVectorProperty(
         name="Line Color",
@@ -2254,14 +2289,15 @@ class ExportSVGOp(Operator):
         size=4,
         min=0.0,
         max=1.0,
-        default=(0.5, 0.5, 0.5, 1.0)
+        default=(0, 0, 0, 0)
     )
 
     fillColorOpts: EnumProperty(name = 'Fill Color',
         items = (('RANDOM', 'Random', 'Use random fill color'),
                  ('PICK', 'Pick', 'Pick color'),
         ),
-        description='Color to fill solid curves')
+        description='Color to fill solid curves',
+        default = 'PICK')
 
     fillColor: bpy.props.FloatVectorProperty(
         name="Fill Color",
@@ -2269,37 +2305,77 @@ class ExportSVGOp(Operator):
         size=4,
         min=0.0,
         max=1.0,
-        default=(0, 0.3, 0.5, 1.0)
+        default=(0, 0, 0, 1)
+    )
+
+    viewAttr: EnumProperty(name = 'View Attribute',
+        items = (
+            ('WH', 'Width / Height', 'e.g. width="100" height="100"'),
+            ('VIEWBOX', 'View Box', 'This option is recommended for web graphics.\ne.g. viewBox="0 0 100 100"'),
+        ),
+        description='Preferred attribute for <svg> bounding box',
+        default = 'VIEWBOX'
+    )
+
+    idAttr : BoolProperty(
+        name="ID Attribute",
+        description = "Add id attribute to the <svg> tags",
+        default = False
+    )
+
+    styleAttr : BoolProperty(
+        name="Style Attribute",
+        description = "Add style attribute to the <path> tags",
+        default = False
+    )
+
+    maxPrecision : IntProperty(
+        name="Max Path Value Precision", 
+        description = "Maximum number of digits after the decimal points in <path> tag's d attribute",
+        default = 2
     )
 
     def execute(self, context):
-        exportSVG(context, self.filepath, self.exportView, self.clipView, self.lineWidth, \
-            self.lineColorOpts, self.lineColor, self.fillColorOpts, self.fillColor)
+        exportSVG(
+            context,
+            self.filepath,
+            self.exportView,
+            self.clipView,
+            self.lineWidth,
+            self.lineColorOpts,
+            self.lineColor,
+            self.fillColorOpts,
+            self.fillColor,
+            self.viewAttr,
+            self.idAttr,
+            self.styleAttr,
+            self.maxPrecision
+        )
         return {'FINISHED'}
 
     def draw(self, context):
         layout = self.layout
-        col = layout.column()
-        row = col.row()
-        row.prop(self, "exportView")
-        col = layout.column()
-        row = col.row()
-        row.prop(self, "clipView")
-        col = layout.column()
-        row = col.row()
-        row.prop(self, "lineWidth")
-        col = layout.column()
-        row = col.row()
-        row.prop(self, "lineColorOpts")
-        if(self.lineColorOpts == 'PICK'):
-            row = row.split()
-            row.prop(self, "lineColor", text = '')
-        col = layout.column()
-        row = col.row()
-        row.prop(self, "fillColorOpts")
-        if(self.fillColorOpts == 'PICK'):
-            row = row.split()
-            row.prop(self, "fillColor", text = '')
+        col = layout.box().column(heading="View Settings")
+        col.prop(self, "exportView")
+        col.prop(self, "clipView")
+        col.split()
+        col = layout.box().column(heading="Tag Settings")
+        col.prop(self, "viewAttr")
+        col.prop(self, "idAttr")
+        col.prop(self, "styleAttr")
+        if (self.styleAttr):
+            col.prop(self, "lineWidth")
+            row = col.row()
+            row.prop(self, "lineColorOpts")
+            if (self.lineColorOpts == 'PICK'):
+                row = row.split()
+                row.prop(self, "lineColor", text = '')
+            row = col.row()
+            row.prop(self, "fillColorOpts")
+            if (self.fillColorOpts == 'PICK'):
+                row = row.split()
+                row.prop(self, "fillColor", text = '')
+        col.prop(self, "maxPrecision")
 
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)
