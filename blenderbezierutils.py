@@ -2699,7 +2699,7 @@ class BezierUtilsPanel(Panel):
             tool = context.workspace.tools.from_space_view3d_mode('OBJECT', \
                 create = False)
 
-            if(tool.idname == 'flexi_bezier.draw_tool' and \
+            if(tool.idname == FlexiDrawBezierTool.bl_idname and \
                 params.drawObjType == 'MATH'):
                 row = layout.row()
                 row.prop(params, "mathExtraExpanded",
@@ -6273,7 +6273,7 @@ class MathFnDraw(Primitive2DDraw):
         params = bpy.context.window_manager.bezierToolkitParams
         # TODO: Should be somewhere else
         tool = bpy.context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
-        if(tool.idname == 'flexi_bezier.draw_tool' and params.drawObjType == 'MATH'):
+        if(tool.idname == FlexiDrawBezierTool.bl_idname and params.drawObjType == 'MATH'):
 
             if(params.mathFnType == 'PARAMETRIC'):
                 fn1 = MathFnDraw.getEvaluatedExpr(params.drawMathFnParametric1)
@@ -7223,8 +7223,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
         tool = context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
 
-        # ~ if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname): (T60766)
-        if(tool == None or tool.idname != 'flexi_bezier.draw_tool'):
+        if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname):
+        # if(tool == None or tool.idname != 'flexi_bezier.draw_tool'):
             return False
 
         return True
@@ -7244,8 +7244,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         super(ModalFlexiDrawBezierOp, self).preInvoke(context, event)
         # If the operator is invoked from context menu, enable the tool on toolbar
         if(not self.isToolSelected(context) and context.mode == 'OBJECT'):
-            # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
-            bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
+            bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname)
+            # bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
 
         # Object name -> [spline index, [pts]]
         # Not used right now (maybe in case of large no of curves)
@@ -7259,8 +7259,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
         if(FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metakeys)):
             if(event.value == 'RELEASE'):
-                # ~ bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname) (T60766)
-                bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
+                bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname)
+                # bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
             return {"RUNNING_MODAL"}
 
         return self.baseSubModal(context, event, snapProc)
@@ -7412,22 +7412,6 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 pass
         bpy.ops.ed.undo_push()
 
-#(T60766)
-# ~ class FlexiDrawBezierTool(WorkSpaceTool):
-    # ~ bl_space_type='VIEW_3D'
-    # ~ bl_context_mode='OBJECT'
-
-    # ~ bl_idname = "flexi_bezier.draw_tool"
-    # ~ bl_label = "Flexi Draw Bezier"
-    # ~ bl_description = ("Flexible drawing of Bezier curves in object mode")
-    # ~ bl_icon = "ops.gpencil.extrude_move"
-    # ~ bl_widget = None
-    # ~ bl_operator = "wm.flexi_draw_bezier_curves"
-    # ~ bl_keymap = (
-        # ~ ("wm.flexi_draw_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
-         # ~ {"properties": []}),
-    # ~ )
-
 ################### Flexi Draw Grease Bezier ###################
 
 class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
@@ -7453,8 +7437,8 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         tool = context.workspace.tools.from_space_view3d_mode('PAINT_GPENCIL', \
             create = False)
 
-        # ~ if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname): (T60766)
-        if(tool == None or tool.idname != 'flexi_bezier.grease_draw_tool'):
+        if(tool == None or tool.idname != FlexiGreaseBezierTool.bl_idname): 
+        # if(tool == None or tool.idname != 'flexi_bezier.grease_draw_tool'):
             return False
 
         return True
@@ -7470,8 +7454,8 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         super(ModalFlexiDrawGreaseOp, self).preInvoke(context, event)
         # If the operator is invoked from context menu, enable the tool on toolbar
         if(not self.isToolSelected(context) and context.mode == 'PAINT_GPENCIL'):
-            # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
-            bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.grease_draw_tool')
+            bpy.ops.wm.tool_set_by_id(name = FlexiGreaseBezierTool.bl_idname)
+            # bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.grease_draw_tool')
 
         o = context.object
         if(o == None or o.type != 'GPENCIL'):
@@ -8775,8 +8759,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             return False
 
         tool = context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
-        # ~ if(tool == None or tool.idname != FlexiEditBezierTool.bl_idname): (T60766)
-        if(tool == None or tool.idname != 'flexi_bezier.edit_tool'):
+        if(tool == None or tool.idname != FlexiEditBezierTool.bl_idname):
+        # if(tool == None or tool.idname != 'flexi_bezier.edit_tool'):
             return False
         return True
 
@@ -9353,9 +9337,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         if(not opMode and \
             FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metakeys)):
             if(event.value == 'RELEASE'):
-                # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
                 self.reset()
-                bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
+                bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname)
+                # bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
             return {"RUNNING_MODAL"}
 
         if(not opMode and FTHotKeys.isHotKey(FTHotKeys.hkBevelPt, event.type, metakeys)):
@@ -9971,27 +9955,51 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         exec(FTMenu.getMNPropDefStr(menudata))
 
 
-# ~ class FlexiEditBezierTool(WorkSpaceTool):
-    # ~ bl_space_type='VIEW_3D'
-    # ~ bl_context_mode='OBJECT'
+class FlexiDrawBezierTool(WorkSpaceTool):
+    bl_space_type='VIEW_3D'
+    bl_context_mode='OBJECT'
 
-    # ~ bl_idname = "flexi_bezier.edit_tool"
-    # ~ bl_label = "Flexi Edit Bezier"
-    # ~ bl_description = ("Flexible editing of Bezier curves in object mode")
-    # ~ bl_icon = "ops.pose.breakdowner"
-    # ~ bl_widget = None
-    # ~ bl_operator = "wm.modal_flexi_edit_bezier"
-    # ~ bl_keymap = (
-        # ~ ("wm.modal_flexi_edit_bezier", {"type": 'MOUSEMOVE', "value": 'ANY'},
-         # ~ {"properties": []}),
-    # ~ )
+    bl_idname = "flexi_bezier.draw_tool"
+    bl_label = "Flexi Draw Bezier"
+    bl_description = ("Flexible drawing of Bezier curves in object mode")
+    bl_icon = "ops.gpencil.extrude_move"
+    bl_widget = None
+    bl_operator = "wm.flexi_draw_bezier_curves"
+    bl_keymap = (
+        ("wm.flexi_draw_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
+         {"properties": []}),
+    )
 
-# ****** Temporary Workaround for Tool Not working on restart (T60766) *******
+class FlexiEditBezierTool(WorkSpaceTool):
+    bl_space_type='VIEW_3D'
+    bl_context_mode='OBJECT'
 
-from bpy.utils.toolsystem import ToolDef
-kmToolFlexiDrawBezier = "3D View Tool: Object, Flexi Draw Bezier"
-kmToolFlexiEditBezier = "3D View Tool: Object, Flexi Edit Bezier"
-kmToolFlexiGreaseDrawBezier = "3D View Tool: Object, Flexi Grease Draw Bezier"
+    bl_idname = "flexi_bezier.edit_tool"
+    bl_label = "Flexi Edit Bezier"
+    bl_description = ("Flexible editing of Bezier curves in object mode")
+    bl_icon = "ops.pose.breakdowner"
+    bl_widget = None
+    bl_operator = "wm.modal_flexi_edit_bezier"
+    bl_keymap = (
+        ("wm.modal_flexi_edit_bezier", {"type": 'MOUSEMOVE', "value": 'ANY'},
+         {"properties": []}),
+    )
+
+
+class FlexiGreaseBezierTool(WorkSpaceTool):
+    bl_space_type='VIEW_3D'
+    bl_context_mode='PAINT_GPENCIL'
+
+    bl_idname = "flexi_bezier.grease_draw_tool"
+    bl_label = "Flexi Grease Bezier"
+    bl_description = ("Flexible drawing of Bezier curves as grease pencil strokes")
+    bl_icon = "ops.gpencil.extrude_move"
+    bl_widget = None
+    bl_operator = "wm.flexi_draw_grease_bezier_curves"
+    bl_keymap = (
+        ("wm.flexi_draw_grease_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
+         {"properties": []}),
+    )
 
 def showSnapToPlane(params):
     return (params.snapOrient not in {'VIEW', 'REFERENCE', 'CURR_POS'} and \
@@ -10012,10 +10020,12 @@ def drawSettingsFT(self, context):
 
     self.layout.use_property_decorate = True
 
-    # ~ if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname): (T60766)
     gpMode = (context.mode == 'PAINT_GPENCIL' and \
-            toolGP.idname == 'flexi_bezier.grease_draw_tool')
-    drawMode = (context.mode == 'OBJECT' and toolObj.idname  == 'flexi_bezier.draw_tool')
+            toolGP.idname == FlexiGreaseBezierTool.bl_idname)
+            # toolGP.idname == 'flexi_bezier.grease_draw_tool')
+    drawMode = (context.mode == 'OBJECT' and \
+                toolObj.idname  == FlexiDrawBezierTool.bl_idname)
+                # toolObj.idname  == 'flexi_bezier.draw_tool')
     if(drawMode or gpMode):
         if(gpMode):
             brush = context.scene.tool_settings.gpencil_paint.brush
@@ -10052,134 +10062,10 @@ def drawSettingsFT(self, context):
 
     self.layout.prop(params, "axisScale", text = '')
 
-    if((context.mode == 'OBJECT' and toolObj.idname  == 'flexi_bezier.draw_tool')):
+    # if((context.mode == 'OBJECT' and toolObj.idname  == 'flexi_bezier.draw_tool')):
+    if((context.mode == 'OBJECT' and toolObj.idname  == FlexiDrawBezierTool.bl_idname)):
         self.layout.prop(params, "copyPropsObj", text = '')
 
-@ToolDef.from_fn
-def toolFlexiDraw():
-
-    return dict(idname = "flexi_bezier.draw_tool",
-        label = "Flexi Draw Bezier",
-        description = "Flexible drawing of Bezier curves in object mode",
-        icon = "ops.gpencil.extrude_move",
-        widget = None,
-        keymap = kmToolFlexiDrawBezier,
-        # ~ draw_settings = drawSettingsFT,
-        )
-
-@ToolDef.from_fn
-def toolFlexiGreaseDraw():
-
-    return dict(idname = "flexi_bezier.grease_draw_tool",
-        label = "Flexi Grease Bezier",
-        description = "Flexible drawing of Bezier curves as grease pencil strokes",
-        icon = "ops.gpencil.extrude_move",
-        widget = None,
-        keymap = kmToolFlexiGreaseDrawBezier,
-        # ~ draw_settings = drawSettingsFT,
-        )
-
-@ToolDef.from_fn
-def toolFlexiEdit():
-
-    return dict(idname = "flexi_bezier.edit_tool",
-        label = "Flexi Edit Bezier",
-        description = "Flexible editing of Bezier curves in object mode",
-        icon = "ops.pose.breakdowner",
-        widget = None,
-        keymap = kmToolFlexiEditBezier,
-        # ~ draw_settings = drawSettingsFT,
-    )
-
-def getToolList(spaceType, contextMode):
-    from bl_ui.space_toolsystem_common import ToolSelectPanelHelper
-    cls = ToolSelectPanelHelper._tool_class_from_space_type(spaceType)
-    return cls._tools[contextMode]
-
-def registerFlexiBezierTools():
-    tools = getToolList('VIEW_3D', 'OBJECT')
-    tools += None, toolFlexiDraw, toolFlexiEdit
-    # ~ tools += None, toolFlexiEdit
-    del tools
-
-    tools = getToolList('VIEW_3D', 'PAINT_GPENCIL')
-    tools += None, toolFlexiGreaseDraw
-    del tools
-
-def unregisterFlexiBezierTools():
-    tools = getToolList('VIEW_3D', 'OBJECT')
-
-    index = tools.index(toolFlexiDraw) - 1 #None
-    tools.pop(index)
-    tools.remove(toolFlexiDraw)
-    tools.remove(toolFlexiEdit)
-    del tools
-
-    tools = getToolList('VIEW_3D', 'PAINT_GPENCIL')
-    index = tools.index(toolFlexiGreaseDraw) - 1 #None
-    tools.pop(index)
-    tools.remove(toolFlexiGreaseDraw)
-    del tools
-
-
-keymapDraw = (kmToolFlexiDrawBezier,
-        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
-        {"items": [
-            ("wm.flexi_draw_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
-             {"properties": []}),
-        ]},)
-
-emptyKeymapDraw = (kmToolFlexiDrawBezier,
-        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
-        {"items": []},)
-
-keymapGreaseDraw = (kmToolFlexiGreaseDrawBezier,
-        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
-        {"items": [
-            ("wm.flexi_draw_grease_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
-             {"properties": []}),
-        ]},)
-
-emptyKeymapGreaseDraw = (kmToolFlexiGreaseDrawBezier,
-        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
-        {"items": []},)
-
-keymapEdit = (kmToolFlexiEditBezier,
-        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
-        {"items": [
-            ("wm.modal_flexi_edit_bezier", {"type": 'MOUSEMOVE', "value": 'ANY'},
-             {"properties": []}),
-        ]},)
-
-emptyKeymapEdit = (kmToolFlexiEditBezier,
-        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
-        {"items": []},)
-
-def registerFlexiBezierKeymaps():
-    keyconfigs = bpy.context.window_manager.keyconfigs
-    kc_defaultconf = keyconfigs.default
-    kc_addonconf = keyconfigs.addon
-
-    from bl_keymap_utils.io import keyconfig_init_from_data
-    keyconfig_init_from_data(kc_defaultconf, [emptyKeymapDraw, \
-        emptyKeymapGreaseDraw, emptyKeymapEdit])
-
-    keyconfig_init_from_data(kc_addonconf, [keymapDraw, keymapGreaseDraw, keymapEdit])
-
-def unregisterFlexiBezierKeymaps():
-    keyconfigs = bpy.context.window_manager.keyconfigs
-    defaultmap = keyconfigs.get("blender").keymaps
-    addonmap   = keyconfigs.get("blender addon").keymaps
-
-    for km_name, km_args, km_content in [keymapDraw, keymapGreaseDraw, keymapEdit]:
-        keymap = addonmap.find(km_name, **km_args)
-        keymap_items = keymap.keymap_items
-        for item in km_content['items']:
-            item_id = keymap_items.find(item[0])
-            if item_id != -1:
-                keymap_items.remove(keymap_items[item_id])
-        addonmap.remove(keymap)
-        defaultmap.remove(defaultmap.find(km_name, **km_args))
 
 # ****************** Configurations In User Preferences ******************
 
@@ -10943,10 +10829,10 @@ def register():
     BezierUtilsPanel.colorCurves(add = True)
     bpy.app.handlers.depsgraph_update_post.append(BezierUtilsPanel.colorCurves)
 
-    # ~ bpy.utils.register_tool(FlexiDrawBezierTool) (T60766)
-    # ~ bpy.utils.register_tool(FlexiEditBezierTool) (T60766)
-    registerFlexiBezierTools()
-    registerFlexiBezierKeymaps()
+    bpy.utils.register_tool(FlexiDrawBezierTool)
+    bpy.utils.register_tool(FlexiEditBezierTool)
+    bpy.utils.register_tool(FlexiGreaseBezierTool)
+    
     updatePanel(None, bpy.context)
 
     bpy.app.handlers.load_post.append(ModalBaseFlexiOp.loadPostHandler)
@@ -10962,13 +10848,11 @@ def unregister():
     bpy.app.handlers.load_post.remove(ModalBaseFlexiOp.loadPostHandler)
     bpy.app.handlers.load_pre.remove(ModalBaseFlexiOp.loadPreHandler)
 
-    unregisterFlexiBezierKeymaps()
-    unregisterFlexiBezierTools()
-
     del bpy.types.WindowManager.bezierToolkitParams
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 
-    # ~ bpy.utils.unregister_tool(FlexiDrawBezierTool) (T60766)
-    # ~ bpy.utils.unregister_tool(FlexiEditBezierTool) (T60766)
+    bpy.utils.unregister_tool(FlexiDrawBezierTool)
+    bpy.utils.unregister_tool(FlexiEditBezierTool)
+    bpy.utils.unregister_tool(FlexiGreaseBezierTool)
