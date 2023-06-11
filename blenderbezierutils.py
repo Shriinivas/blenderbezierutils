@@ -1775,10 +1775,12 @@ def exportSVG(
             mixed_idx = len(o.data.shape_keys.key_blocks) - 1
             mixed = o.data.shape_keys.key_blocks[mixed_idx]
             o.active_shape_key_index = mixed_idx
+            splineIdxOffset = 0
 
             for spline in o.data.splines:
+                count = len(spline.bezier_points)
                 part = []
-                bpts = mixed.data
+                bpts = mixed.data[splineIdxOffset: splineIdxOffset + count]
                 for i in range(1, len(bpts)):
                     prevBezierPt = bpts[i-1]
                     pt = bpts[i]
@@ -1795,6 +1797,8 @@ def exportSVG(
                         filledPath.append(part)
                     else:
                         path.append(part)
+
+                splineIdxOffset += count
 
             for p in [path, filledPath]:
 
