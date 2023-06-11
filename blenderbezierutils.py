@@ -1769,9 +1769,16 @@ def exportSVG(
         if(isBezier(o) and o.visible_get()):
             path = []
             filledPath = []
+
+            o.shape_key_add(from_mix=True)
+            active_idx = o.active_shape_key_index
+            mixed_idx = len(o.data.shape_keys.key_blocks) - 1
+            mixed = o.data.shape_keys.key_blocks[mixed_idx]
+            o.active_shape_key_index = mixed_idx
+
             for spline in o.data.splines:
                 part = []
-                bpts = spline.bezier_points
+                bpts = mixed.data
                 for i in range(1, len(bpts)):
                     prevBezierPt = bpts[i-1]
                     pt = bpts[i]
@@ -1810,6 +1817,9 @@ def exportSVG(
                 if(svgPathElem != None):
                     svgElem.appendChild(svgPathElem)
                     idx += 1
+
+            o.shape_key_remove(mixed)
+            o.active_shape_key_index = active_idx
 
     doc.documentElement.writexml(open(filepath,"w"))
 

@@ -15,6 +15,7 @@
 	* If there is one, the **Export View** option now defaults to the main camera in the active scene.
 	* Changed default **Clip View** option value and style colors
 * Removed XML tag in the output SVG file.
+* Added curve shape key mix support.
 
 Below is the content from the original README.
 
