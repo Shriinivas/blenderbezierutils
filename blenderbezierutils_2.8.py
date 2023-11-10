@@ -1609,36 +1609,18 @@ def getSVGPt(co, docW, docH, camera = None, region = None, rv3d = None):
         xy = getCoordFromLoc(region, rv3d, co)
         return complex(xy[0], docH - xy[1])
 
-def getPathD(path, precision, roundingThreshold):
+def getPathD(path):
     curve = ''
 
-    f = '{:.' + str(precision) + 'f}'
     for i, part in enumerate(path):
         comps = []
         for j, segment in enumerate(part):
-            s = []
-            for k, v in enumerate(segment):
-                s.append(segment[k].real)
-                s.append(segment[k].imag)
-
-            for i, e in enumerate(s):
-                if abs(((s[i] + 0.5) % 1) - 0.5) < roundingThreshold:
-                    s[i] = round(s[i])
-
             if(j == 0):
-                comps.append(
-                    ('M ' + f).format(s[0]).rstrip('0').rstrip('.') \
-                    + ( ',' + f).format(s[1]).rstrip('0').rstrip('.') \
-                    + ' C'
-                )
-            comps.append(
-                f.format(s[2]).rstrip('0').rstrip('.') \
-                + (',' + f).format(s[3]).rstrip('0').rstrip('.') \
-                + (' ' + f).format(s[4]).rstrip('0').rstrip('.') \
-                + (',' + f).format(s[5]).rstrip('0').rstrip('.') \
-                + (' ' + f).format(s[6]).rstrip('0').rstrip('.') \
-                + (',' + f).format(s[7]).rstrip('0').rstrip('.')
-            )
+                comps.append('M {},{} C'.format(segment[0].real, segment[0].imag))
+            args = (segment[1].real, segment[1].imag,
+                    segment[2].real, segment[2].imag,
+                    segment[3].real, segment[3].imag)
+            comps.append('{},{} {},{} {},{}'.format(*args))
         curve += ' ' .join(comps)
 
     return curve
@@ -1674,7 +1656,7 @@ def createClipElem(doc, svgElem, docW, docH, clipElemId):
     clipElem.appendChild(rectElem)
 
 def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
-    fillCol, fillAlpha, clipView, clipElemId, idEnabled, styleEnabled, precision, roundingThreshold):
+    fillCol, fillAlpha, clipView, clipElemId):
 
     idPrefix = 'id'
     style= {'opacity':'1', 'stroke':'#000000', 'stroke-width':'1', \
@@ -1691,10 +1673,8 @@ def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
             clipped = True
 
     elem = doc.createElement('path')
-
-    if (idEnabled):
-        elem.setAttribute('id', idPrefix + str(idx).zfill(3))
-    elem.setAttribute('d', getPathD(path, precision, roundingThreshold))
+    elem.setAttribute('id', idPrefix + str(idx).zfill(3))
+    elem.setAttribute('d', getPathD(path))
     style['stroke-width'] =  str(lineWidth)
     style['stroke'] =  '#' + lineCol
     style['opacity'] =  lineAlpha
@@ -1702,31 +1682,15 @@ def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
         style['fill'] =  '#' + fillCol
         style['opacity'] =  fillAlpha # Overwrite
     styleStr = ';'.join([k + ':' + style[k] for k in style])
-
-    if (styleEnabled):
-        elem.setAttribute('style', styleStr)
+    elem.setAttribute('style', styleStr)
 
     if(clipped):
         elem.setAttribute('clip-path', 'url(#' + clipElemId + ')')
 
     return elem
 
-def exportSVG(
-    context,
-    filepath,
-    exportView,
-    clipView,
-    lineWidth,
-    lineColorOpts,
-    lineColor,
-    fillColorOpts,
-    fillColor,
-    viewAttr,
-    idAttr,
-    styleAttr,
-    maxPrecision,
-    roundingThreshold
-):
+def exportSVG(context, filepath, exportView, clipView, lineWidth, lineColorOpts, \
+    lineColor, fillColorOpts, fillColor):
 
     svgXML = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
     clipElemId = 'BBoxClipElem'
@@ -1760,11 +1724,8 @@ def exportSVG(
     doc = minidom.parseString(svgXML)
     svgElem = doc.documentElement
 
-    if viewAttr == 'VIEWBOX':
-        svgElem.setAttribute('viewBox', '0 0 ' + str(docW) + ' ' + str(docH))
-    elif viewAttr == 'WH':
-        svgElem.setAttribute('width', str(docW))
-        svgElem.setAttribute('height', str(docH))
+    svgElem.setAttribute('width', str(docW))
+    svgElem.setAttribute('height', str(docH))
 
     if(clipView):
         createClipElem(doc, svgElem, docW, docH, clipElemId)
@@ -1775,18 +1736,9 @@ def exportSVG(
         if(isBezier(o) and o.visible_get()):
             path = []
             filledPath = []
-
-            o.shape_key_add(from_mix=True)
-            active_idx = o.active_shape_key_index
-            mixed_idx = len(o.data.shape_keys.key_blocks) - 1
-            mixed = o.data.shape_keys.key_blocks[mixed_idx]
-            o.active_shape_key_index = mixed_idx
-            splineIdxOffset = 0
-
             for spline in o.data.splines:
-                count = len(spline.bezier_points)
                 part = []
-                bpts = mixed.data[splineIdxOffset: splineIdxOffset + count]
+                bpts = spline.bezier_points
                 for i in range(1, len(bpts)):
                     prevBezierPt = bpts[i-1]
                     pt = bpts[i]
@@ -1803,8 +1755,6 @@ def exportSVG(
                         filledPath.append(part)
                     else:
                         path.append(part)
-
-                splineIdxOffset += count
 
             for p in [path, filledPath]:
 
@@ -1823,15 +1773,12 @@ def exportSVG(
                     fc, fa = fillCol, fillAlpha
 
                 svgPathElem = getSVGPathElem(doc, docW, docH, p, idx, lineWidth, \
-                    lineCol, lineAlpha, fc, fa, clipView, clipElemId, idAttr, styleAttr, maxPrecision, roundingThreshold)
+                    lineCol, lineAlpha, fc, fa, clipView, clipElemId)
                 if(svgPathElem != None):
                     svgElem.appendChild(svgPathElem)
                     idx += 1
 
-            o.shape_key_remove(mixed)
-            o.active_shape_key_index = active_idx
-
-    doc.documentElement.writexml(open(filepath,"w"))
+    doc.writexml(open(filepath,"w"))
 
 
 ###################### Operators ######################
@@ -2276,32 +2223,30 @@ class ExportSVGOp(Operator):
 
     def getExportViewList(scene = None, context = None):
         cameras = [o for o in bpy.data.objects if o.type == 'CAMERA']
-        vlist = []
+        vlist = [('ACTIVE_VIEW', 'Viewport View', "Export Viewport View")]
         for c in cameras:
              vlist.append((c.name, c.name, 'Export view from ' + c.name))
-        vlist.append(('ACTIVE_VIEW', 'Viewport View', "Export Viewport View"))
         return vlist
 
     filepath : StringProperty(subtype='FILE_PATH')
 
     #User input
-    clipView : BoolProperty(name="Clip", \
+    clipView : BoolProperty(name="Clip View", \
         description = "Clip objects to view boundary", \
-            default = False)
+            default = True)
 
     exportView: EnumProperty(name = 'Export View',
         items = getExportViewList,
         description='View to export')
 
     lineWidth: FloatProperty(name="Line Width", \
-        description='Line width in exported SVG', default = 0, min = 0)
+        description='Line width in exported SVG', default = 3, min = 0)
 
     lineColorOpts: EnumProperty(name = 'Line Color',
         items = (('RANDOM', 'Random', 'Use random color for curves'),
                  ('PICK', 'Pick', 'Pick color'),
         ),
-        description='Color to draw curve lines',
-        default = 'PICK')
+        description='Color to draw curve lines')
 
     lineColor: bpy.props.FloatVectorProperty(
         name="Line Color",
@@ -2309,15 +2254,14 @@ class ExportSVGOp(Operator):
         size=4,
         min=0.0,
         max=1.0,
-        default=(0, 0, 0, 0)
+        default=(0.5, 0.5, 0.5, 1.0)
     )
 
     fillColorOpts: EnumProperty(name = 'Fill Color',
         items = (('RANDOM', 'Random', 'Use random fill color'),
                  ('PICK', 'Pick', 'Pick color'),
         ),
-        description='Color to fill solid curves',
-        default = 'PICK')
+        description='Color to fill solid curves')
 
     fillColor: bpy.props.FloatVectorProperty(
         name="Fill Color",
@@ -2325,85 +2269,37 @@ class ExportSVGOp(Operator):
         size=4,
         min=0.0,
         max=1.0,
-        default=(0, 0, 0, 1)
-    )
-
-    viewAttr: EnumProperty(name = 'View Attribute',
-        items = (
-            ('WH', 'Width / Height', 'e.g. width="100" height="100"'),
-            ('VIEWBOX', 'View Box', 'This option is recommended for web graphics.\ne.g. viewBox="0 0 100 100"'),
-        ),
-        description='Preferred attribute for <svg> bounding box',
-        default = 'VIEWBOX'
-    )
-
-    idAttr : BoolProperty(
-        name="ID Attribute",
-        description = "Add id attribute to the <svg> tags",
-        default = False
-    )
-
-    styleAttr : BoolProperty(
-        name="Style Attribute",
-        description = "Add style attribute to the <path> tags",
-        default = False
-    )
-
-    maxPrecision : IntProperty(
-        name="Max Path Value Precision", 
-        description = "Maximum number of digits after the decimal points in <path> tag's d attribute",
-        default = 2
-    )
-
-    roundingThreshold : FloatProperty(
-        name="Path Value Rounding Threshold", 
-        description = "For fixing floating point errors",
-        default = 0.001
+        default=(0, 0.3, 0.5, 1.0)
     )
 
     def execute(self, context):
-        exportSVG(
-            context,
-            self.filepath,
-            self.exportView,
-            self.clipView,
-            self.lineWidth,
-            self.lineColorOpts,
-            self.lineColor,
-            self.fillColorOpts,
-            self.fillColor,
-            self.viewAttr,
-            self.idAttr,
-            self.styleAttr,
-            self.maxPrecision,
-            self.roundingThreshold,
-        )
+        exportSVG(context, self.filepath, self.exportView, self.clipView, self.lineWidth, \
+            self.lineColorOpts, self.lineColor, self.fillColorOpts, self.fillColor)
         return {'FINISHED'}
 
     def draw(self, context):
         layout = self.layout
-        col = layout.box().column(heading="View Settings")
-        col.prop(self, "exportView")
-        col.prop(self, "clipView")
-        col.split()
-        col = layout.box().column(heading="Tag Settings")
-        col.prop(self, "viewAttr")
-        col.prop(self, "idAttr")
-        col.prop(self, "styleAttr")
-        if (self.styleAttr):
-            col.prop(self, "lineWidth")
-            row = col.row()
-            row.prop(self, "lineColorOpts")
-            if (self.lineColorOpts == 'PICK'):
-                row = row.split()
-                row.prop(self, "lineColor", text = '')
-            row = col.row()
-            row.prop(self, "fillColorOpts")
-            if (self.fillColorOpts == 'PICK'):
-                row = row.split()
-                row.prop(self, "fillColor", text = '')
-        col.prop(self, "maxPrecision")
-        col.prop(self, "roundingThreshold")
+        col = layout.column()
+        row = col.row()
+        row.prop(self, "exportView")
+        col = layout.column()
+        row = col.row()
+        row.prop(self, "clipView")
+        col = layout.column()
+        row = col.row()
+        row.prop(self, "lineWidth")
+        col = layout.column()
+        row = col.row()
+        row.prop(self, "lineColorOpts")
+        if(self.lineColorOpts == 'PICK'):
+            row = row.split()
+            row.prop(self, "lineColor", text = '')
+        col = layout.column()
+        row = col.row()
+        row.prop(self, "fillColorOpts")
+        if(self.fillColorOpts == 'PICK'):
+            row = row.split()
+            row.prop(self, "fillColor", text = '')
 
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)
@@ -2803,7 +2699,7 @@ class BezierUtilsPanel(Panel):
             tool = context.workspace.tools.from_space_view3d_mode('OBJECT', \
                 create = False)
 
-            if(tool.idname == FlexiDrawBezierTool.bl_idname and \
+            if(tool.idname == 'flexi_bezier.draw_tool' and \
                 params.drawObjType == 'MATH'):
                 row = layout.row()
                 row.prop(params, "mathExtraExpanded",
@@ -6377,7 +6273,7 @@ class MathFnDraw(Primitive2DDraw):
         params = bpy.context.window_manager.bezierToolkitParams
         # TODO: Should be somewhere else
         tool = bpy.context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
-        if(tool.idname == FlexiDrawBezierTool.bl_idname and params.drawObjType == 'MATH'):
+        if(tool.idname == 'flexi_bezier.draw_tool' and params.drawObjType == 'MATH'):
 
             if(params.mathFnType == 'PARAMETRIC'):
                 fn1 = MathFnDraw.getEvaluatedExpr(params.drawMathFnParametric1)
@@ -7327,8 +7223,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
         tool = context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
 
-        if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname):
-        # if(tool == None or tool.idname != 'flexi_bezier.draw_tool'):
+        # ~ if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname): (T60766)
+        if(tool == None or tool.idname != 'flexi_bezier.draw_tool'):
             return False
 
         return True
@@ -7348,8 +7244,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         super(ModalFlexiDrawBezierOp, self).preInvoke(context, event)
         # If the operator is invoked from context menu, enable the tool on toolbar
         if(not self.isToolSelected(context) and context.mode == 'OBJECT'):
-            bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname)
-            # bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
+            # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
+            bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
 
         # Object name -> [spline index, [pts]]
         # Not used right now (maybe in case of large no of curves)
@@ -7363,8 +7259,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
         if(FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metakeys)):
             if(event.value == 'RELEASE'):
-                bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname)
-                # bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
+                # ~ bpy.ops.wm.tool_set_by_id(name = FlexiEditBezierTool.bl_idname) (T60766)
+                bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.edit_tool')
             return {"RUNNING_MODAL"}
 
         return self.baseSubModal(context, event, snapProc)
@@ -7516,6 +7412,22 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 pass
         bpy.ops.ed.undo_push()
 
+#(T60766)
+# ~ class FlexiDrawBezierTool(WorkSpaceTool):
+    # ~ bl_space_type='VIEW_3D'
+    # ~ bl_context_mode='OBJECT'
+
+    # ~ bl_idname = "flexi_bezier.draw_tool"
+    # ~ bl_label = "Flexi Draw Bezier"
+    # ~ bl_description = ("Flexible drawing of Bezier curves in object mode")
+    # ~ bl_icon = "ops.gpencil.extrude_move"
+    # ~ bl_widget = None
+    # ~ bl_operator = "wm.flexi_draw_bezier_curves"
+    # ~ bl_keymap = (
+        # ~ ("wm.flexi_draw_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
+         # ~ {"properties": []}),
+    # ~ )
+
 ################### Flexi Draw Grease Bezier ###################
 
 class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
@@ -7541,8 +7453,8 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         tool = context.workspace.tools.from_space_view3d_mode('PAINT_GPENCIL', \
             create = False)
 
-        if(tool == None or tool.idname != FlexiGreaseBezierTool.bl_idname): 
-        # if(tool == None or tool.idname != 'flexi_bezier.grease_draw_tool'):
+        # ~ if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname): (T60766)
+        if(tool == None or tool.idname != 'flexi_bezier.grease_draw_tool'):
             return False
 
         return True
@@ -7558,8 +7470,8 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         super(ModalFlexiDrawGreaseOp, self).preInvoke(context, event)
         # If the operator is invoked from context menu, enable the tool on toolbar
         if(not self.isToolSelected(context) and context.mode == 'PAINT_GPENCIL'):
-            bpy.ops.wm.tool_set_by_id(name = FlexiGreaseBezierTool.bl_idname)
-            # bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.grease_draw_tool')
+            # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
+            bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.grease_draw_tool')
 
         o = context.object
         if(o == None or o.type != 'GPENCIL'):
@@ -8863,8 +8775,8 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
             return False
 
         tool = context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
-        if(tool == None or tool.idname != FlexiEditBezierTool.bl_idname):
-        # if(tool == None or tool.idname != 'flexi_bezier.edit_tool'):
+        # ~ if(tool == None or tool.idname != FlexiEditBezierTool.bl_idname): (T60766)
+        if(tool == None or tool.idname != 'flexi_bezier.edit_tool'):
             return False
         return True
 
@@ -9441,9 +9353,9 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
         if(not opMode and \
             FTHotKeys.isHotKey(FTHotKeys.hkToggleDrwEd, event.type, metakeys)):
             if(event.value == 'RELEASE'):
+                # ~ bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname) (T60766)
                 self.reset()
-                bpy.ops.wm.tool_set_by_id(name = FlexiDrawBezierTool.bl_idname)
-                # bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
+                bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.draw_tool')
             return {"RUNNING_MODAL"}
 
         if(not opMode and FTHotKeys.isHotKey(FTHotKeys.hkBevelPt, event.type, metakeys)):
@@ -10059,51 +9971,27 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         exec(FTMenu.getMNPropDefStr(menudata))
 
 
-class FlexiDrawBezierTool(WorkSpaceTool):
-    bl_space_type='VIEW_3D'
-    bl_context_mode='OBJECT'
+# ~ class FlexiEditBezierTool(WorkSpaceTool):
+    # ~ bl_space_type='VIEW_3D'
+    # ~ bl_context_mode='OBJECT'
 
-    bl_idname = "flexi_bezier.draw_tool"
-    bl_label = "Flexi Draw Bezier"
-    bl_description = ("Flexible drawing of Bezier curves in object mode")
-    bl_icon = "ops.gpencil.extrude_move"
-    bl_widget = None
-    bl_operator = "wm.flexi_draw_bezier_curves"
-    bl_keymap = (
-        ("wm.flexi_draw_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
-         {"properties": []}),
-    )
+    # ~ bl_idname = "flexi_bezier.edit_tool"
+    # ~ bl_label = "Flexi Edit Bezier"
+    # ~ bl_description = ("Flexible editing of Bezier curves in object mode")
+    # ~ bl_icon = "ops.pose.breakdowner"
+    # ~ bl_widget = None
+    # ~ bl_operator = "wm.modal_flexi_edit_bezier"
+    # ~ bl_keymap = (
+        # ~ ("wm.modal_flexi_edit_bezier", {"type": 'MOUSEMOVE', "value": 'ANY'},
+         # ~ {"properties": []}),
+    # ~ )
 
-class FlexiEditBezierTool(WorkSpaceTool):
-    bl_space_type='VIEW_3D'
-    bl_context_mode='OBJECT'
+# ****** Temporary Workaround for Tool Not working on restart (T60766) *******
 
-    bl_idname = "flexi_bezier.edit_tool"
-    bl_label = "Flexi Edit Bezier"
-    bl_description = ("Flexible editing of Bezier curves in object mode")
-    bl_icon = "ops.pose.breakdowner"
-    bl_widget = None
-    bl_operator = "wm.modal_flexi_edit_bezier"
-    bl_keymap = (
-        ("wm.modal_flexi_edit_bezier", {"type": 'MOUSEMOVE', "value": 'ANY'},
-         {"properties": []}),
-    )
-
-
-class FlexiGreaseBezierTool(WorkSpaceTool):
-    bl_space_type='VIEW_3D'
-    bl_context_mode='PAINT_GPENCIL'
-
-    bl_idname = "flexi_bezier.grease_draw_tool"
-    bl_label = "Flexi Grease Bezier"
-    bl_description = ("Flexible drawing of Bezier curves as grease pencil strokes")
-    bl_icon = "ops.gpencil.extrude_move"
-    bl_widget = None
-    bl_operator = "wm.flexi_draw_grease_bezier_curves"
-    bl_keymap = (
-        ("wm.flexi_draw_grease_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
-         {"properties": []}),
-    )
+from bpy.utils.toolsystem import ToolDef
+kmToolFlexiDrawBezier = "3D View Tool: Object, Flexi Draw Bezier"
+kmToolFlexiEditBezier = "3D View Tool: Object, Flexi Edit Bezier"
+kmToolFlexiGreaseDrawBezier = "3D View Tool: Object, Flexi Grease Draw Bezier"
 
 def showSnapToPlane(params):
     return (params.snapOrient not in {'VIEW', 'REFERENCE', 'CURR_POS'} and \
@@ -10124,12 +10012,10 @@ def drawSettingsFT(self, context):
 
     self.layout.use_property_decorate = True
 
+    # ~ if(tool == None or tool.idname != FlexiDrawBezierTool.bl_idname): (T60766)
     gpMode = (context.mode == 'PAINT_GPENCIL' and \
-            toolGP.idname == FlexiGreaseBezierTool.bl_idname)
-            # toolGP.idname == 'flexi_bezier.grease_draw_tool')
-    drawMode = (context.mode == 'OBJECT' and \
-                toolObj.idname  == FlexiDrawBezierTool.bl_idname)
-                # toolObj.idname  == 'flexi_bezier.draw_tool')
+            toolGP.idname == 'flexi_bezier.grease_draw_tool')
+    drawMode = (context.mode == 'OBJECT' and toolObj.idname  == 'flexi_bezier.draw_tool')
     if(drawMode or gpMode):
         if(gpMode):
             brush = context.scene.tool_settings.gpencil_paint.brush
@@ -10166,10 +10052,134 @@ def drawSettingsFT(self, context):
 
     self.layout.prop(params, "axisScale", text = '')
 
-    # if((context.mode == 'OBJECT' and toolObj.idname  == 'flexi_bezier.draw_tool')):
-    if((context.mode == 'OBJECT' and toolObj.idname  == FlexiDrawBezierTool.bl_idname)):
+    if((context.mode == 'OBJECT' and toolObj.idname  == 'flexi_bezier.draw_tool')):
         self.layout.prop(params, "copyPropsObj", text = '')
 
+@ToolDef.from_fn
+def toolFlexiDraw():
+
+    return dict(idname = "flexi_bezier.draw_tool",
+        label = "Flexi Draw Bezier",
+        description = "Flexible drawing of Bezier curves in object mode",
+        icon = "ops.gpencil.extrude_move",
+        widget = None,
+        keymap = kmToolFlexiDrawBezier,
+        # ~ draw_settings = drawSettingsFT,
+        )
+
+@ToolDef.from_fn
+def toolFlexiGreaseDraw():
+
+    return dict(idname = "flexi_bezier.grease_draw_tool",
+        label = "Flexi Grease Bezier",
+        description = "Flexible drawing of Bezier curves as grease pencil strokes",
+        icon = "ops.gpencil.extrude_move",
+        widget = None,
+        keymap = kmToolFlexiGreaseDrawBezier,
+        # ~ draw_settings = drawSettingsFT,
+        )
+
+@ToolDef.from_fn
+def toolFlexiEdit():
+
+    return dict(idname = "flexi_bezier.edit_tool",
+        label = "Flexi Edit Bezier",
+        description = "Flexible editing of Bezier curves in object mode",
+        icon = "ops.pose.breakdowner",
+        widget = None,
+        keymap = kmToolFlexiEditBezier,
+        # ~ draw_settings = drawSettingsFT,
+    )
+
+def getToolList(spaceType, contextMode):
+    from bl_ui.space_toolsystem_common import ToolSelectPanelHelper
+    cls = ToolSelectPanelHelper._tool_class_from_space_type(spaceType)
+    return cls._tools[contextMode]
+
+def registerFlexiBezierTools():
+    tools = getToolList('VIEW_3D', 'OBJECT')
+    tools += None, toolFlexiDraw, toolFlexiEdit
+    # ~ tools += None, toolFlexiEdit
+    del tools
+
+    tools = getToolList('VIEW_3D', 'PAINT_GPENCIL')
+    tools += None, toolFlexiGreaseDraw
+    del tools
+
+def unregisterFlexiBezierTools():
+    tools = getToolList('VIEW_3D', 'OBJECT')
+
+    index = tools.index(toolFlexiDraw) - 1 #None
+    tools.pop(index)
+    tools.remove(toolFlexiDraw)
+    tools.remove(toolFlexiEdit)
+    del tools
+
+    tools = getToolList('VIEW_3D', 'PAINT_GPENCIL')
+    index = tools.index(toolFlexiGreaseDraw) - 1 #None
+    tools.pop(index)
+    tools.remove(toolFlexiGreaseDraw)
+    del tools
+
+
+keymapDraw = (kmToolFlexiDrawBezier,
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": [
+            ("wm.flexi_draw_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
+             {"properties": []}),
+        ]},)
+
+emptyKeymapDraw = (kmToolFlexiDrawBezier,
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": []},)
+
+keymapGreaseDraw = (kmToolFlexiGreaseDrawBezier,
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": [
+            ("wm.flexi_draw_grease_bezier_curves", {"type": 'MOUSEMOVE', "value": 'ANY'},
+             {"properties": []}),
+        ]},)
+
+emptyKeymapGreaseDraw = (kmToolFlexiGreaseDrawBezier,
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": []},)
+
+keymapEdit = (kmToolFlexiEditBezier,
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": [
+            ("wm.modal_flexi_edit_bezier", {"type": 'MOUSEMOVE', "value": 'ANY'},
+             {"properties": []}),
+        ]},)
+
+emptyKeymapEdit = (kmToolFlexiEditBezier,
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": []},)
+
+def registerFlexiBezierKeymaps():
+    keyconfigs = bpy.context.window_manager.keyconfigs
+    kc_defaultconf = keyconfigs.default
+    kc_addonconf = keyconfigs.addon
+
+    from bl_keymap_utils.io import keyconfig_init_from_data
+    keyconfig_init_from_data(kc_defaultconf, [emptyKeymapDraw, \
+        emptyKeymapGreaseDraw, emptyKeymapEdit])
+
+    keyconfig_init_from_data(kc_addonconf, [keymapDraw, keymapGreaseDraw, keymapEdit])
+
+def unregisterFlexiBezierKeymaps():
+    keyconfigs = bpy.context.window_manager.keyconfigs
+    defaultmap = keyconfigs.get("blender").keymaps
+    addonmap   = keyconfigs.get("blender addon").keymaps
+
+    for km_name, km_args, km_content in [keymapDraw, keymapGreaseDraw, keymapEdit]:
+        keymap = addonmap.find(km_name, **km_args)
+        keymap_items = keymap.keymap_items
+        for item in km_content['items']:
+            item_id = keymap_items.find(item[0])
+            if item_id != -1:
+                keymap_items.remove(keymap_items[item_id])
+        addonmap.remove(keymap)
+        defaultmap.remove(defaultmap.find(km_name, **km_args))
 
 # ****************** Configurations In User Preferences ******************
 
@@ -10933,10 +10943,10 @@ def register():
     BezierUtilsPanel.colorCurves(add = True)
     bpy.app.handlers.depsgraph_update_post.append(BezierUtilsPanel.colorCurves)
 
-    bpy.utils.register_tool(FlexiDrawBezierTool)
-    bpy.utils.register_tool(FlexiEditBezierTool)
-    bpy.utils.register_tool(FlexiGreaseBezierTool)
-    
+    # ~ bpy.utils.register_tool(FlexiDrawBezierTool) (T60766)
+    # ~ bpy.utils.register_tool(FlexiEditBezierTool) (T60766)
+    registerFlexiBezierTools()
+    registerFlexiBezierKeymaps()
     updatePanel(None, bpy.context)
 
     bpy.app.handlers.load_post.append(ModalBaseFlexiOp.loadPostHandler)
@@ -10952,11 +10962,13 @@ def unregister():
     bpy.app.handlers.load_post.remove(ModalBaseFlexiOp.loadPostHandler)
     bpy.app.handlers.load_pre.remove(ModalBaseFlexiOp.loadPreHandler)
 
+    unregisterFlexiBezierKeymaps()
+    unregisterFlexiBezierTools()
+
     del bpy.types.WindowManager.bezierToolkitParams
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 
-    bpy.utils.unregister_tool(FlexiDrawBezierTool)
-    bpy.utils.unregister_tool(FlexiEditBezierTool)
-    bpy.utils.unregister_tool(FlexiGreaseBezierTool)
+    # ~ bpy.utils.unregister_tool(FlexiDrawBezierTool) (T60766)
+    # ~ bpy.utils.unregister_tool(FlexiEditBezierTool) (T60766)
