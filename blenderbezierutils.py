@@ -1609,7 +1609,7 @@ def getSVGPt(co, docW, docH, camera = None, region = None, rv3d = None):
         xy = getCoordFromLoc(region, rv3d, co)
         return complex(xy[0], docH - xy[1])
 
-def getPathD(path, precision):
+def getPathD(path, precision, roundingThreshold):
     curve = ''
 
     f = '{:.' + str(precision) + 'f}'
@@ -1620,6 +1620,11 @@ def getPathD(path, precision):
             for k, v in enumerate(segment):
                 s.append(segment[k].real)
                 s.append(segment[k].imag)
+
+            for i, e in enumerate(s):
+                if abs(((s[i] + 0.5) % 1) - 0.5) < roundingThreshold:
+                    s[i] = round(s[i])
+
             if(j == 0):
                 comps.append(
                     ('M ' + f).format(s[0]).rstrip('0').rstrip('.') \
@@ -1669,7 +1674,7 @@ def createClipElem(doc, svgElem, docW, docH, clipElemId):
     clipElem.appendChild(rectElem)
 
 def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
-    fillCol, fillAlpha, clipView, clipElemId, idEnabled, styleEnabled, precision):
+    fillCol, fillAlpha, clipView, clipElemId, idEnabled, styleEnabled, precision, roundingThreshold):
 
     idPrefix = 'id'
     style= {'opacity':'1', 'stroke':'#000000', 'stroke-width':'1', \
@@ -1689,7 +1694,7 @@ def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
 
     if (idEnabled):
         elem.setAttribute('id', idPrefix + str(idx).zfill(3))
-    elem.setAttribute('d', getPathD(path, precision))
+    elem.setAttribute('d', getPathD(path, precision, roundingThreshold))
     style['stroke-width'] =  str(lineWidth)
     style['stroke'] =  '#' + lineCol
     style['opacity'] =  lineAlpha
@@ -1719,7 +1724,8 @@ def exportSVG(
     viewAttr,
     idAttr,
     styleAttr,
-    maxPrecision
+    maxPrecision,
+    roundingThreshold
 ):
 
     svgXML = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
@@ -1817,7 +1823,7 @@ def exportSVG(
                     fc, fa = fillCol, fillAlpha
 
                 svgPathElem = getSVGPathElem(doc, docW, docH, p, idx, lineWidth, \
-                    lineCol, lineAlpha, fc, fa, clipView, clipElemId, idAttr, styleAttr, maxPrecision)
+                    lineCol, lineAlpha, fc, fa, clipView, clipElemId, idAttr, styleAttr, maxPrecision, roundingThreshold)
                 if(svgPathElem != None):
                     svgElem.appendChild(svgPathElem)
                     idx += 1
@@ -2349,6 +2355,12 @@ class ExportSVGOp(Operator):
         default = 2
     )
 
+    roundingThreshold : FloatProperty(
+        name="Path Value Rounding Threshold", 
+        description = "For fixing floating point errors",
+        default = 0.001
+    )
+
     def execute(self, context):
         exportSVG(
             context,
@@ -2363,7 +2375,8 @@ class ExportSVGOp(Operator):
             self.viewAttr,
             self.idAttr,
             self.styleAttr,
-            self.maxPrecision
+            self.maxPrecision,
+            self.roundingThreshold,
         )
         return {'FINISHED'}
 
@@ -2390,6 +2403,7 @@ class ExportSVGOp(Operator):
                 row = row.split()
                 row.prop(self, "fillColor", text = '')
         col.prop(self, "maxPrecision")
+        col.prop(self, "roundingThreshold")
 
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)
