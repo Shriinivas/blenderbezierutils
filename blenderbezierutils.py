@@ -25,6 +25,7 @@ import random, time, math
 from bpy.app.handlers import persistent
 from xml.dom import minidom
 from shutil import copyfile
+import re
 
 bl_info = {
     "name": "Bezier Utilities",
@@ -640,6 +641,32 @@ def roundedVect(space3d, vect, rounding, axes):
     # ~ Vector([round(vect[i] / fact) * fact for i in axes])
     for i in axes: retVect[i] = round(vect[i] / fact) * fact
     return retVect
+
+def sanitizeFloat(num, repeatThreshold, maxPrecision):
+    numStr = str(num)
+    idxSpan = re.search(
+            f'(\.\d*?)(0{{{repeatThreshold},}}|9{{{repeatThreshold},}})',
+            numStr)
+
+    if not idxSpan:
+        sanitized = (
+            str(round(float(numStr), maxPrecision))
+            .rstrip('0')
+            .rstrip('.')
+        )
+        return 0 if sanitized == '-0' else sanitized
+
+    idx = idxSpan.span(2)[0]
+    preFractSpan = re.search('[\-\d]+?\.', numStr).span()
+    preFractLen = 0 if not preFractSpan else preFractSpan[1] - preFractSpan[0]
+    
+    sanitized = (
+        str(round(float(numStr[0:idx + 1]), min(maxPrecision, idx - preFractLen)))
+        .rstrip('0')
+        .rstrip('.')
+    )
+
+    return 0 if sanitized == '-0' else sanitized
 
 ###################### Screen functions ######################
 
@@ -1609,10 +1636,10 @@ def getSVGPt(co, docW, docH, camera = None, region = None, rv3d = None):
         xy = getCoordFromLoc(region, rv3d, co)
         return complex(xy[0], docH - xy[1])
 
-def getPathD(path, precision, roundingThreshold):
+def getPathD(path, maxPrecision, repeatThreshold):
     curve = ''
+    f = '{:.' + str(maxPrecision) + 'f}'
 
-    f = '{:.' + str(precision) + 'f}'
     for i, part in enumerate(path):
         comps = []
         for j, segment in enumerate(part):
@@ -1622,24 +1649,12 @@ def getPathD(path, precision, roundingThreshold):
                 s.append(segment[k].imag)
 
             for i, e in enumerate(s):
-                if abs(((s[i] + 0.5) % 1) - 0.5) < roundingThreshold:
-                    s[i] = round(s[i])
+                s[i] = sanitizeFloat(s[i], repeatThreshold, maxPrecision)
 
             if(j == 0):
-                comps.append(
-                    ('M ' + f).format(s[0]).rstrip('0').rstrip('.') \
-                    + ( ',' + f).format(s[1]).rstrip('0').rstrip('.') \
-                    + ' C'
-                )
-            comps.append(
-                f.format(s[2]).rstrip('0').rstrip('.') \
-                + (',' + f).format(s[3]).rstrip('0').rstrip('.') \
-                + (' ' + f).format(s[4]).rstrip('0').rstrip('.') \
-                + (',' + f).format(s[5]).rstrip('0').rstrip('.') \
-                + (' ' + f).format(s[6]).rstrip('0').rstrip('.') \
-                + (',' + f).format(s[7]).rstrip('0').rstrip('.')
-            )
-        curve += ' ' .join(comps)
+                comps.append(f'M {s[0]},{s[1]} C')
+            comps.append(f'{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]}')
+        curve += ' '.join(comps)
 
     return curve
 
@@ -1674,7 +1689,7 @@ def createClipElem(doc, svgElem, docW, docH, clipElemId):
     clipElem.appendChild(rectElem)
 
 def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
-    fillCol, fillAlpha, clipView, clipElemId, idEnabled, styleEnabled, precision, roundingThreshold):
+    fillCol, fillAlpha, clipView, clipElemId, idEnabled, styleEnabled, maxPrecision, repeatThreshold):
 
     idPrefix = 'id'
     style= {'opacity':'1', 'stroke':'#000000', 'stroke-width':'1', \
@@ -1694,7 +1709,7 @@ def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
 
     if (idEnabled):
         elem.setAttribute('id', idPrefix + str(idx).zfill(3))
-    elem.setAttribute('d', getPathD(path, precision, roundingThreshold))
+    elem.setAttribute('d', getPathD(path, maxPrecision, repeatThreshold))
     style['stroke-width'] =  str(lineWidth)
     style['stroke'] =  '#' + lineCol
     style['opacity'] =  lineAlpha
@@ -1725,7 +1740,7 @@ def exportSVG(
     idAttr,
     styleAttr,
     maxPrecision,
-    roundingThreshold
+    repeatThreshold
 ):
 
     svgXML = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
@@ -1823,7 +1838,7 @@ def exportSVG(
                     fc, fa = fillCol, fillAlpha
 
                 svgPathElem = getSVGPathElem(doc, docW, docH, p, idx, lineWidth, \
-                    lineCol, lineAlpha, fc, fa, clipView, clipElemId, idAttr, styleAttr, maxPrecision, roundingThreshold)
+                    lineCol, lineAlpha, fc, fa, clipView, clipElemId, idAttr, styleAttr, maxPrecision, repeatThreshold)
                 if(svgPathElem != None):
                     svgElem.appendChild(svgPathElem)
                     idx += 1
@@ -2355,10 +2370,10 @@ class ExportSVGOp(Operator):
         default = 2
     )
 
-    roundingThreshold : FloatProperty(
-        name="Path Value Rounding Threshold", 
-        description = "For fixing floating point errors",
-        default = 0.001
+    repeatThreshold : IntProperty(
+        name="Path Value Repeating Number Threshold", 
+        description = "Minimum number of repeating 0s or 9s in a fractional value to determine rounding precision, for fixing floating point errors",
+        default = 3
     )
 
     def execute(self, context):
@@ -2376,7 +2391,7 @@ class ExportSVGOp(Operator):
             self.idAttr,
             self.styleAttr,
             self.maxPrecision,
-            self.roundingThreshold,
+            self.repeatThreshold,
         )
         return {'FINISHED'}
 
@@ -2403,7 +2418,7 @@ class ExportSVGOp(Operator):
                 row = row.split()
                 row.prop(self, "fillColor", text = '')
         col.prop(self, "maxPrecision")
-        col.prop(self, "roundingThreshold")
+        col.prop(self, "repeatThreshold")
 
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)

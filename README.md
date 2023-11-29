@@ -12,8 +12,10 @@
 			* Enabling this reveals the legacy color pick options.
 		* **Max Path Value Precision:** Maximum precision of the coordinate values (legacy: infinite)
 			* Defaults to 2. Adjust it as needed for a trade-off between precision and output SVG file size.
-		* **Path Value Rounding Threshold:** Rounds a coordinate value if its difference to the nearest integer is less than this value
-			* Defaults to 0.001. Without this, result of an integer coordinate value will sometime be something like 0.000000001 or 0.99999999998 due to floating point error. Also optimizes output file size.
+		* **Path Value Repeating Number Threshold:** Rounds a coordinate value to a precision where the first repeating group of 0s or 9s is found
+			* Defaults to 3.
+			* Without this, result of an integer coordinate value will sometime contain excess fractional values (e.g. 748.8 → 748.8000000000001, 323.41 → 323.40999999999997) due to floating point errors.
+			* Also optimizes output file size.
 	* If there is one, the **Export View** option now defaults to the main camera in the active scene.
 	* Changed default **Clip View** option value and style colors
 * Removed XML tag in the output SVG file.
