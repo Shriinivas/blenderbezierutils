@@ -642,32 +642,6 @@ def roundedVect(space3d, vect, rounding, axes):
     for i in axes: retVect[i] = round(vect[i] / fact) * fact
     return retVect
 
-def sanitizeFloat(num, repeatThreshold, maxPrecision):
-    numStr = str(num)
-    idxSpan = re.search(
-            f'(\.\d*?)(0{{{repeatThreshold},}}|9{{{repeatThreshold},}})',
-            numStr)
-
-    if not idxSpan:
-        sanitized = (
-            str(round(float(numStr), maxPrecision))
-            .rstrip('0')
-            .rstrip('.')
-        )
-        return 0 if sanitized == '-0' else sanitized
-
-    idx = idxSpan.span(2)[0]
-    preFractSpan = re.search('[\-\d]+?\.', numStr).span()
-    preFractLen = 0 if not preFractSpan else preFractSpan[1] - preFractSpan[0]
-    
-    sanitized = (
-        str(round(float(numStr[0:idx + 1]), min(maxPrecision, idx - preFractLen)))
-        .rstrip('0')
-        .rstrip('.')
-    )
-
-    return 0 if sanitized == '-0' else sanitized
-
 ###################### Screen functions ######################
 
 def getGridSubdiv(space3d):
@@ -1639,6 +1613,33 @@ def getSVGPt(co, docW, docH, camera = None, region = None, rv3d = None):
 def getPathD(path, maxPrecision, repeatThreshold):
     curve = ''
     f = '{:.' + str(maxPrecision) + 'f}'
+
+    def sanitizeFloat(num, repeatThreshold, maxPrecision):
+        numStr = str(num)
+        idxSpan = re.search(
+            f'(\.\d*?)(0{{{repeatThreshold},}}|9{{{repeatThreshold},}})',
+            numStr
+        )
+
+        if not idxSpan:
+            sanitized = (
+                str(round(float(numStr), maxPrecision))
+                .rstrip('0')
+                .rstrip('.')
+            )
+            return 0 if sanitized == '-0' else sanitized
+
+        idx = idxSpan.span(2)[0]
+        preFractSpan = re.search('[\-\d]+?\.', numStr).span()
+        preFractLen = 0 if not preFractSpan else preFractSpan[1] - preFractSpan[0]
+        
+        sanitized = (
+            str(round(float(numStr[0:idx + 1]), min(maxPrecision, idx - preFractLen)))
+            .rstrip('0')
+            .rstrip('.')
+        )
+
+        return 0 if sanitized == '-0' else sanitized
 
     for i, part in enumerate(path):
         comps = []
