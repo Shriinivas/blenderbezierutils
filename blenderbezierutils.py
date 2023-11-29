@@ -1787,7 +1787,7 @@ def exportSVG(
     idx = 0
     for o in bpy.context.scene.objects:
         mw = o.matrix_world
-        if(isBezier(o) and o.visible_get()):
+        if(isBezier(o) and o.visible_get() and not o.hide_render):
             path = []
             filledPath = []
 
