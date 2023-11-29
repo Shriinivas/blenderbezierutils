@@ -1688,13 +1688,36 @@ def createClipElem(doc, svgElem, docW, docH, clipElemId):
     rectElem.setAttribute('height', str(docH))
     clipElem.appendChild(rectElem)
 
-def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
-    fillCol, fillAlpha, clipView, clipElemId, idEnabled, styleEnabled, maxPrecision, repeatThreshold):
-
+def getSVGPathElem(
+    name,
+    doc,
+    docW,
+    docH,
+    path,
+    idx,
+    lineWidth,
+    lineCol,
+    lineAlpha,
+    fillCol,
+    fillAlpha,
+    clipView,
+    clipElemId,
+    idEnabled,
+    objNamesAsIds,
+    styleEnabled,
+    maxPrecision,
+    repeatThreshold
+):
     idPrefix = 'id'
-    style= {'opacity':'1', 'stroke':'#000000', 'stroke-width':'1', \
-        'fill':'none', 'stroke-linecap':'round', 'stroke-linejoin':'miter', \
-        'stroke-miterlimit':'4'}
+    style= {
+        'opacity': '1',
+        'stroke': '#000000',
+        'stroke-width': '1',
+        'fill': 'none',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'miter',
+        'stroke-miterlimit': '4'
+    }
 
     clipped = False
     if(clipView):
@@ -1708,7 +1731,10 @@ def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
     elem = doc.createElement('path')
 
     if (idEnabled):
-        elem.setAttribute('id', idPrefix + str(idx).zfill(3))
+        elem.setAttribute(
+            'id',
+            name if objNamesAsIds else idPrefix + str(idx).zfill(3)
+        )
     elem.setAttribute('d', getPathD(path, maxPrecision, repeatThreshold))
     style['stroke-width'] =  str(lineWidth)
     style['stroke'] =  '#' + lineCol
@@ -1738,6 +1764,7 @@ def exportSVG(
     fillColor,
     viewAttr,
     idAttr,
+    objNamesAsIds,
     styleAttr,
     maxPrecision,
     repeatThreshold
@@ -1837,8 +1864,16 @@ def exportSVG(
                 else:
                     fc, fa = fillCol, fillAlpha
 
-                svgPathElem = getSVGPathElem(doc, docW, docH, p, idx, lineWidth, \
-                    lineCol, lineAlpha, fc, fa, clipView, clipElemId, idAttr, styleAttr, maxPrecision, repeatThreshold)
+                svgPathElem = getSVGPathElem(
+                    o.name,
+                    doc, docW, docH,
+                    p, idx,
+                    lineWidth, lineCol, lineAlpha,
+                    fc, fa,
+                    clipView, clipElemId,
+                    idAttr, objNamesAsIds, styleAttr,
+                    maxPrecision, repeatThreshold
+                )
                 if(svgPathElem != None):
                     svgElem.appendChild(svgPathElem)
                     idx += 1
@@ -2358,6 +2393,12 @@ class ExportSVGOp(Operator):
         default = False
     )
 
+    objNamesAsIds : BoolProperty(
+        name="Use Object Names as IDs",
+        description = "Use object names as values of the id attributes",
+        default = True
+    )
+
     styleAttr : BoolProperty(
         name="Style Attribute",
         description = "Add style attribute to the <path> tags",
@@ -2389,6 +2430,7 @@ class ExportSVGOp(Operator):
             self.fillColor,
             self.viewAttr,
             self.idAttr,
+            self.objNamesAsIds,
             self.styleAttr,
             self.maxPrecision,
             self.repeatThreshold,
@@ -2404,6 +2446,8 @@ class ExportSVGOp(Operator):
         col = layout.box().column(heading="Tag Settings")
         col.prop(self, "viewAttr")
         col.prop(self, "idAttr")
+        if (self.idAttr):
+            col.prop(self, "objNamesAsIds")
         col.prop(self, "styleAttr")
         if (self.styleAttr):
             col.prop(self, "lineWidth")

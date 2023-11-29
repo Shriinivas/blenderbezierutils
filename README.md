@@ -8,6 +8,8 @@
 	* Added the following options:
 		* **View Attribute:** Select attribute(s) to specify bounding box, "[width](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/width) / [height](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/height)" (legacy) or "[viewBox](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/viewBox)"
 		* **ID Attribute:** Toggle "id" attribute insertion (legacy: always)
+			* **Use Object Names as Ids:** If "ID Attribute" is enabled, switch between using sequence numbers and object names for id attributes
+				* Names are used AS IS, so make sure to use naming patterns suitable for the attribute values (e.g. not containing double quotes).
 		* **Style Attribute:** Toggle "style" attribute insertion (legacy: always)
 			* Enabling this reveals the legacy color pick options.
 		* **Max Path Value Precision:** Maximum precision of the coordinate values (legacy: infinite)
