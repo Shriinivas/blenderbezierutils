@@ -9,7 +9,7 @@
 # License: GPL (https://github.com/Shriinivas/blenderbezierutils/blob/master/LICENSE)
 #
 
-import os, bpy, bmesh, bgl, blf, gpu
+import os, bpy, bmesh, blf, gpu
 from bpy.props import BoolProperty, IntProperty, EnumProperty, \
 FloatProperty, StringProperty, CollectionProperty, FloatVectorProperty, PointerProperty
 from bpy.types import Panel, Operator, WorkSpaceTool, AddonPreferences, Menu
@@ -2471,7 +2471,8 @@ class MarkerController:
             context.area.tag_redraw()
 
     def drawHandler(self):
-        bgl.glPointSize(MarkerController.defPointSize)
+        # bgl.glPointSize(MarkerController.defPointSize)
+        gpu.state.point_size_set(MarkerController.defPointSize)
         self.batch.draw(self.shader)
 
     def removeMarkers(self, context):
@@ -2487,7 +2488,7 @@ class MarkerController:
 
     def __init__(self, context):
         self.smMap = self.createSMMap(context)
-        self.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
+        self.shader = gpu.shader.from_builtin('FLAT_COLOR')
         # ~ self.shader.bind()
 
         try:
@@ -2897,7 +2898,8 @@ class BezierUtilsPanel(Panel):
     def colorCurves(scene = None, add = False, remove = False):
         def ccDrawHandler():
             if(bpy.context.window_manager.bezierToolkitParams.applyCurveColor):
-                bgl.glLineWidth(BezierUtilsPanel.lineWidth)
+                # bgl.glLineWidth(BezierUtilsPanel.lineWidth)
+                gpu.state.line_width_set(BezierUtilsPanel.lineWidth)
                 if(BezierUtilsPanel.lineBatch != None):
                     BezierUtilsPanel.lineBatch.draw(BezierUtilsPanel.shader)
 
@@ -2912,7 +2914,7 @@ class BezierUtilsPanel(Panel):
             BezierUtilsPanel.drawHandlerRef = \
                 bpy.types.SpaceView3D.draw_handler_add(ccDrawHandler, \
                     (), "WINDOW", "POST_VIEW")
-            BezierUtilsPanel.shader = gpu.shader.from_builtin('3D_FLAT_COLOR')
+            BezierUtilsPanel.shader = gpu.shader.from_builtin('FLAT_COLOR')
             return
 
         elif(remove):
@@ -3749,7 +3751,8 @@ class BGLDrawMgr:
         for i, info in enumerate(lineInfos):
             if(i == 0 or info.size != lineInfos[i-1].size):
                 if(i > 0):
-                    bgl.glLineWidth(lineInfos[i-1].size)
+                    # bgl.glLineWidth(lineInfos[i-1].size)
+                    gpu.state.line_width_set(lineInfos[i-1].size)
                     batch = batch_for_shader(self.shader, \
                         'LINES', {"pos": pos, "color": col})
                     batch.draw(self.shader)
@@ -3777,7 +3780,8 @@ class BGLDrawMgr:
             col += lineCols
 
         if(len(pos) > 0):
-            bgl.glLineWidth(lineInfos[-1].size)
+            # bgl.glLineWidth(lineInfos[-1].size)
+            gpu.state.line_width_set(lineInfos[-1].size)
             batch = batch_for_shader(self.shader, \
                 'LINES', {"pos": pos, "color": col})
             batch.draw(self.shader)
@@ -3786,7 +3790,8 @@ class BGLDrawMgr:
         for i, info in enumerate(ptInfos):
             if(i == 0 or info.size != ptInfos[i-1].size):
                 if(i > 0):
-                    bgl.glPointSize(ptInfos[i-1].size)
+                    # bgl.glPointSize(ptInfos[i-1].size)
+                    gpu.state.point_size_set(ptInfos[i-1].size)
                     batch = batch_for_shader(self.shader, \
                         'POINTS', {"pos": pos, "color": col})
                     batch.draw(self.shader)
@@ -3807,7 +3812,8 @@ class BGLDrawMgr:
             col += ptCols
 
         if(len(pos) > 0):
-            bgl.glPointSize(ptInfos[-1].size)
+            # bgl.glPointSize(ptInfos[-1].size)
+            gpu.state.point_size_set(ptInfos[-1].size)
             batch = batch_for_shader(self.shader, \
                 'POINTS', {"pos": pos, "color": col})
             batch.draw(self.shader)
@@ -5679,7 +5685,7 @@ class ModalBaseFlexiOp(Operator):
 
             toolType = ModalBaseFlexiOp.opObj.getToolType()
             config, labels, keys = FTHotKeys.getHKDispLines(toolType)
-            blf.size(font_id, FTProps.keyMapFontSize, 72)
+            blf.size(font_id, FTProps.keyMapFontSize)
 
             maxLabelWidth = max(blf.dimensions(font_id, l+'XXXXX')[0] for l in labels)
             xOff2 = xOff1 + maxLabelWidth
@@ -5717,7 +5723,7 @@ class ModalBaseFlexiOp(Operator):
         mathFnTxts = MathFnDraw.getMathFnTxts()
 
         mathFnCol = [0] + list(FTProps.colMathFnTxt)
-        blf.size(font_id, FTProps.mathFnTxtFontSize, 72)
+        blf.size(font_id, FTProps.mathFnTxtFontSize)
         blf.color(*mathFnCol)
         lineHeight = blf.dimensions(font_id, 'yX')[1]
 
@@ -5823,7 +5829,7 @@ class ModalBaseFlexiOp(Operator):
 
         self.rmInfo = None
 
-        ModalBaseFlexiOp.shader = gpu.shader.from_builtin('3D_SMOOTH_COLOR')
+        ModalBaseFlexiOp.shader = gpu.shader.from_builtin('FLAT_COLOR')
         ModalBaseFlexiOp.bglDrawMgr = BGLDrawMgr(ModalBaseFlexiOp.shader)
 
         # ~ ModalBaseFlexiOp.shader.bind()
