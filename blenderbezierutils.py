@@ -1610,11 +1610,8 @@ def getSVGPt(co, docW, docH, camera = None, region = None, rv3d = None):
         xy = getCoordFromLoc(region, rv3d, co)
         return complex(xy[0], docH - xy[1])
 
-def getPathD(path, maxPrecision, repeatThreshold):
-    curve = ''
-    f = '{:.' + str(maxPrecision) + 'f}'
-
-    def sanitizeFloat(num, repeatThreshold, maxPrecision):
+def getPathD(path, maxPrecision, repeatThreshold, relative):
+    def sanitizeFloat(num):
         numStr = str(num)
         idxSpan = re.search(
             f'(\.\d*?)(0{{{repeatThreshold},}}|9{{{repeatThreshold},}})',
@@ -1641,23 +1638,56 @@ def getPathD(path, maxPrecision, repeatThreshold):
 
         return 0 if sanitized == '-0' else sanitized
 
-    for i, part in enumerate(path):
-        comps = []
-        for j, segment in enumerate(part):
-            s = []
-            for k, v in enumerate(segment):
-                s.append(segment[k].real)
-                s.append(segment[k].imag)
+    def createAbsPath():
+        curve = ''
+        for i, part in enumerate(path):
+            comps = []
+            for j, segment in enumerate(part):
+                s = []
+                for k, v in enumerate(segment):
+                    s.append(segment[k].real)
+                    s.append(segment[k].imag)
 
-            for i, e in enumerate(s):
-                s[i] = sanitizeFloat(s[i], repeatThreshold, maxPrecision)
+                for i, e in enumerate(s):
+                    s[i] = sanitizeFloat(s[i])
 
-            if(j == 0):
-                comps.append(f'M {s[0]},{s[1]} C')
-            comps.append(f'{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]}')
-        curve += ' '.join(comps)
+                if(j == 0):
+                    comps.append(f'M{s[0]},{s[1]}C')
+                comps.append(f'{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]} ')
+            curve += ''.join(comps).strip()
+        return curve
 
-    return curve
+    def createRelPath():
+        curve = ''
+        lastCoord = [0, 0]
+        for i, part in enumerate(path):
+            comps = []
+            for j, segment in enumerate(part):
+                s = []
+                for k, v in enumerate(segment):
+                    s.append(segment[k].real - lastCoord[0])
+                    s.append(segment[k].imag - lastCoord[1])
+                    if k == 0:
+                        lastCoord = [
+                            lastCoord[0] + s[0],
+                            lastCoord[1] + s[1]
+                        ]
+                lastCoord = [
+                    lastCoord[0] + s[6],
+                    lastCoord[1] + s[7]
+                ]
+
+                for i, e in enumerate(s):
+                    s[i] = sanitizeFloat(s[i])
+
+                comps.append(
+                    f'{"m" if curve != "" else "M"}{s[0]},{s[1]}c{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]} ' if j == 0 else
+                    f'{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]} '
+                )
+            curve += ''.join(comps).strip()
+        return curve
+
+    return createRelPath() if relative else createAbsPath()
 
 def getPathBBox(path):
     minX, minY, maxX, maxY = [None, None, None, None]
@@ -1707,7 +1737,8 @@ def getSVGPathElem(
     objNamesAsIds,
     styleEnabled,
     maxPrecision,
-    repeatThreshold
+    repeatThreshold,
+    useRelativeCoords
 ):
     idPrefix = 'id'
     style= {
@@ -1736,7 +1767,7 @@ def getSVGPathElem(
             'id',
             name if objNamesAsIds else idPrefix + str(idx).zfill(3)
         )
-    elem.setAttribute('d', getPathD(path, maxPrecision, repeatThreshold))
+    elem.setAttribute('d', getPathD(path, maxPrecision, repeatThreshold, useRelativeCoords))
     style['stroke-width'] =  str(lineWidth)
     style['stroke'] =  '#' + lineCol
     style['opacity'] =  lineAlpha
@@ -1768,7 +1799,8 @@ def exportSVG(
     objNamesAsIds,
     styleAttr,
     maxPrecision,
-    repeatThreshold
+    repeatThreshold,
+    useRelativeCoords
 ):
 
     svgXML = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
@@ -1873,7 +1905,7 @@ def exportSVG(
                     fc, fa,
                     clipView, clipElemId,
                     idAttr, objNamesAsIds, styleAttr,
-                    maxPrecision, repeatThreshold
+                    maxPrecision, repeatThreshold, useRelativeCoords
                 )
                 if(svgPathElem != None):
                     svgElem.appendChild(svgPathElem)
@@ -2418,6 +2450,12 @@ class ExportSVGOp(Operator):
         default = 3
     )
 
+    useRelativeCoords : BoolProperty(
+        name="Use Relative Positions", 
+        description = "In <path>, use relative-position-based path commands instead of absolute counterparts",
+        default = True
+    )
+
     def execute(self, context):
         exportSVG(
             context,
@@ -2435,6 +2473,7 @@ class ExportSVGOp(Operator):
             self.styleAttr,
             self.maxPrecision,
             self.repeatThreshold,
+            self.useRelativeCoords,
         )
         return {'FINISHED'}
 
@@ -2464,6 +2503,7 @@ class ExportSVGOp(Operator):
                 row.prop(self, "fillColor", text = '')
         col.prop(self, "maxPrecision")
         col.prop(self, "repeatThreshold")
+        col.prop(self, "useRelativeCoords")
 
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)

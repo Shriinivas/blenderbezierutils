@@ -18,6 +18,9 @@
 			* Defaults to 3.
 			* Without this, result of an integer coordinate value will sometime contain excess fractional values (e.g. 748.8 → 748.8000000000001, 323.41 → 323.40999999999997) due to floating point errors.
 			* Also optimizes output file size.
+		* **Use Relative Positions:** Makes use of relative path commands
+			* Enabled by default.
+			* In most cases, enabling this optimizes the output file size since relative position values occupy less digits than absolute ones, especially on large reference bounding boxes, or shapes with high amount of control points.
 	* If there is one, the **Export View** option now defaults to the main camera in the active scene.
 	* Changed default **Clip View** option value and style colors
 	* Now excludes curve objects disabled in renders
