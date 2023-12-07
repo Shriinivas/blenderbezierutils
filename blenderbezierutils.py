@@ -1851,7 +1851,6 @@ def exportSVG(
         if(isBezier(o) and o.visible_get() and not o.hide_render):
             path = []
             cyclicPathFlags = []
-            filledPath = []
 
             o.shape_key_add(from_mix=True)
             active_idx = o.active_shape_key_index
@@ -1877,16 +1876,12 @@ def exportSVG(
                     part.append([getSVGPt(mw @ co, docW, docH, camera, region, rv3d) for co in seg])
 
                 if(len(part) > 0):
-                    if (cyclic and o.data.dimensions == '2D' \
-                        and o.data.fill_mode != 'NONE'):
-                        filledPath.append(part)
-                    else:
-                        path.append(part)
-                        cyclicPathFlags.append(cyclic)
+                    path.append(part)
+                    cyclicPathFlags.append(cyclic)
 
                 splineIdxOffset += count
 
-            for ix, p in enumerate([path, filledPath]):
+            for ix, p in enumerate([path]):
                 cyclic = cyclicPathFlags[ix]
 
                 if(len(p) == 0): continue
