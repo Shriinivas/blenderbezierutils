@@ -1610,7 +1610,7 @@ def getSVGPt(co, docW, docH, camera = None, region = None, rv3d = None):
         xy = getCoordFromLoc(region, rv3d, co)
         return complex(xy[0], docH - xy[1])
 
-def getPathD(path, maxPrecision, repeatThreshold, relative):
+def getPathD(path, cyclic, maxPrecision, repeatThreshold, relative):
     def sanitizeFloat(num):
         numStr = str(num)
         idxSpan = re.search(
@@ -1654,7 +1654,7 @@ def getPathD(path, maxPrecision, repeatThreshold, relative):
                 if(j == 0):
                     comps.append(f'M{s[0]},{s[1]}C')
                 comps.append(f'{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]} ')
-            curve += ''.join(comps).strip()
+            curve += f'{"".join(comps).strip()}{"z" if cyclic else ""}'
         return curve
 
     def createRelPath():
@@ -1684,7 +1684,7 @@ def getPathD(path, maxPrecision, repeatThreshold, relative):
                     f'{"m" if curve != "" else "M"}{s[0]},{s[1]}c{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]} ' if j == 0 else
                     f'{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]} '
                 )
-            curve += ''.join(comps).strip()
+            curve += f'{"".join(comps).strip()}{"z" if cyclic else ""}'
         return curve
 
     return createRelPath() if relative else createAbsPath()
@@ -1726,6 +1726,7 @@ def getSVGPathElem(
     docH,
     path,
     idx,
+    cyclic,
     lineWidth,
     lineCol,
     lineAlpha,
@@ -1767,7 +1768,7 @@ def getSVGPathElem(
             'id',
             name if objNamesAsIds else idPrefix + str(idx).zfill(3)
         )
-    elem.setAttribute('d', getPathD(path, maxPrecision, repeatThreshold, useRelativeCoords))
+    elem.setAttribute('d', getPathD(path, cyclic, maxPrecision, repeatThreshold, useRelativeCoords))
     style['stroke-width'] =  str(lineWidth)
     style['stroke'] =  '#' + lineCol
     style['opacity'] =  lineAlpha
@@ -1849,6 +1850,7 @@ def exportSVG(
         mw = o.matrix_world
         if(isBezier(o) and o.visible_get() and not o.hide_render):
             path = []
+            cyclicPathFlags = []
             filledPath = []
 
             o.shape_key_add(from_mix=True)
@@ -1862,26 +1864,30 @@ def exportSVG(
                 count = len(spline.bezier_points)
                 part = []
                 bpts = mixed.data[splineIdxOffset: splineIdxOffset + count]
+                cyclic = spline.use_cyclic_u
+
                 for i in range(1, len(bpts)):
                     prevBezierPt = bpts[i-1]
                     pt = bpts[i]
                     seg = [prevBezierPt.co, prevBezierPt.handle_right, pt.handle_left, pt.co]
                     part.append([getSVGPt(mw @ co, docW, docH, camera, region, rv3d) for co in seg])
 
-                if(spline.use_cyclic_u):
+                if(cyclic):
                     seg = [bpts[-1].co, bpts[-1].handle_right, bpts[0].handle_left, bpts[0].co]
                     part.append([getSVGPt(mw @ co, docW, docH, camera, region, rv3d) for co in seg])
 
                 if(len(part) > 0):
-                    if (spline.use_cyclic_u and o.data.dimensions == '2D' \
+                    if (cyclic and o.data.dimensions == '2D' \
                         and o.data.fill_mode != 'NONE'):
                         filledPath.append(part)
                     else:
                         path.append(part)
+                        cyclicPathFlags.append(cyclic)
 
                 splineIdxOffset += count
 
-            for p in [path, filledPath]:
+            for ix, p in enumerate([path, filledPath]):
+                cyclic = cyclicPathFlags[ix]
 
                 if(len(p) == 0): continue
 
@@ -1889,7 +1895,7 @@ def exportSVG(
                     lineColor = [random.random() for i in range(3)] + [1]
                     lineCol, lineAlpha = toHexStr(lineColor)
 
-                if(p == path):
+                if not cyclic:
                     fc, fa = None, None
                 elif(fillColorOpts == 'RANDOM'):
                     fillColor = [random.random() for i in range(3)] + [1]
@@ -1900,7 +1906,7 @@ def exportSVG(
                 svgPathElem = getSVGPathElem(
                     o.name,
                     doc, docW, docH,
-                    p, idx,
+                    p, idx, cyclic,
                     lineWidth, lineCol, lineAlpha,
                     fc, fa,
                     clipView, clipElemId,

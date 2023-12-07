@@ -26,6 +26,9 @@
 	* Now excludes curve objects disabled in renders
 * Removed XML tag in the output SVG file.
 * Added curve shape key mix support.
+	* This means shape keys can be used to manipulate output, useful for SVG animations.
+* Output SVG paths for splines with **Cyclic U** enabled (closed shapes) are now ended with "z" path commands.
+	* To eliminate duplicate first control points, as well as properly connect closed shapes.
 
 Below is the content from the original README.
 
