@@ -1610,7 +1610,7 @@ def getSVGPt(co, docW, docH, camera = None, region = None, rv3d = None):
         xy = getCoordFromLoc(region, rv3d, co)
         return complex(xy[0], docH - xy[1])
 
-def getPathD(path, cyclic, maxPrecision, repeatThreshold, relative):
+def getPathD(path, cyclicPathFlags, maxPrecision, repeatThreshold, relative):
     def sanitizeFloat(num):
         numStr = str(num)
         idxSpan = re.search(
@@ -1648,13 +1648,13 @@ def getPathD(path, cyclic, maxPrecision, repeatThreshold, relative):
                     s.append(segment[k].real)
                     s.append(segment[k].imag)
 
-                for i, e in enumerate(s):
-                    s[i] = sanitizeFloat(s[i])
+                for k, e in enumerate(s):
+                    s[k] = sanitizeFloat(s[k])
 
                 if(j == 0):
                     comps.append(f'M{s[0]},{s[1]}C')
                 comps.append(f'{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]} ')
-            curve += f'{"".join(comps).strip()}{"z" if cyclic else ""}'
+            curve += f'{"".join(comps).strip()}{"z" if cyclicPathFlags[i] else ""}'
         return curve
 
     def createRelPath():
@@ -1677,14 +1677,14 @@ def getPathD(path, cyclic, maxPrecision, repeatThreshold, relative):
                     lastCoord[1] + s[7]
                 ]
 
-                for i, e in enumerate(s):
-                    s[i] = sanitizeFloat(s[i])
+                for k, e in enumerate(s):
+                    s[k] = sanitizeFloat(s[k])
 
                 comps.append(
                     f'{"m" if curve != "" else "M"}{s[0]},{s[1]}c{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]} ' if j == 0 else
                     f'{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]} '
                 )
-            curve += f'{"".join(comps).strip()}{"z" if cyclic else ""}'
+            curve += f'{"".join(comps).strip()}{"z" if cyclicPathFlags[i] else ""}'
         return curve
 
     return createRelPath() if relative else createAbsPath()
@@ -1726,7 +1726,7 @@ def getSVGPathElem(
     docH,
     path,
     idx,
-    cyclic,
+    cyclicPathFlags,
     lineWidth,
     lineCol,
     lineAlpha,
@@ -1768,7 +1768,7 @@ def getSVGPathElem(
             'id',
             name if objNamesAsIds else idPrefix + str(idx).zfill(3)
         )
-    elem.setAttribute('d', getPathD(path, cyclic, maxPrecision, repeatThreshold, useRelativeCoords))
+    elem.setAttribute('d', getPathD(path, cyclicPathFlags, maxPrecision, repeatThreshold, useRelativeCoords))
     style['stroke-width'] =  str(lineWidth)
     style['stroke'] =  '#' + lineCol
     style['opacity'] =  lineAlpha
@@ -1903,10 +1903,12 @@ def exportSVG(
                 else:
                     fc, fa = fillCol, fillAlpha
 
+                # TODO: weird spline iteration pattern (bad structure?)
+                # should have been just `cyclic` instead of the entire `cyclicPathFlags` being passed in
                 svgPathElem = getSVGPathElem(
                     o.name,
                     doc, docW, docH,
-                    p, idx, cyclic,
+                    p, idx, cyclicPathFlags,
                     lineWidth, lineCol, lineAlpha,
                     fc, fa,
                     clipView, clipElemId,
