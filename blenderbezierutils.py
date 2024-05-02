@@ -10832,7 +10832,8 @@ def register():
     bpy.types.WindowManager.bezierToolkitParams = \
         bpy.props.PointerProperty(type = BezierToolkitParams)
 
-    BezierUtilsPanel.colorCurves(add = True)
+    if not bpy.app.background:
+        BezierUtilsPanel.colorCurves(add = True)
     bpy.app.handlers.depsgraph_update_post.append(BezierUtilsPanel.colorCurves)
 
     bpy.utils.register_tool(FlexiDrawBezierTool)
