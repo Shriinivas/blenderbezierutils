@@ -122,6 +122,12 @@ def createSkeletalCurve(obj, collections):
     dataCopy = obj.data.copy()
     dataCopy.splines.clear()
     objCopy.data = dataCopy
+    # Duplicate the action (animation data)
+    if obj.animation_data and obj.animation_data.action:
+        objCopy.animation_data_clear()  # Clear any existing animation data links
+        objCopy.animation_data_create()  # Create a new animation data block
+        action_copy = obj.animation_data.action.copy()  # Copy the action
+        objCopy.animation_data.action = action_copy  # Assign the copied action
 
     for coll in collections:
         coll.objects.link(objCopy)
@@ -11039,7 +11045,8 @@ def register():
     bpy.types.WindowManager.bezierToolkitParams = \
         bpy.props.PointerProperty(type = BezierToolkitParams)
 
-    BezierUtilsPanel.colorCurves(add = True)
+    if not bpy.app.background:
+        BezierUtilsPanel.colorCurves(add = True)
     bpy.app.handlers.depsgraph_update_post.append(BezierUtilsPanel.colorCurves)
 
     bpy.utils.register_tool(FlexiDrawBezierTool)
