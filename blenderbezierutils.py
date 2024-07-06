@@ -3774,7 +3774,8 @@ def resetToolbarTool():
         regions   = [region for region in a.regions if region.type == 'WINDOW']
         for r in regions:
             override['region'] = r
-            bpy.ops.wm.tool_set_by_index(override)
+            with bpy.context.temp_override(**override):
+                    bpy.ops.wm.tool_set_by_index()
 
 def updateMetaBtns(caller, event, keymap = None):
     if(keymap == None):
