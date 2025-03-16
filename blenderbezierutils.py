@@ -2,7 +2,7 @@
 #
 # Blender add-on with tools to draw and edit Bezier curves along with other utility ops
 #
-# Supported Blender Version: 2.8x
+# Supported Blender Version: 4.3+
 #
 # Copyright (C) 2019  Shrinivas Kulkarni
 
@@ -29,7 +29,7 @@ from shutil import copyfile
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (0, 9, 96),
+    "version": (0, 9, 97),
     "location": "Properties > Active Tool and Workspace Settings > Bezier Utilities",
     "description": "Collection of Bezier curve utility ops",
     "category": "Object",
@@ -3534,6 +3534,7 @@ EVT_META_OR_SNAP = 2
 TOOL_TYPE_FLEXI_DRAW = 'Flexi Draw'
 TOOL_TYPE_FLEXI_GREASE = 'Flexi Grease'
 TOOL_TYPE_FLEXI_EDIT = 'Flexi Edit'
+GP_CONTEXT_MODE = 'PAINT_GREASE_PENCIL'
 TOOL_TYPES_FLEXI_DRAW_COMMON = {TOOL_TYPE_FLEXI_DRAW, TOOL_TYPE_FLEXI_GREASE}
 TOOL_TYPES_FLEXI_ALL = {TOOL_TYPE_FLEXI_DRAW, \
     TOOL_TYPE_FLEXI_GREASE, TOOL_TYPE_FLEXI_EDIT}
@@ -6285,7 +6286,11 @@ class MathFnDraw(Primitive2DDraw):
         fnTxts = None
         params = bpy.context.window_manager.bezierToolkitParams
         # TODO: Should be somewhere else
-        tool = bpy.context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
+        tools = bpy.context.workspace.tools
+        tool = tools.from_space_view3d_mode('OBJECT', create = False)
+        # TODO: Not so crude
+        if not tool:
+            tools.from_space_view3d_mode(GP_CONTEXT_MODE, create = False)
         if(tool.idname == FlexiDrawBezierTool.bl_idname and params.drawObjType == 'MATH'):
 
             if(params.mathFnType == 'PARAMETRIC'):
@@ -7444,10 +7449,10 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         pass
 
     def isToolSelected(self, context):
-        if(context.mode != 'PAINT_GPENCIL'):
+        if(context.mode != GP_CONTEXT_MODE):
             return False
 
-        tool = context.workspace.tools.from_space_view3d_mode('PAINT_GPENCIL', \
+        tool = context.workspace.tools.from_space_view3d_mode(GP_CONTEXT_MODE, \
             create = False)
 
         if(tool == None or tool.idname != FlexiGreaseBezierTool.bl_idname): 
@@ -7466,12 +7471,12 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
     def preInvoke(self, context, event):
         super(ModalFlexiDrawGreaseOp, self).preInvoke(context, event)
         # If the operator is invoked from context menu, enable the tool on toolbar
-        if(not self.isToolSelected(context) and context.mode == 'PAINT_GPENCIL'):
+        if(not self.isToolSelected(context) and context.mode == GP_CONTEXT_MODE):
             bpy.ops.wm.tool_set_by_id(name = FlexiGreaseBezierTool.bl_idname)
             # bpy.ops.wm.tool_set_by_id(name = 'flexi_bezier.grease_draw_tool')
 
         o = context.object
-        if(o == None or o.type != 'GPENCIL'):
+        if(o == None or o.type != 'GREASEPENCIL'):
             d = bpy.data.grease_pencils.new('Grease Pencil Data')
             o = bpy.data.objects.new('Grease Pencil', d)
             context.scene.collection.objects.link(o)
@@ -7598,14 +7603,14 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
     def updateSnapLocs(self):
         self.snapLocs = []
-        gpencils = [o for o in bpy.data.objects if o.type == 'GPENCIL']
+        gpencils = [o for o in bpy.data.objects if o.type == 'GREASEPENCIL']
         for gpencil in gpencils:
             mw = gpencil.matrix_world
             for layer in gpencil.data.layers:
                 for f in layer.frames:
-                    for s in f.strokes:
+                    for s in f.drawing.strokes:
                         if(len(s.points) > 0): # Shouldn't be needed, but anyway...
-                            self.snapLocs += [mw @ s.points[0].co, mw @ s.points[-1].co]
+                            self.snapLocs += [mw @ s.points[0].position, mw @ s.points[-1].position]
 
     def save(self, context, event, autoclose, location):
         layer = self.gpencil.data.layers.active
@@ -7616,24 +7621,31 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
         frame = layer.frames[-1]
 
         invMw = self.gpencil.matrix_world.inverted_safe()
-        if(len(self.subdivCos) > 0):
+        point_count = len(self.subdivCos)
+        if(point_count > 0):
             brush = context.scene.tool_settings.gpencil_paint.brush
             lineWidth = brush.size
             strength = brush.gpencil_settings.pen_strength
 
-            stroke = frame.strokes.new()
-            stroke.display_mode = '3DSPACE'
-            stroke.points.add(count = len(self.subdivCos))
-            for i in range(0, len(self.subdivCos)):
+            frame.drawing.add_strokes([1])
+            stroke = frame.drawing.strokes[-1]
+            # stroke.display_mode = '3DSPACE'
+            stroke.add_points(count = point_count)
+            for i in range(0, point_count):
                 pt = self.subdivCos[i]
-                stroke.points[i].co = self.gpencil.matrix_world.inverted_safe() @ pt
-                stroke.points[i].strength = strength
+                stroke.points[i].position = self.gpencil.matrix_world.inverted_safe() @ pt
+                stroke.points[i].opacity = strength
+                stroke.points[i].radius = lineWidth / 100
             if(autoclose):
                 stroke.points.add(count = 1)
-                stroke.points[-1].co = stroke.points[0].co.copy()
-                stroke.points[-1].strength = strength
-            stroke.line_width = lineWidth
+                stroke.points[-1].position = stroke.points[0].position.copy()
+                stroke.points[-1].opacity = strength
+            # stroke.line_width = lineWidth
             self.snapLocs += [self.subdivCos[0][1], self.subdivCos[-1][1]]
+            
+            # For some reason an extra point is added at the end, so remove it (ver 4.3)
+            stroke.remove_points(1)
+            
         bpy.ops.ed.undo_push()
 
 ################### Flexi Edit Bezier Curve ###################
@@ -10001,7 +10013,7 @@ class FlexiEditBezierTool(WorkSpaceTool):
 
 class FlexiGreaseBezierTool(WorkSpaceTool):
     bl_space_type='VIEW_3D'
-    bl_context_mode='PAINT_GPENCIL'
+    bl_context_mode=GP_CONTEXT_MODE
 
     bl_idname = "flexi_bezier.grease_draw_tool"
     bl_label = "Flexi Grease Bezier"
@@ -10029,11 +10041,11 @@ def drawSettingsFT(self, context):
     )
 
     toolObj = context.workspace.tools.from_space_view3d_mode('OBJECT', create = False)
-    toolGP = context.workspace.tools.from_space_view3d_mode('PAINT_GPENCIL', create = False)
+    toolGP = context.workspace.tools.from_space_view3d_mode(GP_CONTEXT_MODE, create = False)
 
     self.layout.use_property_decorate = True
 
-    gpMode = (context.mode == 'PAINT_GPENCIL' and \
+    gpMode = (context.mode == GP_CONTEXT_MODE and \
             toolGP.idname == FlexiGreaseBezierTool.bl_idname)
             # toolGP.idname == 'flexi_bezier.grease_draw_tool')
     drawMode = (context.mode == 'OBJECT' and \
