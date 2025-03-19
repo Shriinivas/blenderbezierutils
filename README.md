@@ -3,14 +3,14 @@
 <b>Add-on Version: 0.9.96 </b>
 
 This add-on contains several tools and utility ops for working with Bézier curves. <br>
-Supported Blender Versions: <b>3.0+</b> <br>
+Supported Blender Versions: <b>4.2 LTS, 4.3+</b> <br>
 Video Tutorials: </b> https://www.youtube.com/playlist?list=PLxsh4i5F_h9G6QFoPzKvBRMayz8533fSW<br>
 
 # Installation
 
 ### \*\*\* Please do not download the github zip, you need only the blenderbezierutils.py file
 
-- Download blenderbezierutils.py (save the file from <a href = 'https://raw.githubusercontent.com/Shriinivas/blenderbezierutils/master/blenderbezierutils.py'>this location</a> in a folder on disk.).</a>.
+- Download blenderbezierutils.py (save the file from [4.3+](https://raw.githubusercontent.com/Shriinivas/blenderbezierutils/master/blenderbezierutils.py) or [4.2 LTS](https://raw.githubusercontent.com/Shriinivas/blenderbezierutils/fd6c66c1ab4439549a0f19313cb5755672eb88bf/blenderbezierutils.py) in a folder on disk.).
 - Open Blender and select Edit->Preferences
 - Click install Add-ons tab and then Install Add-on from File
 - Select the downloaded file
