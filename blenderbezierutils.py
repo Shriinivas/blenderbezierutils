@@ -744,6 +744,17 @@ def getPtProjOnPlane(region, rv3d, xy, p1, p2, p3, p4 = None):
         # ~ pt = geometry.intersect_ray_tri(p2, p4, p3, vec, orig, True)
     return pt
 
+# Instead of directly modifying paint.brush, get brush first
+def getBrushSettings(context):
+    # Get brush from data instead of modifying read-only property
+    brush = None
+    settings = context.scene.tool_settings.gpencil_paint
+    if hasattr(settings, 'brush'):
+        brush_name = settings.brush.name if settings.brush else None
+        if brush_name:
+            brush = bpy.data.brushes.get(brush_name)
+    return brush
+
 # find the location on 3d line p1-p2 if xy is already on 2d projection (in rv3d) of p1-p2
 def getPtProjOnLine(region, rv3d, xy, p1, p2):
     # Just find a non-linear point (TODO: simpler way)
@@ -7212,7 +7223,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
 
     def getRefLine(self):
         return self.drawObj.getRefLine()
-
+    
     def getRefLineOrig(self):
         return self.drawObj.getRefLineOrig()
 
@@ -7223,13 +7234,15 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         return self.getRefLine()
 
 class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
     bl_description = "Flexible drawing of Bezier curves in object mode"
     bl_idname = "wm.flexi_draw_bezier_curves"
     bl_label = "Flexi Draw Bezier Curves"
     bl_options = {'REGISTER', 'UNDO'}
 
-    def __init__(self):
-        pass
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     # For some curve-changing ops (like reset rotation); possible in draw
     def updateAfterGeomChange(self, scene = None, dummy = None): # 3 params in 2.81
@@ -10785,7 +10798,7 @@ class BezierUtilsPreferences(AddonPreferences):
 
             if self.hkSnapExp:
                 colM = box.column()
-                box = colM.grid_flow(row_major = True, even_columns = True, columns = 3)
+                box = colM.grid_flow(row_major = True, even_columns = True, columns = 3) 
                 for i, keydata in enumerate(FTHotKeys.snapHotkeys):
                     keydataMeta = FTHotKeys.snapHotkeysMeta[i]
                     expStr = keydata.id + "Exp"
