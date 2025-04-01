@@ -5692,6 +5692,9 @@ class ModalBaseFlexiOp(Operator):
     @classmethod
     def poll(cls, context):
         return not ModalBaseFlexiOp.running
+        
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def getToolType(self):
         raise NotImplementedError('Call to abstract method.')
@@ -7075,6 +7078,9 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         if(opObj != None and opObj.drawType != 'BEZIER'):
             opObj.drawObj.shapeSegCnt = params.drawSides
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     def getToolType(self):
         return TOOL_TYPE_FLEXI_DRAW
 
@@ -7227,9 +7233,6 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
     bl_idname = "wm.flexi_draw_bezier_curves"
     bl_label = "Flexi Draw Bezier Curves"
     bl_options = {'REGISTER', 'UNDO'}
-
-    def __init__(self):
-        pass
 
     # For some curve-changing ops (like reset rotation); possible in draw
     def updateAfterGeomChange(self, scene = None, dummy = None): # 3 params in 2.81
@@ -7442,11 +7445,6 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
 
     def getToolType(self):
         return TOOL_TYPE_FLEXI_GREASE
-
-    def __init__(self):
-        # ~ curveDispRes = 200
-        # ~ super(ModalFlexiDrawGreaseOp, self).__init__(curveDispRes)
-        pass
 
     def isToolSelected(self, context):
         if(context.mode != GP_CONTEXT_MODE):
