@@ -4,6 +4,9 @@
 
 ## Changes
 
+* **NEW:** Copy SVG to Clipboard (curves only)
+	* Same options as "Export to SVG", except file path
+	* For seamless transfer with other softwares that support SVG data copy/paste
 * SVG export file view (curves only)
 	* Added the following options:
 		* **View Attribute:** Select attribute(s) to specify bounding box, "[width](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/width) / [height](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/height)" (legacy) or "[viewBox](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/viewBox)"

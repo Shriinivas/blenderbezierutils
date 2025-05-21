@@ -1923,8 +1923,10 @@ def exportSVG(
             o.shape_key_remove(mixed)
             o.active_shape_key_index = active_idx
 
-    doc.documentElement.writexml(open(filepath,"w"))
-
+    if (filepath == ''):
+        context.window_manager.clipboard = doc.documentElement.toxml()
+    else:
+        doc.documentElement.writexml(open(filepath,"w"))
 
 ###################### Operators ######################
 
@@ -2360,12 +2362,7 @@ class IntersectCurvesOp(Operator):
 
         return {'FINISHED'}
 
-class ExportSVGOp(Operator):
-
-    bl_idname = "object.export_svg"
-    bl_label = "Export to SVG"
-    bl_options = {'REGISTER', 'UNDO'}
-
+class SVGProps:
     def getExportViewList(scene = None, context = None):
         cameras = [o for o in bpy.data.objects if o.type == 'CAMERA']
         vlist = []
@@ -2373,8 +2370,6 @@ class ExportSVGOp(Operator):
              vlist.append((c.name, c.name, 'Export view from ' + c.name))
         vlist.append(('ACTIVE_VIEW', 'Viewport View', "Export Viewport View"))
         return vlist
-
-    filepath : StringProperty(subtype='FILE_PATH')
 
     #User input
     clipView : BoolProperty(name="Clip", \
@@ -2465,27 +2460,6 @@ class ExportSVGOp(Operator):
         default = True
     )
 
-    def execute(self, context):
-        exportSVG(
-            context,
-            self.filepath,
-            self.exportView,
-            self.clipView,
-            self.lineWidth,
-            self.lineColorOpts,
-            self.lineColor,
-            self.fillColorOpts,
-            self.fillColor,
-            self.viewAttr,
-            self.idAttr,
-            self.objNamesAsIds,
-            self.styleAttr,
-            self.maxPrecision,
-            self.repeatThreshold,
-            self.useRelativeCoords,
-        )
-        return {'FINISHED'}
-
     def draw(self, context):
         layout = self.layout
         col = layout.box().column(heading="View Settings")
@@ -2514,10 +2488,71 @@ class ExportSVGOp(Operator):
         col.prop(self, "repeatThreshold")
         col.prop(self, "useRelativeCoords")
 
+class ExportSVGOp(Operator, SVGProps):
+
+    bl_idname = "object.export_svg"
+    bl_label = "Export to SVG"
+    bl_description = "Export all visible curve objects as an SVG file"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filepath : StringProperty(subtype='FILE_PATH')
+
+    def execute(self, context):
+        exportSVG(
+            context,
+            self.filepath,
+            self.exportView,
+            self.clipView,
+            self.lineWidth,
+            self.lineColorOpts,
+            self.lineColor,
+            self.fillColorOpts,
+            self.fillColor,
+            self.viewAttr,
+            self.idAttr,
+            self.objNamesAsIds,
+            self.styleAttr,
+            self.maxPrecision,
+            self.repeatThreshold,
+            self.useRelativeCoords,
+        )
+        return {'FINISHED'}
+
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
 
+class CopySVGOp(Operator, SVGProps):
+
+    bl_idname = "object.copy_svg"
+    bl_label = "Copy SVG to Clipboard"
+    bl_description = "Copy all visible curve objects to clipboard, as an SVG element"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        exportSVG(
+            context,
+            '',
+            self.exportView,
+            self.clipView,
+            self.lineWidth,
+            self.lineColorOpts,
+            self.lineColor,
+            self.fillColorOpts,
+            self.fillColor,
+            self.viewAttr,
+            self.idAttr,
+            self.objNamesAsIds,
+            self.styleAttr,
+            self.maxPrecision,
+            self.repeatThreshold,
+            self.useRelativeCoords,
+        )
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.invoke_props_dialog(self)
+        return {'RUNNING_MODAL'}
 
 def markVertHandler(self, context):
     if(self.markVertex):
@@ -11019,6 +11054,7 @@ classes = [
     CloseStraightOp,
     OpenSplinesOp,
     ExportSVGOp,
+    CopySVGOp,
     RemoveDupliVertCurveOp,
     IntersectCurvesOp,
     convertToMeshOp,
