@@ -2548,6 +2548,7 @@ class CopySVGOp(Operator, SVGProps):
             self.repeatThreshold,
             self.useRelativeCoords,
         )
+        self.report({'INFO'}, "Copied SVG to Clipboard")
         return {'FINISHED'}
 
     def invoke(self, context, event):
