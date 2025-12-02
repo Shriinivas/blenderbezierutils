@@ -1064,9 +1064,9 @@ def pasteLength(src, dests):
     bpy.data.curves.remove(tmp)
 
 
-def intersectCurves(curves, action, firstActive, margin, rounding):
+def intersectCurves(curves, action, firstActive, margin, rounding, selfIntersect=False):
     allIntersectCos, intersectMap = getCurveIntersectPts(
-        curves, firstActive, margin, rounding
+        curves, firstActive, margin, rounding, selfIntersect
     )
 
     if action in {"MARK_EMPTY", "MARK_POINT"}:
@@ -1521,7 +1521,8 @@ def getSplineLenTmpObj(tmpSpline, spline, mw):
     if(spline.use_cyclic_u): l += getSegLenTmpObj(tmpSpline, [bpts[-1], bpts[0]], mw)
     return l
 
-def getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding):
+def getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding, 
+                          selfIntersect=False):
     segPairMap = {}
     for i, c0Info in enumerate(splineInfos):
         idxCurve0, idxSpline0 = c0Info
@@ -1529,6 +1530,24 @@ def getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding):
             break
         c0 = curves[idxCurve0]
         spline0 = c0.data.splines[idxSpline0]
+        
+        # Self-intersection: check segments within same spline
+        if selfIntersect:
+            segs0 = getRoundedSplineSegs(c0.matrix_world, spline0)
+            numSegs = len(segs0)
+            for idxSeg0 in range(numSegs):
+                # Skip adjacent segments (they share endpoints)
+                for idxSeg1 in range(idxSeg0 + 2, numSegs):
+                    # For cyclic splines, skip last-to-first pair
+                    if spline0.use_cyclic_u and idxSeg0 == 0 and idxSeg1 == numSegs - 1:
+                        continue
+                    key = ((idxCurve0, idxSpline0), (idxCurve0, idxSpline0))
+                    if key not in segPairMap:
+                        segPairMap[key] = []
+                    segPairMap[key].append(((idxSeg0, segs0[idxSeg0]),
+                                           (idxSeg1, segs0[idxSeg1])))
+
+        # Cross-spline intersections
         for j in range(i + 1, len(splineInfos)):
             idxCurve1, idxSpline1 = splineInfos[j]
             c1 = curves[idxCurve1]
@@ -1557,20 +1576,29 @@ def getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding):
                     intersectMap[extKey] = []
                 intersectMap[extKey] += soln
 
-                extKey = (idxCurve1, idxSpline1, idxSeg1)
-                if intersectMap.get(extKey) is None:
-                    intersectMap[extKey] = []
-                intersectMap[extKey] += soln
+                # For self-intersection, both segments are on same spline
+                if not (idxCurve0 == idxCurve1 and idxSpline0 == idxSpline1):
+                    extKey = (idxCurve1, idxSpline1, idxSeg1)
+                    if intersectMap.get(extKey) is None:
+                        intersectMap[extKey] = []
+                    intersectMap[extKey] += soln
+                else:
+                    # Self-intersection: add to second segment too
+                    extKey = (idxCurve1, idxSpline1, idxSeg1)
+                    if intersectMap.get(extKey) is None:
+                        intersectMap[extKey] = []
+                    intersectMap[extKey] += soln
 
                 allIntersectCos += soln
 
     return allIntersectCos, intersectMap
 
-def getCurveIntersectPts(curves, firstActive, margin, rounding):
+def getCurveIntersectPts(curves, firstActive, margin, rounding, selfIntersect=False):
     splineInfos = [(x, y) for x in range(len(curves)) \
         for y in range(len(curves[x].data.splines))]
 
-    return getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding)
+    return getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding,
+                                 selfIntersect)
 
 def getCosSortedByT(seg, cos, margin):
     from .bezier_math import getTForPt
@@ -1611,12 +1639,11 @@ def isPointInsideCurve(pt, curve, margin=DEF_ERR_MARGIN):
     for spline in curve.data.splines:
         if not spline.use_cyclic_u:
             continue
-        bpts = spline.bezier_points
         segs = getRoundedSplineSegs(mw, spline)
         
         for seg in segs:
             # Sample segment and count ray crossings (ray goes in +X direction)
-            samples = 20
+            samples = 50  # Increased for better accuracy
             for i in range(samples):
                 t0, t1 = i / samples, (i + 1) / samples
                 p0 = getPtFromT(seg[0], seg[1], seg[2], seg[3], t0)
@@ -1645,52 +1672,214 @@ def getSegmentMidpoint(curve, splineIdx, segIdx):
 
 def booleanCurves(curves, operation, margin, rounding):
     """
-    Perform boolean operation on two closed bezier curves.
+    Perform boolean operation on multiple closed bezier curves.
     operation: 'UNION', 'DIFFERENCE', or 'INTERSECTION'
     Returns new curve object(s).
+    
+    For multiple curves:
+    - UNION: Combines all curves
+    - INTERSECTION: Keeps only area common to all curves
+    - DIFFERENCE: Subtracts all other curves from the first (active) curve
     """
     if len(curves) < 2:
         return []
     
-    curveA, curveB = curves[0], curves[1]
-    
-    # Check curves are closed
-    if not all(s.use_cyclic_u for c in [curveA, curveB] for s in c.data.splines):
+    # Check all curves are closed
+    if not all(s.use_cyclic_u for c in curves for s in c.data.splines):
         return []
+    
+    # For 2 curves, use direct operation
+    if len(curves) == 2:
+        return booleanCurvesPair(curves[0], curves[1], operation, margin, rounding)
+    
+    # For UNION with multiple curves, we need to union each new curve with ALL existing results
+    if operation == 'UNION':
+        return booleanUnionMultiple(curves, margin, rounding)
+    
+    # For INTERSECTION and DIFFERENCE, apply iteratively
+    result = booleanCurvesPair(curves[0], curves[1], operation, margin, rounding)
+    
+    for i in range(2, len(curves)):
+        if not result:
+            break
+        
+        # Merge multiple results into one curve for next operation
+        if len(result) > 1:
+            workingCurve = mergeSplinesToCurve(result)
+            for obj in result:
+                safeRemoveObj(obj)
+        else:
+            workingCurve = result[0]
+        
+        newResult = booleanCurvesPair(workingCurve, curves[i], operation, margin, rounding)
+        safeRemoveObj(workingCurve)
+        result = newResult
+    
+    return result
+
+
+def booleanUnionMultiple(curves, margin, rounding):
+    """
+    Union multiple curves properly by trying to merge each new curve with existing results.
+    """
+    # Start with first curve as a copy
+    results = [duplicateCurve(curves[0])]
+    
+    for i in range(1, len(curves)):
+        newCurve = curves[i]
+        mergedWith = -1
+        
+        # Try to union newCurve with each existing result
+        for j, existing in enumerate(results):
+            unionResult = booleanCurvesPair(existing, newCurve, 'UNION', margin, rounding)
+            
+            if len(unionResult) == 1:
+                # Successfully merged
+                results[j] = unionResult[0]
+                safeRemoveObj(existing)
+                mergedWith = j
+                break
+            else:
+                # Disjoint - clean up the copies returned
+                for obj in unionResult:
+                    safeRemoveObj(obj)
+        
+        if mergedWith < 0:
+            # newCurve didn't merge with any existing result, add it as new
+            results.append(duplicateCurve(newCurve))
+        else:
+            # After merging, try to merge the new combined result with other results
+            # This handles cases where A and C don't intersect, but (A∪B) intersects C
+            changed = True
+            while changed and len(results) > 1:
+                changed = False
+                for j in range(len(results)):
+                    if j == mergedWith:
+                        continue
+                    unionResult = booleanCurvesPair(results[mergedWith], results[j], 
+                                                    'UNION', margin, rounding)
+                    if len(unionResult) == 1:
+                        # Merged two results
+                        safeRemoveObj(results[mergedWith])
+                        safeRemoveObj(results[j])
+                        results[mergedWith] = unionResult[0]
+                        results.pop(j)
+                        changed = True
+                        break
+                    else:
+                        for obj in unionResult:
+                            safeRemoveObj(obj)
+    
+    # Merge all remaining disjoint results into single curve object
+    if len(results) > 1:
+        merged = mergeSplinesToCurve(results)
+        for obj in results:
+            safeRemoveObj(obj)
+        return [merged]
+    
+    return results
+
+
+def duplicateCurve(curve):
+    """Create a duplicate of a curve object."""
+    newData = curve.data.copy()
+    newObj = bpy.data.objects.new(curve.name + "_copy", newData)
+    newObj.matrix_world = curve.matrix_world.copy()
+    for coll in curve.users_collection:
+        coll.objects.link(newObj)
+    return newObj
+
+
+def mergeSplinesToCurve(curveObjs):
+    """Merge splines from multiple curve objects into one."""
+    if not curveObjs:
+        return None
+    
+    base = curveObjs[0]
+    resultData = bpy.data.curves.new("BoolResult", "CURVE")
+    resultData.dimensions = base.data.dimensions
+    resultObj = bpy.data.objects.new("BoolResult", resultData)
+    resultObj.matrix_world = base.matrix_world.copy()
+    
+    for coll in base.users_collection:
+        coll.objects.link(resultObj)
+    
+    invMW = resultObj.matrix_world.inverted_safe()
+    
+    for curveObj in curveObjs:
+        mw = curveObj.matrix_world
+        for spline in curveObj.data.splines:
+            newSpline = resultData.splines.new("BEZIER")
+            bpts = spline.bezier_points
+            if len(bpts) > 1:
+                newSpline.bezier_points.add(len(bpts) - 1)
+            for i, bp in enumerate(bpts):
+                newBp = newSpline.bezier_points[i]
+                newBp.co = invMW @ (mw @ bp.co)
+                newBp.handle_left = invMW @ (mw @ bp.handle_left)
+                newBp.handle_right = invMW @ (mw @ bp.handle_right)
+                newBp.handle_left_type = "FREE"
+                newBp.handle_right_type = "FREE"
+            newSpline.use_cyclic_u = spline.use_cyclic_u
+    
+    return resultObj
+
+
+def booleanCurvesPair(curveA, curveB, operation, margin, rounding):
+    """
+    Perform boolean operation on two closed bezier curves.
+    curveA is the base curve, curveB is applied to it.
+    For DIFFERENCE: result = curveA - curveB (curveB is subtracted from curveA)
+    Returns new curve object(s).
+    """
+    # Work on copies to avoid modifying originals
+    workA = duplicateCurve(curveA)
+    workB = duplicateCurve(curveB)
+    curves = [workA, workB]
     
     # Get intersections and cut both curves
     allIntersectCos, intersectMap = getCurveIntersectPts(
-        [curveA, curveB], False, margin, rounding
+        curves, False, margin, rounding
     )
     
     if len(allIntersectCos) < 2:
         # No valid intersections - handle special cases
-        midA = getSegmentMidpoint(curveA, 0, 0)
-        midB = getSegmentMidpoint(curveB, 0, 0)
-        aInsideB = isPointInsideCurve(midA, curveB, margin)
-        bInsideA = isPointInsideCurve(midB, curveA, margin)
+        midA = getSegmentMidpoint(workA, 0, 0)
+        midB = getSegmentMidpoint(workB, 0, 0)
+        aInsideB = isPointInsideCurve(midA, workB, margin)
+        bInsideA = isPointInsideCurve(midB, workA, margin)
         
+        # Clean up work copies we won't use
         if operation == 'UNION':
             if aInsideB:
-                return [curveB]  # A inside B, keep B
+                safeRemoveObj(workA)
+                return [workB]  # A inside B, keep B
             elif bInsideA:
-                return [curveA]  # B inside A, keep A
+                safeRemoveObj(workB)
+                return [workA]  # B inside A, keep A
             else:
-                return [curveA, curveB]  # Disjoint, keep both
+                return [workA, workB]  # Disjoint, keep both
         elif operation == 'INTERSECTION':
             if aInsideB:
-                return [curveA]  # A inside B, keep A
+                safeRemoveObj(workB)
+                return [workA]  # A inside B, keep A
             elif bInsideA:
-                return [curveB]  # B inside A, keep B
+                safeRemoveObj(workA)
+                return [workB]  # B inside A, keep B
             else:
+                safeRemoveObj(workA)
+                safeRemoveObj(workB)
                 return []  # Disjoint, no intersection
-        else:  # DIFFERENCE
+        else:  # DIFFERENCE: A - B
             if aInsideB:
-                return []  # A completely inside B
+                safeRemoveObj(workA)
+                safeRemoveObj(workB)
+                return []  # A completely inside B, nothing left
             elif bInsideA:
-                return [curveA, curveB]  # B inside A, return both (hole)
+                return [workA, workB]  # B inside A, A with hole
             else:
-                return [curveA]  # Disjoint, keep A
+                safeRemoveObj(workB)
+                return [workA]  # Disjoint, keep A unchanged
     
     # Insert points at intersections on both curves
     mapKeys = sorted(intersectMap.keys(), key=lambda x: (x[0], x[1], x[2]))
@@ -1728,7 +1917,13 @@ def booleanCurves(curves, operation, margin, rounding):
         prevSplineIdx[curveIdx] = splineIdx
     
     # Build result based on operation
-    return buildBooleanResult(curveA, curveB, operation, allIntersectCos, margin)
+    result = buildBooleanResult(workA, workB, operation, allIntersectCos, margin)
+    
+    # Clean up work copies
+    safeRemoveObj(workA)
+    safeRemoveObj(workB)
+    
+    return result
 
 
 def buildBooleanResult(curveA, curveB, operation, intersectCos, margin):
@@ -1789,17 +1984,27 @@ def collectCurveSegments(curve, otherCurve, margin):
         
         for segIdx in range(numSegs):
             nextIdx = (segIdx + 1) % len(bpts)
-            midPt = getSegmentMidpoint(curve, splineIdx, segIdx)
-            inside = isPointInsideCurve(midPt, otherCurve, margin)
+            
+            # Check multiple points along segment for robust inside detection
+            seg = [mw @ bpts[segIdx].co, mw @ bpts[segIdx].handle_right,
+                   mw @ bpts[nextIdx].handle_left, mw @ bpts[nextIdx].co]
+            
+            # Sample at 0.25, 0.5, 0.75 and use majority vote
+            insideCount = 0
+            for t in [0.25, 0.5, 0.75]:
+                pt = getPtFromT(seg[0], seg[1], seg[2], seg[3], t)
+                if isPointInsideCurve(pt, otherCurve, margin):
+                    insideCount += 1
+            inside = insideCount >= 2  # Majority vote
             
             segments.append({
                 'curve': curve,
                 'splineIdx': splineIdx,
                 'segIdx': segIdx,
-                'start': mw @ bpts[segIdx].co,
-                'hr': mw @ bpts[segIdx].handle_right,
-                'hl': mw @ bpts[nextIdx].handle_left,
-                'end': mw @ bpts[nextIdx].co,
+                'start': seg[0],
+                'hr': seg[1],
+                'hl': seg[2],
+                'end': seg[3],
                 'inside': inside,
                 'reversed': False
             })
@@ -1830,7 +2035,7 @@ def buildSplinesFromSegments(curveData, segments, invMW, margin):
         chain = [seg]
         used[i] = True
         
-        # Try to extend chain
+        # Try to extend chain in both directions
         changed = True
         while changed:
             changed = False
@@ -1840,10 +2045,17 @@ def buildSplinesFromSegments(curveData, segments, invMW, margin):
             for j, s in enumerate(segments):
                 if used[j]:
                     continue
-                sStart, _, _, _ = getSegEndpoints(s)
+                sStart, _, _, sEnd = getSegEndpoints(s)
                 
+                # Try to append to end
                 if vectCmpWithMargin(chainEnd, sStart, margin):
                     chain.append(s)
+                    used[j] = True
+                    changed = True
+                    break
+                # Try to prepend to beginning
+                if vectCmpWithMargin(sEnd, chainStart, margin):
+                    chain.insert(0, s)
                     used[j] = True
                     changed = True
                     break
@@ -1851,7 +2063,13 @@ def buildSplinesFromSegments(curveData, segments, invMW, margin):
         # Check if closed
         _, _, _, chainEnd = getSegEndpoints(chain[-1])
         chainStart, _, _, _ = getSegEndpoints(chain[0])
-        isClosed = vectCmpWithMargin(chainEnd, chainStart, margin)
+        
+        # Use a relaxed margin for closure check to handle precision issues
+        # The boolean operation involves multiple matrix transformations which can accumulate error
+        closureMargin = margin * 10
+        isClosed = vectCmpWithMargin(chainEnd, chainStart, closureMargin)
+
+
         
         # Build spline points - each segment contributes its start point
         for idx, s in enumerate(chain):
@@ -1864,7 +2082,6 @@ def buildSplinesFromSegments(curveData, segments, invMW, margin):
             start, hrOut, hlIn, end = getSegEndpoints(s)
             bp.co = invMW @ start
             bp.handle_right = invMW @ hrOut
-            # handle_left comes from previous segment's hlIn (set below)
             if idx == 0:
                 bp.handle_left = invMW @ start  # placeholder for first point
         

@@ -414,7 +414,7 @@ class IntersectCurvesOp(Operator):
     bl_idname = "object.intersect_curves"
     bl_label = "Intersect Curves"
     bl_options = {'REGISTER', 'UNDO'}
-    bl_description = "Intersect the selected curves"
+    bl_description = "Intersect the selected curves (supports self-intersection)"
 
     def execute(self, context):
         params = bpy.context.window_manager.bezierToolkitParams
@@ -432,11 +432,16 @@ class IntersectCurvesOp(Operator):
         if(actCurve is not None and isBezier(actCurve)):
             curves = [actCurve] + curves
 
-        if(len(curves) < 2):
-            self.report({'INFO'}, "Please select at least two Bezier curve objects")
+        # Allow single curve if self-intersection is enabled
+        minCurves = 1 if params.selfIntersect else 2
+        if(len(curves) < minCurves):
+            if params.selfIntersect:
+                self.report({'INFO'}, "Please select at least one Bezier curve object")
+            else:
+                self.report({'INFO'}, "Please select at least two Bezier curve objects")
         else:
             intersectCurves(curves, params.intersectOp, params.intersectNonactive, \
-            params.intersectMargin, rounding)
+            params.intersectMargin, rounding, params.selfIntersect)
 
         return {'FINISHED'}
 
@@ -445,7 +450,7 @@ class BooleanCurvesOp(Operator):
     bl_idname = "object.boolean_curves"
     bl_label = "Boolean Curves"
     bl_options = {'REGISTER', 'UNDO'}
-    bl_description = "Perform boolean operation on two closed curves"
+    bl_description = "Perform boolean operation on selected closed curves"
 
     def execute(self, context):
         params = bpy.context.window_manager.bezierToolkitParams
@@ -456,15 +461,15 @@ class BooleanCurvesOp(Operator):
             self.report({'WARNING'}, "Active object is not a Bezier curve")
             return {'FINISHED'}
 
-        curves = [o for o in bpy.context.selected_objects 
-                  if isBezier(o) and o != actCurve]
+        otherCurves = [o for o in bpy.context.selected_objects 
+                       if isBezier(o) and o != actCurve]
 
-        if len(curves) < 1:
-            self.report({'INFO'}, "Select two closed Bezier curves")
+        if len(otherCurves) < 1:
+            self.report({'INFO'}, "Select at least two closed Bezier curves")
             return {'FINISHED'}
 
-        # Active curve first, then other selected
-        curves = [actCurve, curves[0]]
+        # Active curve first, then all other selected curves
+        curves = [actCurve] + otherCurves
 
         # Check all splines are closed
         for c in curves:
@@ -480,7 +485,7 @@ class BooleanCurvesOp(Operator):
                 obj.select_set(True)
             if result:
                 bpy.context.view_layer.objects.active = result[0]
-            self.report({'INFO'}, f"Boolean {params.booleanOp} completed")
+            self.report({'INFO'}, f"Boolean {params.booleanOp} on {len(curves)} curves completed")
         else:
             self.report({'WARNING'}, "Boolean operation produced no result")
 

@@ -50,6 +50,8 @@ class BezierUtilsPanel(Panel):
                 if(params.intersectOp in {'INSERT_PT', 'CUT'}):
                     row = col.row()
                     row.prop(params, 'intersectNonactive', text = 'Only Non-active')
+                row = col.row()
+                row.prop(params, 'selfIntersect', text = 'Self Intersection')
                 col = box.column().split()
                 col.operator('object.intersect_curves')
 

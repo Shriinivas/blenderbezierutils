@@ -83,6 +83,10 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
             "only other selected curves", \
         default = False)
 
+    selfIntersect: BoolProperty(name="Self Intersection", \
+        description="Also find intersections within the same curve/spline", \
+        default = False)
+
     intersectFromView: BoolProperty(name="Project From View", \
         description="Intersection points as per the view", \
         default = False)
