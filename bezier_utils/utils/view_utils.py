@@ -414,9 +414,6 @@ class SegDisplayInfo:
         self.segColor = segColor
 
 
-
-
-
 def getLineShades(lineCos, baseColor, start, end, mid=True):
     if len(lineCos) == 0:
         return [], []
@@ -771,9 +768,7 @@ class MarkerController:
                 loc, idx = markerInfo[0], markerInfo[1]
                 pts = curve.data.splines[splineIdx].bezier_points
 
-                selIdxs = [
-                    x for x in range(0, len(pts)) if pts[x].select_control_point
-                ]
+                selIdxs = [x for x in range(0, len(pts)) if pts[x].select_control_point]
 
                 selIdx = selIdxs[0] if (len(selIdxs) > 0) else idx
                 co = mw @ pts[selIdx].co
@@ -817,13 +812,14 @@ class MarkerController:
 class FTHotKeyData:
     pass
 
+
 def world_to_camera_view(scene, obj, coord):
     co_local = obj.matrix_world.normalized().inverted() @ coord
     z = -co_local.z
 
     camera = scene.camera.data
     frame = [-v for v in camera.view_frame(scene=scene)[:3]]
-    if camera.type != 'ORTHO':
+    if camera.type != "ORTHO":
         if z == 0.0:
             return Vector([0.5, 0.5, 0.0])
         frame = [v / (v.z / z) for v in frame]
@@ -835,3 +831,20 @@ def world_to_camera_view(scene, obj, coord):
     y = (co_local.y - min_y) / (max_y - min_y)
 
     return Vector([x, y, z])
+
+
+# Round to logarithmic scale .1, 0, 10, 100 etc.
+# (47.538, -1) -> 47.5; (47.538, 0) -> 48.0; (47.538, 1) -> 50.0; (47.538, 2) -> 0,
+# TODO: Rework after grid subdiv is enabled (in a version later than 2.8)
+def roundedVect(space3d, vect, rounding, axes):
+    rounding += 1
+    subdiv = getGridSubdiv(space3d)
+    # TODO: Separate logic for 1
+    if subdiv == 1:
+        subdiv = 10
+    fact = ((subdiv**rounding) / subdiv) / getUnitScale()
+    retVect = vect.copy()
+    # ~ Vector([round(vect[i] / fact) * fact for i in axes])
+    for i in axes:
+        retVect[i] = round(vect[i] / fact) * fact
+    return retVect

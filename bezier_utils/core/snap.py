@@ -22,6 +22,7 @@ from ..utils.view_utils import (
     getUnitScale,
     getCoordFromLoc,
     getViewDistRounding,
+    roundedVect,
 )
 from .hotkeys import FTHotKeys
 
