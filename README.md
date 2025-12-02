@@ -19,6 +19,14 @@ Video Tutorials: </b> https://www.youtube.com/playlist?list=PLxsh4i5F_h9G6QFoPzK
 After installation, a new tab: 'Bézier Utilities' is displayed in Object and Edit modes on 'Active Tool and Workspace settings' area on the properties panel. <br/>
 There will also appear two new buttons - <b>Flexi Draw Bézier</b> and <b>Flexi Edit Bézier</b> - in Object Mode and a <b>Flexi Grease Bézier</b> button in GP Draw Mode on the toolshelf.
 
+## Modular Refactored Version (Work in Progress)
+
+A modular refactored version of this addon is available in the [`bezier_utils/`](bezier_utils/) directory. This version restructures the monolithic `blenderbezierutils.py` file into a proper Python package with organized modules for better maintainability.
+
+**Status:** Currently in testing phase. For production use, please continue using `blenderbezierutils.py`.
+
+See [`bezier_utils/README.md`](bezier_utils/README.md) for installation instructions and details about the modular structure.
+
 # Overview
 
 The tools Flexi Draw , Flexi Edit and Flexi Grease are interactive tools that allow drawing and editing Bézier curves.
