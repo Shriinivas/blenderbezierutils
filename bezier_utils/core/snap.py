@@ -21,6 +21,7 @@ from ..utils.view_utils import (
     getUnit,
     getUnitScale,
     getCoordFromLoc,
+    getViewDistRounding,
 )
 from .hotkeys import FTHotKeys
 
@@ -1137,7 +1138,11 @@ class Snapper:
                 dispAxes
                 and FTProps.dispAxes
                 and (
-                    (refLineOrig is not None or transType == "VIEW" or len(freeAxesN) == 1)
+                    (
+                        refLineOrig is not None
+                        or transType == "VIEW"
+                        or len(freeAxesN) == 1
+                    )
                     or (len(freeAxesN) > 0 and origType != "REFERENCE")
                 )
             ):
@@ -1169,8 +1174,7 @@ class Snapper:
                 ptCol = (1, 1, 1, 1)
 
             if self.customAxis.length() != 0 and (
-                self.customAxis.inDrawAxis
-                or "AXIS" in {transType, origType, axisScale}
+                self.customAxis.inDrawAxis or "AXIS" in {transType, origType, axisScale}
             ):
                 apts = self.customAxis.axisPts
                 custAxisLineCos = [apts[0], apts[1]]
