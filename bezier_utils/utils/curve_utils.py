@@ -6,8 +6,8 @@ from math import ceil
 from mathutils import Vector, Matrix
 from xml.dom import minidom
 from ..constants import DEF_ERR_MARGIN
-from .math_utils import vectCmpWithMargin, floatCmpWithMargin, getBBox, toHexStr
-from .bezier_math import getInterpolatedVertsCo
+from .math_utils import vectCmpWithMargin, floatCmpWithMargin, toHexStr
+from .bezier_math import getInterpolatedVertsCo, getBBox
 from .bezier_math import (
     getTForPt,
     getPartialSeg,
@@ -1521,33 +1521,56 @@ def getSplineLenTmpObj(tmpSpline, spline, mw):
     return l
 
 def getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding):
-    soln = []
-    solnRounded = set()
-    allIntersectCos = []
-    intersectMap = {} # (curveIdx, splineIdx) -> [ptIdx, ptIdx...]
-
-    for i in range(len(splineInfos)):
-        curveIdx0, splineIdx0 = splineInfos[i]
-        spline0 = curves[curveIdx0].data.splines[splineIdx0]
-        mw0 = curves[curveIdx0].matrix_world
-        segs0 = getRoundedSplineSegs(mw0, spline0, rounding=rounding)
-
+    print(f"DEBUG: getSplineIntersectPts called with {len(curves)} curves, {len(splineInfos)} splineInfos")
+    print(f"DEBUG: firstActive={firstActive}, margin={margin}, rounding={rounding}")
+    
+    segPairMap = {}
+    for i, c0Info in enumerate(splineInfos):
+        idxCurve0, idxSpline0 = c0Info
+        if firstActive and idxCurve0 != splineInfos[0][0]:
+            print(f"DEBUG: Breaking at i={i} due to firstActive")
+            break
+        c0 = curves[idxCurve0]
+        spline0 = c0.data.splines[idxSpline0]
         for j in range(i + 1, len(splineInfos)):
-            curveIdx1, splineIdx1 = splineInfos[j]
-            if(firstActive and curveIdx0 == 0 and curveIdx1 == 0): continue
+            idxCurve1, idxSpline1 = splineInfos[j]
+            c1 = curves[idxCurve1]
+            spline1 = c1.data.splines[idxSpline1]
 
-            spline1 = curves[curveIdx1].data.splines[splineIdx1]
-            mw1 = curves[curveIdx1].matrix_world
-            segs1 = getRoundedSplineSegs(mw1, spline1, rounding=rounding)
+            segPairMap[((idxCurve0, idxSpline0), (idxCurve1, idxSpline1))] = \
+                [((idxSeg0, s0), (idxSeg1, s1)) for idxSeg0, s0 in \
+                    enumerate(getRoundedSplineSegs(c0.matrix_world, spline0)) for \
+                        idxSeg1, s1 in enumerate(getRoundedSplineSegs(c1.matrix_world, \
+                            spline1))]
 
-            for k, seg0 in enumerate(segs0):
-                for l, seg1 in enumerate(segs1):
-                    if(getIntersectPts(seg0, seg1, soln, solnRounded, 0, margin, rounding)):
-                        pass
+    print(f"DEBUG: segPairMap has {len(segPairMap)} entries")
+    
+    intersectMap = {}
+    allIntersectCos = []
+    for key in segPairMap:
+        (idxCurve0, idxSpline0), (idxCurve1, idxSpline1) = key
+        segPairInfo = segPairMap[key]
+        for info in segPairInfo:
+            solnRounded = set()
+            soln = []
+            (idxSeg0, seg0), (idxSeg1, seg1) = info
+            ret = getIntersectPts(seg0, seg1, soln, solnRounded, recurs=0, \
+                margin=margin, rounding=rounding)
+            if ret:
+                print(f"DEBUG: Found intersection between seg {idxSeg0} and {idxSeg1}, {len(soln)} points")
+                extKey = (idxCurve0, idxSpline0, idxSeg0)
+                if intersectMap.get(extKey) is None:
+                    intersectMap[extKey] = []
+                intersectMap[extKey] += soln
 
-    for co in soln:
-        allIntersectCos.append(co)
+                extKey = (idxCurve1, idxSpline1, idxSeg1)
+                if intersectMap.get(extKey) is None:
+                    intersectMap[extKey] = []
+                intersectMap[extKey] += soln
 
+                allIntersectCos += soln
+    
+    print(f"DEBUG: Returning {len(allIntersectCos)} intersections, intersectMap has {len(intersectMap)} keys")
     return allIntersectCos, intersectMap
 
 def getCurveIntersectPts(curves, firstActive, margin, rounding):
@@ -1555,3 +1578,31 @@ def getCurveIntersectPts(curves, firstActive, margin, rounding):
         for y in range(len(curves[x].data.splines))]
 
     return getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding)
+
+def getCosSortedByT(seg, cos, margin):
+    from .bezier_math import getTForPt
+    
+    coInfo = set()
+
+    for co in cos:
+        t = getTForPt(seg, co, margin)
+        if t >= 1:
+            coInfo.add(((seg[3]).freeze(), 1))
+        elif t <= 0:
+            coInfo.add(((seg[0]).freeze(), 0))
+        else:
+            coInfo.add((co.freeze(), t))
+
+    return [inf[0] for inf in sorted(coInfo, key=lambda x: x[1])]
+
+def removeDupliCos(sortedCos, margin):
+    from .math_utils import vectCmpWithMargin
+    
+    prevCo = sortedCos[0]
+    newCos = [prevCo]
+    for i in range(1, len(sortedCos)):
+        co = sortedCos[i]
+        if not vectCmpWithMargin(co, prevCo, margin):
+            newCos.append(co)
+        prevCo = co
+    return newCos

@@ -3,7 +3,7 @@
 from mathutils import Vector
 from math import sqrt, sin, cos, acos, tan, pi
 from ..constants import DEF_ERR_MARGIN, LARGE_NO
-from .math_utils import floatCmpWithMargin, vectCmpWithMargin, getBBoxOverlapInfo, getBBoxCenter
+from .math_utils import floatCmpWithMargin, vectCmpWithMargin, getBBoxCenter
 
 def getPtFromT(p0, p1, p2, p3, t):
     c = (1 - t)
@@ -432,3 +432,57 @@ def getIntersectPts(seg0, seg1, soln, solnRounded, recurs, margin, rounding, \
 
             return any((r0, r1, r2, r3))
     return False
+
+# https://stackoverflow.com/questions/24809978/calculating-the-bounding-box-of-cubic-bezier-curve
+#(3 D - 9 C + 9 B - 3 A) t^2 + (6 A - 12 B + 6 C) t + 3 (B - A)
+def getBBox(seg):
+    A = seg[0]
+    B = seg[1]
+    C = seg[2]
+    D = seg[3]
+
+    leftBotFront = Vector([min([A[i], D[i]]) for i in range(0, 3)])
+    rgtTopBack = Vector([max([A[i], D[i]]) for i in range(0, 3)])
+
+    a = [3 * D[i] - 9 * C[i] + 9 * B[i] - 3 * A[i] for i in range(0, 3)]
+    b = [6 * A[i] - 12 * B[i] + 6 * C[i] for i in range(0, 3)]
+    c = [3 * (B[i] - A[i]) for i in range(0, 3)]
+
+    solnsxyz = []
+    for i in range(0, 3):
+        solns = []
+        if(a[i] == 0):
+            if(b[i] == 0):
+                solns.append(0)#Independent of t so lets take the starting pt
+            else:
+                solns.append(c[i] / b[i])
+        else:
+            rootFact = b[i] * b[i] - 4 * a[i] * c[i]
+            if(rootFact >=0 ):
+                #Two solutions with + and - sqrt
+                solns.append((-b[i] + sqrt(rootFact)) / (2 * a[i]))
+                solns.append((-b[i] - sqrt(rootFact)) / (2 * a[i]))
+        solnsxyz.append(solns)
+
+    for i, soln in enumerate(solnsxyz):
+        for j, t in enumerate(soln):
+            if(t <= 1 and t >= 0):
+                co = getPtFromT(A[i], B[i], C[i], D[i], t)
+                if(co < leftBotFront[i]): leftBotFront[i] = co
+                if(co > rgtTopBack[i]): rgtTopBack[i] = co
+
+    return leftBotFront, rgtTopBack
+
+def getBBoxOverlapInfo(seg0, seg1):
+    bbox0 = getBBox(seg0)
+    max0 = [max(bbox0[i][axis] for i in range(2)) for axis in range(3)]
+    min0 = [min(bbox0[i][axis] for i in range(2)) for axis in range(3)]
+    bbox1 = getBBox(seg1)
+
+    overlap = True
+    if any(all(bbox1[i][j] < min0[j] for i in range(2)) for j in range(3)) or any(
+        all(bbox1[i][j] > max0[j] for i in range(2)) for j in range(3)
+    ):
+        overlap = False
+
+    return overlap, bbox0, bbox1
