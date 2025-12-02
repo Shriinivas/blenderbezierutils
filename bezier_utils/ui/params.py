@@ -70,6 +70,14 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         description = 'Select operation to perform on intersect points',
         default = 'MARK_EMPTY')
 
+    booleanOp: EnumProperty(name="Operation", items = \
+        [('UNION', 'Union', 'Combine two curves into one'), \
+         ('DIFFERENCE', 'Difference', 'Subtract second curve from first'), \
+         ('INTERSECTION', 'Intersection', 'Keep only overlapping area'), \
+         ], \
+        description = 'Boolean operation to perform',
+        default = 'UNION')
+
     intersectNonactive: BoolProperty(name="Only Non-active", \
         description="Action is not performed on active curve but " + \
             "only other selected curves", \
@@ -151,6 +159,8 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     removeDupliExpanded: BoolProperty(name = "Remove Duplicate Verts", default = False)
 
     intersectExpanded: BoolProperty(name = "Intersect Curves", default = False)
+
+    booleanExpanded: BoolProperty(name = "Boolean Curves", default = False)
 
     otherExpanded: BoolProperty(name = "Other Tools", default = False)
 

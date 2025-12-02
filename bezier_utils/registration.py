@@ -56,6 +56,7 @@ classes = [
     ExportSVGOp,
     RemoveDupliVertCurveOp,
     IntersectCurvesOp,
+    BooleanCurvesOp,
     convertToMeshOp,
     SetHandleTypesOp,
     SetCurveColorOp,

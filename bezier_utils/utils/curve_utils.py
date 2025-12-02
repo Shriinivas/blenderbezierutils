@@ -14,6 +14,7 @@ from .bezier_math import (
     getInterpBezierPts,
     getSegLen,
     getIntersectPts,
+    getPtFromT,
 )
 from .object_utils import isBezier, safeRemoveObj, copyObjAttr
 from .view_utils import getCoordFromLoc, world_to_camera_view
@@ -1521,14 +1522,10 @@ def getSplineLenTmpObj(tmpSpline, spline, mw):
     return l
 
 def getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding):
-    print(f"DEBUG: getSplineIntersectPts called with {len(curves)} curves, {len(splineInfos)} splineInfos")
-    print(f"DEBUG: firstActive={firstActive}, margin={margin}, rounding={rounding}")
-    
     segPairMap = {}
     for i, c0Info in enumerate(splineInfos):
         idxCurve0, idxSpline0 = c0Info
         if firstActive and idxCurve0 != splineInfos[0][0]:
-            print(f"DEBUG: Breaking at i={i} due to firstActive")
             break
         c0 = curves[idxCurve0]
         spline0 = c0.data.splines[idxSpline0]
@@ -1543,8 +1540,6 @@ def getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding):
                         idxSeg1, s1 in enumerate(getRoundedSplineSegs(c1.matrix_world, \
                             spline1))]
 
-    print(f"DEBUG: segPairMap has {len(segPairMap)} entries")
-    
     intersectMap = {}
     allIntersectCos = []
     for key in segPairMap:
@@ -1557,7 +1552,6 @@ def getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding):
             ret = getIntersectPts(seg0, seg1, soln, solnRounded, recurs=0, \
                 margin=margin, rounding=rounding)
             if ret:
-                print(f"DEBUG: Found intersection between seg {idxSeg0} and {idxSeg1}, {len(soln)} points")
                 extKey = (idxCurve0, idxSpline0, idxSeg0)
                 if intersectMap.get(extKey) is None:
                     intersectMap[extKey] = []
@@ -1569,8 +1563,7 @@ def getSplineIntersectPts(curves, splineInfos, firstActive, margin, rounding):
                 intersectMap[extKey] += soln
 
                 allIntersectCos += soln
-    
-    print(f"DEBUG: Returning {len(allIntersectCos)} intersections, intersectMap has {len(intersectMap)} keys")
+
     return allIntersectCos, intersectMap
 
 def getCurveIntersectPts(curves, firstActive, margin, rounding):
@@ -1606,3 +1599,294 @@ def removeDupliCos(sortedCos, margin):
             newCos.append(co)
         prevCo = co
     return newCos
+
+
+# ============== Boolean Operations ==============
+
+def isPointInsideCurve(pt, curve, margin=DEF_ERR_MARGIN):
+    """Ray casting algorithm to check if point is inside a closed curve (2D, XY plane)."""
+    mw = curve.matrix_world
+    crossings = 0
+    
+    for spline in curve.data.splines:
+        if not spline.use_cyclic_u:
+            continue
+        bpts = spline.bezier_points
+        segs = getRoundedSplineSegs(mw, spline)
+        
+        for seg in segs:
+            # Sample segment and count ray crossings (ray goes in +X direction)
+            samples = 20
+            for i in range(samples):
+                t0, t1 = i / samples, (i + 1) / samples
+                p0 = getPtFromT(seg[0], seg[1], seg[2], seg[3], t0)
+                p1 = getPtFromT(seg[0], seg[1], seg[2], seg[3], t1)
+                
+                # Check if edge crosses the horizontal ray from pt going right
+                if (p0.y > pt.y) != (p1.y > pt.y):
+                    x_intersect = p0.x + (pt.y - p0.y) * (p1.x - p0.x) / (p1.y - p0.y)
+                    if pt.x < x_intersect:
+                        crossings += 1
+    
+    return crossings % 2 == 1
+
+
+def getSegmentMidpoint(curve, splineIdx, segIdx):
+    """Get midpoint of a bezier segment."""
+    mw = curve.matrix_world
+    spline = curve.data.splines[splineIdx]
+    bpts = spline.bezier_points
+    nextIdx = getAdjIdx(curve, splineIdx, segIdx)
+    
+    seg = [mw @ bpts[segIdx].co, mw @ bpts[segIdx].handle_right,
+           mw @ bpts[nextIdx].handle_left, mw @ bpts[nextIdx].co]
+    return getPtFromT(seg[0], seg[1], seg[2], seg[3], 0.5)
+
+
+def booleanCurves(curves, operation, margin, rounding):
+    """
+    Perform boolean operation on two closed bezier curves.
+    operation: 'UNION', 'DIFFERENCE', or 'INTERSECTION'
+    Returns new curve object(s).
+    """
+    if len(curves) < 2:
+        return []
+    
+    curveA, curveB = curves[0], curves[1]
+    
+    # Check curves are closed
+    if not all(s.use_cyclic_u for c in [curveA, curveB] for s in c.data.splines):
+        return []
+    
+    # Get intersections and cut both curves
+    allIntersectCos, intersectMap = getCurveIntersectPts(
+        [curveA, curveB], False, margin, rounding
+    )
+    
+    if len(allIntersectCos) < 2:
+        # No valid intersections - handle special cases
+        midA = getSegmentMidpoint(curveA, 0, 0)
+        midB = getSegmentMidpoint(curveB, 0, 0)
+        aInsideB = isPointInsideCurve(midA, curveB, margin)
+        bInsideA = isPointInsideCurve(midB, curveA, margin)
+        
+        if operation == 'UNION':
+            if aInsideB:
+                return [curveB]  # A inside B, keep B
+            elif bInsideA:
+                return [curveA]  # B inside A, keep A
+            else:
+                return [curveA, curveB]  # Disjoint, keep both
+        elif operation == 'INTERSECTION':
+            if aInsideB:
+                return [curveA]  # A inside B, keep A
+            elif bInsideA:
+                return [curveB]  # B inside A, keep B
+            else:
+                return []  # Disjoint, no intersection
+        else:  # DIFFERENCE
+            if aInsideB:
+                return []  # A completely inside B
+            elif bInsideA:
+                return [curveA, curveB]  # B inside A, return both (hole)
+            else:
+                return [curveA]  # Disjoint, keep A
+    
+    # Insert points at intersections on both curves
+    mapKeys = sorted(intersectMap.keys(), key=lambda x: (x[0], x[1], x[2]))
+    prevCnt = {0: 0, 1: 0}
+    prevSplineIdx = {0: None, 1: None}
+    
+    for key in mapKeys:
+        intersectPts = intersectMap[key]
+        curveIdx, splineIdx, segIdx = key
+        curve = curves[curveIdx]
+        
+        if prevSplineIdx[curveIdx] == splineIdx:
+            segIdx += prevCnt[curveIdx]
+        else:
+            prevCnt[curveIdx] = 0
+        
+        mw = curve.matrix_world
+        pts = curve.data.splines[splineIdx].bezier_points
+        nextIdx = getAdjIdx(curve, splineIdx, segIdx)
+        
+        seg = [mw @ pts[segIdx].co, mw @ pts[segIdx].handle_right,
+               mw @ pts[nextIdx].handle_left, mw @ pts[nextIdx].co]
+        
+        sortedCos = getCosSortedByT(seg, intersectPts, margin)
+        sortedCos = removeDupliCos(sortedCos, margin)
+        
+        insertCos = [mw.inverted_safe() @ co for co in sortedCos 
+                     if not vectCmpWithMargin(co, seg[0], margin) 
+                     and not vectCmpWithMargin(co, seg[3], margin)]
+        
+        if insertCos:
+            insertBezierPts(curve, splineIdx, segIdx, insertCos, "FREE", margin)
+            prevCnt[curveIdx] += len(insertCos)
+        
+        prevSplineIdx[curveIdx] = splineIdx
+    
+    # Build result based on operation
+    return buildBooleanResult(curveA, curveB, operation, allIntersectCos, margin)
+
+
+def buildBooleanResult(curveA, curveB, operation, intersectCos, margin):
+    """Build the result curve from boolean operation."""
+    collections = curveA.users_collection
+    
+    # Create result curve
+    resultData = bpy.data.curves.new("BoolResult", "CURVE")
+    resultData.dimensions = curveA.data.dimensions
+    resultObj = bpy.data.objects.new("BoolResult", resultData)
+    
+    for coll in collections:
+        coll.objects.link(resultObj)
+    
+    resultObj.matrix_world = curveA.matrix_world.copy()
+    invMW = resultObj.matrix_world.inverted_safe()
+    
+    # Collect segments from both curves, marking inside/outside
+    segmentsA = collectCurveSegments(curveA, curveB, margin)
+    segmentsB = collectCurveSegments(curveB, curveA, margin)
+    
+    # Select segments based on operation
+    if operation == 'UNION':
+        # Keep segments of A outside B, and segments of B outside A
+        keepA = [s for s in segmentsA if not s['inside']]
+        keepB = [s for s in segmentsB if not s['inside']]
+    elif operation == 'INTERSECTION':
+        # Keep segments of A inside B, and segments of B inside A
+        keepA = [s for s in segmentsA if s['inside']]
+        keepB = [s for s in segmentsB if s['inside']]
+    else:  # DIFFERENCE
+        # Keep segments of A outside B, and segments of B inside A (reversed)
+        keepA = [s for s in segmentsA if not s['inside']]
+        keepB = [s for s in segmentsB if s['inside']]
+        for s in keepB:
+            s['reversed'] = True
+    
+    # Build splines from kept segments
+    allSegs = keepA + keepB
+    if allSegs:
+        buildSplinesFromSegments(resultData, allSegs, invMW, margin)
+    
+    if len(resultData.splines) == 0:
+        safeRemoveObj(resultObj)
+        return []
+    
+    return [resultObj]
+
+
+def collectCurveSegments(curve, otherCurve, margin):
+    """Collect all segments from curve with inside/outside info relative to otherCurve."""
+    segments = []
+    mw = curve.matrix_world
+    
+    for splineIdx, spline in enumerate(curve.data.splines):
+        bpts = spline.bezier_points
+        numSegs = len(bpts) if spline.use_cyclic_u else len(bpts) - 1
+        
+        for segIdx in range(numSegs):
+            nextIdx = (segIdx + 1) % len(bpts)
+            midPt = getSegmentMidpoint(curve, splineIdx, segIdx)
+            inside = isPointInsideCurve(midPt, otherCurve, margin)
+            
+            segments.append({
+                'curve': curve,
+                'splineIdx': splineIdx,
+                'segIdx': segIdx,
+                'start': mw @ bpts[segIdx].co,
+                'hr': mw @ bpts[segIdx].handle_right,
+                'hl': mw @ bpts[nextIdx].handle_left,
+                'end': mw @ bpts[nextIdx].co,
+                'inside': inside,
+                'reversed': False
+            })
+    
+    return segments
+
+
+def getSegEndpoints(seg):
+    """Get effective start/end points and handles for a segment, accounting for reversal."""
+    if seg['reversed']:
+        return seg['end'], seg['hl'], seg['hr'], seg['start']
+    return seg['start'], seg['hr'], seg['hl'], seg['end']
+
+
+def buildSplinesFromSegments(curveData, segments, invMW, margin):
+    """Build splines from collected segments, attempting to join connected ones."""
+    if not segments:
+        return
+    
+    used = [False] * len(segments)
+    
+    for i, seg in enumerate(segments):
+        if used[i]:
+            continue
+        
+        # Start new spline
+        spline = curveData.splines.new("BEZIER")
+        chain = [seg]
+        used[i] = True
+        
+        # Try to extend chain
+        changed = True
+        while changed:
+            changed = False
+            _, _, _, chainEnd = getSegEndpoints(chain[-1])
+            chainStart, _, _, _ = getSegEndpoints(chain[0])
+            
+            for j, s in enumerate(segments):
+                if used[j]:
+                    continue
+                sStart, _, _, _ = getSegEndpoints(s)
+                
+                if vectCmpWithMargin(chainEnd, sStart, margin):
+                    chain.append(s)
+                    used[j] = True
+                    changed = True
+                    break
+        
+        # Check if closed
+        _, _, _, chainEnd = getSegEndpoints(chain[-1])
+        chainStart, _, _, _ = getSegEndpoints(chain[0])
+        isClosed = vectCmpWithMargin(chainEnd, chainStart, margin)
+        
+        # Build spline points - each segment contributes its start point
+        for idx, s in enumerate(chain):
+            if idx > 0:
+                spline.bezier_points.add(1)
+            bp = spline.bezier_points[-1]
+            bp.handle_left_type = "FREE"
+            bp.handle_right_type = "FREE"
+            
+            start, hrOut, hlIn, end = getSegEndpoints(s)
+            bp.co = invMW @ start
+            bp.handle_right = invMW @ hrOut
+            # handle_left comes from previous segment's hlIn (set below)
+            if idx == 0:
+                bp.handle_left = invMW @ start  # placeholder for first point
+        
+        # Set handle_left for each point from previous segment's incoming handle
+        for idx in range(1, len(spline.bezier_points)):
+            _, _, hlIn, _ = getSegEndpoints(chain[idx - 1])
+            spline.bezier_points[idx].handle_left = invMW @ hlIn
+        
+        # Handle closing or final point
+        if isClosed:
+            # Set first point's handle_left from last segment's incoming handle
+            _, _, hlIn, _ = getSegEndpoints(chain[-1])
+            spline.bezier_points[0].handle_left = invMW @ hlIn
+        else:
+            # Add final endpoint
+            _, _, hlIn, end = getSegEndpoints(chain[-1])
+            spline.bezier_points.add(1)
+            bp = spline.bezier_points[-1]
+            bp.handle_left_type = "FREE"
+            bp.handle_right_type = "FREE"
+            bp.co = invMW @ end
+            bp.handle_left = invMW @ hlIn
+            bp.handle_right = invMW @ end
+        
+        spline.use_cyclic_u = isClosed

@@ -4,7 +4,7 @@ import bpy
 from bpy.types import Operator
 from bpy.props import StringProperty, BoolProperty, EnumProperty, FloatProperty
 from ..utils.curve_utils import (
-    splitCurve, isBezier, safeRemoveObj, intersectCurves
+    splitCurve, isBezier, safeRemoveObj, intersectCurves, booleanCurves
 )
 
 # Import operators will be added here after extraction
@@ -437,6 +437,52 @@ class IntersectCurvesOp(Operator):
         else:
             intersectCurves(curves, params.intersectOp, params.intersectNonactive, \
             params.intersectMargin, rounding)
+
+        return {'FINISHED'}
+
+
+class BooleanCurvesOp(Operator):
+    bl_idname = "object.boolean_curves"
+    bl_label = "Boolean Curves"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Perform boolean operation on two closed curves"
+
+    def execute(self, context):
+        params = bpy.context.window_manager.bezierToolkitParams
+        rounding = 2
+        actCurve = bpy.context.active_object
+
+        if not isBezier(actCurve):
+            self.report({'WARNING'}, "Active object is not a Bezier curve")
+            return {'FINISHED'}
+
+        curves = [o for o in bpy.context.selected_objects 
+                  if isBezier(o) and o != actCurve]
+
+        if len(curves) < 1:
+            self.report({'INFO'}, "Select two closed Bezier curves")
+            return {'FINISHED'}
+
+        # Active curve first, then other selected
+        curves = [actCurve, curves[0]]
+
+        # Check all splines are closed
+        for c in curves:
+            if not all(s.use_cyclic_u for s in c.data.splines):
+                self.report({'WARNING'}, "Boolean requires closed curves")
+                return {'FINISHED'}
+
+        result = booleanCurves(curves, params.booleanOp, 
+                               params.intersectMargin, rounding)
+
+        if result:
+            for obj in result:
+                obj.select_set(True)
+            if result:
+                bpy.context.view_layer.objects.active = result[0]
+            self.report({'INFO'}, f"Boolean {params.booleanOp} completed")
+        else:
+            self.report({'WARNING'}, "Boolean operation produced no result")
 
         return {'FINISHED'}
 

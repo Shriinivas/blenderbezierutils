@@ -54,6 +54,20 @@ class BezierUtilsPanel(Panel):
                 col.operator('object.intersect_curves')
 
             row = layout.row()
+            row.prop(params, "booleanExpanded",
+                icon="TRIA_DOWN" if params.booleanExpanded else "TRIA_RIGHT",
+                icon_only=True, emboss=False
+            )
+            row.label(text='Boolean Curves', icon='MOD_BOOLEAN')
+            if params.booleanExpanded:
+                box = layout.box()
+                col = box.column().split()
+                row = col.row()
+                row.prop(params, 'booleanOp', text = 'Operation')
+                col = box.column().split()
+                col.operator('object.boolean_curves')
+
+            row = layout.row()
             row.prop(params, "splitExpanded",
                 icon="TRIA_DOWN" if params.splitExpanded else "TRIA_RIGHT",
                 icon_only=True, emboss=False)
