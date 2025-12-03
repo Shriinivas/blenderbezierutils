@@ -104,12 +104,43 @@ class MathFnDraw(Primitive2DDraw):
             a.tag_redraw()
     
     def testFn(expr, var):
-        exec(var + ' = 1')
+        # Use a shared namespace for exec and eval
+        # Import math functions into the namespace for function evaluation
+        from math import sin, cos, tan, asin, acos, atan, sinh, cosh, tanh
+        from math import sqrt, pow, exp, log, log10, pi, e, radians, degrees
+        
+        namespace = {
+            'sin': sin, 'cos': cos, 'tan': tan,
+            'asin': asin, 'acos': acos, 'atan': atan,
+            'sinh': sinh, 'cosh': cosh, 'tanh': tanh,
+            'sqrt': sqrt, 'pow': pow, 'exp': exp,
+            'log': log, 'log10': log10,
+            'pi': pi, 'e': e,
+            'radians': radians, 'degrees': degrees
+        }
+        
+        exec(var + ' = 1', namespace)
         try:
-            eval(expr)
+            eval(expr, namespace)
             return True
         except Exception as e:
             return False
+    
+    @staticmethod
+    def getMathNamespace():
+        """Get namespace with math functions for eval()"""
+        from math import sin, cos, tan, asin, acos, atan, sinh, cosh, tanh
+        from math import sqrt, pow, exp, log, log10, pi, e, radians, degrees
+        
+        return {
+            'sin': sin, 'cos': cos, 'tan': tan,
+            'asin': asin, 'acos': acos, 'atan': atan,
+            'sinh': sinh, 'cosh': cosh, 'tanh': tanh,
+            'sqrt': sqrt, 'pow': pow, 'exp': exp,
+            'log': log, 'log10': log10,
+            'pi': pi, 'e': e,
+            'radians': radians, 'degrees': degrees
+        }
     
     def isInverted(expr):
         if(not MathFnDraw.testFn(expr, 'x')):
@@ -165,10 +196,12 @@ class MathFnDraw(Primitive2DDraw):
             incr = span / intervals
             
             t = params.drawMathTStart
+            namespace = MathFnDraw.getMathNamespace()
             for step in range(intervals):
                 try:
-                    x = bbStart[idx0] + eval(fn1)
-                    y = bbStart[idx1] + eval(fn2)
+                    namespace['t'] = t
+                    x = bbStart[idx0] + eval(fn1, namespace)
+                    y = bbStart[idx1] + eval(fn2, namespace)
                     pt2d = complex(x, y)
                     pt = get3DVector(pt2d, axisIdxs, z)
                     curvePts.append([pt, pt, pt, 'VECTOR', 'VECTOR'])
@@ -195,11 +228,16 @@ class MathFnDraw(Primitive2DDraw):
             incr = span / intervals
             indep = bbStart[idx0] if(not inverted) else bbStart[idx1]
             
+            namespace = MathFnDraw.getMathNamespace()
             for step in range(intervals):
                 try:
-                    if(inverted): y = indep
-                    else: x = indep
-                    dep = eval(expr)
+                    if(inverted):
+                        y = indep
+                        namespace['y'] = indep
+                    else:
+                        x = indep
+                        namespace['x'] = indep
+                    dep = eval(expr, namespace)
                     if(abs(dep) > clip):
                         dep = clip * (dep / abs(dep))
                     if(inverted): x = dep + bbStart[idx0] + (center2d.real \
@@ -303,7 +341,7 @@ class MathFnDraw(Primitive2DDraw):
         params.mathFnName = fnName
         params.mathFnDescr = fnDescr
         params.mathFnType = fnType
-        params.mathFnResolution = fnCurveRes
+        params.mathFnResolution = int(fnCurveRes)
         
         fnElem = docElem.getElementsByTagName(MathFnDraw.xFns)[0]
         
