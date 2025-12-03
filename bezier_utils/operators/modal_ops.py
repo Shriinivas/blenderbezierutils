@@ -1064,15 +1064,16 @@ class ModalFlexiDrawGreaseOp(ModalDrawBezierOp):
                 )
                 stroke.points[i].opacity = strength
                 stroke.points[i].radius = lineWidth / 100
-            if autoclose:
-                stroke.points.add(count=1)
-                stroke.points[-1].position = stroke.points[0].position.copy()
-                stroke.points[-1].opacity = strength
             # stroke.line_width = lineWidth
             self.snapLocs += [self.subdivCos[0][1], self.subdivCos[-1][1]]
 
             # For some reason an extra point is added at the end, so remove it (ver 4.3)
             stroke.remove_points(1)
+
+            if autoclose:
+                stroke.add_points(count=1)
+                stroke.points[-1].position = stroke.points[0].position.copy()
+                stroke.points[-1].opacity = strength
 
         bpy.ops.ed.undo_push()
 
