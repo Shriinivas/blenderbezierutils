@@ -3,7 +3,7 @@
 import bpy
 import bmesh
 from math import ceil
-from mathutils import Vector, Matrix
+from mathutils import Vector, Matrix, geometry
 from ..constants import DEF_ERR_MARGIN
 from .math_utils import vectCmpWithMargin, floatCmpWithMargin, toHexStr
 from .bezier_math import getInterpolatedVertsCo, getBBox

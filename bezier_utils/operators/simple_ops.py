@@ -11,8 +11,12 @@ from ..utils.curve_utils import (
     booleanCurves,
     splitCurveSelPts,
     joinSegs,
+    convertToFace,
+    convertToMesh,
+    applyMeshModifiers,
 )
 from ..utils.view_utils import exportSVG
+from ..utils.object_utils import shiftOrigin, shiftMatrixWorld
 
 
 # Import operators will be added here after extraction
