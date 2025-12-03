@@ -14,6 +14,8 @@ from bpy_extras.view3d_utils import (
 from ..core.props import FTProps
 from ..constants import LARGE_NO, MAX_NONSEL_CURVE_RES
 from .bezier_math import isStraightSeg, getPtsAlongBezier2D, getLinesFromPts
+from .object_utils import isBezier
+from .curve_utils import moveSplineStart
 
 
 def getGridSubdiv(space3d):
@@ -848,3 +850,148 @@ def roundedVect(space3d, vect, rounding, axes):
     for i in axes:
         retVect[i] = round(vect[i] / fact) * fact
     return retVect
+
+
+def getSVGPt(co, docW, docH, camera=None, region=None, rv3d=None):
+    if camera is not None:
+        scene = bpy.context.scene
+        xy = world_to_camera_view(scene, camera, co)
+        return complex(xy[0] * docW, docH - (xy[1] * docH))
+    elif region is not None and rv3d is not None:
+        xy = getCoordFromLoc(region, rv3d, co)
+        return complex(xy[0], docH - xy[1])
+
+
+def exportSVG(
+    context,
+    filepath,
+    exportView,
+    clipView,
+    lineWidth,
+    lineColorOpts,
+    lineColor,
+    fillColorOpts,
+    fillColor,
+):
+    svgXML = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+    clipElemId = "BBoxClipElem"
+
+    if lineColorOpts == "PICK":
+        lineCol, lineAlpha = toHexStr(lineColor)
+
+    if fillColorOpts == "PICK":
+        fillCol, fillAlpha = toHexStr(fillColor)
+
+    if exportView == "ACTIVE_VIEW":
+        area = context.area
+        if area.type != "VIEW_3D":
+            area = [a for a in bpy.context.screen.areas if a.type == "VIEW_3D"][0]
+        region = [r for r in area.regions if r.type == "WINDOW"][0]
+        space3d = area.spaces[0]
+        if len(space3d.region_quadviews) > 0:
+            rv3d = space3d.region_quadviews[3]
+        else:
+            rv3d = space3d.region_3d
+        camera = None
+        docW = region.width
+        docH = region.height
+    else:
+        region = None
+        rv3d = None
+        camera = bpy.data.objects[exportView]
+        docW = bpy.context.scene.render.resolution_x
+        docH = bpy.context.scene.render.resolution_y
+
+    doc = minidom.parseString(svgXML)
+    svgElem = doc.documentElement
+
+    svgElem.setAttribute("width", str(docW))
+    svgElem.setAttribute("height", str(docH))
+
+    if clipView:
+        createClipElem(doc, svgElem, docW, docH, clipElemId)
+
+    idx = 0
+    for o in bpy.context.scene.objects:
+        mw = o.matrix_world
+        if isBezier(o) and o.visible_get():
+            path = []
+            filledPath = []
+            for spline in o.data.splines:
+                part = []
+                bpts = spline.bezier_points
+                for i in range(1, len(bpts)):
+                    prevBezierPt = bpts[i - 1]
+                    pt = bpts[i]
+                    seg = [
+                        prevBezierPt.co,
+                        prevBezierPt.handle_right,
+                        pt.handle_left,
+                        pt.co,
+                    ]
+                    part.append(
+                        [
+                            getSVGPt(mw @ co, docW, docH, camera, region, rv3d)
+                            for co in seg
+                        ]
+                    )
+
+                if spline.use_cyclic_u:
+                    seg = [
+                        bpts[-1].co,
+                        bpts[-1].handle_right,
+                        bpts[0].handle_left,
+                        bpts[0].co,
+                    ]
+                    part.append(
+                        [
+                            getSVGPt(mw @ co, docW, docH, camera, region, rv3d)
+                            for co in seg
+                        ]
+                    )
+
+                if len(part) > 0:
+                    if (
+                        spline.use_cyclic_u
+                        and o.data.dimensions == "2D"
+                        and o.data.fill_mode != "NONE"
+                    ):
+                        filledPath.append(part)
+                    else:
+                        path.append(part)
+
+            for p in [path, filledPath]:
+                if len(p) == 0:
+                    continue
+
+                if lineColorOpts == "RANDOM":
+                    lineColor = [random.random() for i in range(3)] + [1]
+                    lineCol, lineAlpha = toHexStr(lineColor)
+
+                if p == path:
+                    fc, fa = None, None
+                elif fillColorOpts == "RANDOM":
+                    fillColor = [random.random() for i in range(3)] + [1]
+                    fc, fa = toHexStr(fillColor)
+                else:
+                    fc, fa = fillCol, fillAlpha
+
+                svgPathElem = getSVGPathElem(
+                    doc,
+                    docW,
+                    docH,
+                    p,
+                    idx,
+                    lineWidth,
+                    lineCol,
+                    lineAlpha,
+                    fc,
+                    fa,
+                    clipView,
+                    clipElemId,
+                )
+                if svgPathElem is not None:
+                    svgElem.appendChild(svgPathElem)
+                    idx += 1
+
+    doc.writexml(open(filepath, "w"))
