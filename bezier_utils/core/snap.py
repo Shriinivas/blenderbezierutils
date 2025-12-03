@@ -1,5 +1,5 @@
 import bpy
-from mathutils import Vector, Matrix, kdtree
+from mathutils import Vector, Matrix, kdtree, geometry
 from ..core.props import FTProps
 from bpy_extras.view3d_utils import region_2d_to_location_3d
 from ..constants import (
@@ -26,7 +26,7 @@ from ..utils.view_utils import (
 )
 from .hotkeys import FTHotKeys
 
-from math import sqrt, cos, sin
+from math import sqrt, cos, sin, radians, tan, atan
 
 
 class SnapDigits:

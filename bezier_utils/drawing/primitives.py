@@ -10,7 +10,7 @@ from ..utils.bezier_math import (
     getInterpBezierPts,
     getInterpolatedVertsCo,
 )
-from ..utils.view_utils import getClosestPlaneToView
+from ..utils.view_utils import getClosestPlaneToView, getCoordFromLoc
 from ..core.snap import SnapParams
 from ..core.hotkeys import FTHotKeys
 from ..utils.math_utils import vectCmpWithMargin
