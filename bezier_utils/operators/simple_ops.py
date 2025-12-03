@@ -14,6 +14,7 @@ from ..utils.curve_utils import (
     convertToFace,
     convertToMesh,
     applyMeshModifiers,
+    pasteLength,
 )
 from ..utils.view_utils import exportSVG
 from ..utils.object_utils import shiftOrigin, shiftMatrixWorld
