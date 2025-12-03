@@ -33,41 +33,53 @@ class BezierUtilsPanel(Panel):
 
         if(context.mode == 'OBJECT'):
 
-            row = layout.row()
-            row.prop(params, "intersectExpanded",
-                icon="TRIA_DOWN" if params.intersectExpanded else "TRIA_RIGHT",
-                icon_only=True, emboss=False
-            )
-            row.label(text='Intersect Curves', icon='GRAPH')
-            if params.intersectExpanded:
-                box = layout.box()
-                col = box.column().split()
-                row = col.row()
-                row.prop(params, 'intersectMargin', text = 'Proximity')
-                col = box.column().split()
-                row = col.row()
-                row.prop(params, 'intersectOp', text = 'Action')
-                if(params.intersectOp in {'INSERT_PT', 'CUT'}):
-                    row = col.row()
-                    row.prop(params, 'intersectNonactive', text = 'Only Non-active')
-                row = col.row()
-                row.prop(params, 'selfIntersect', text = 'Self Intersection')
-                col = box.column().split()
-                col.operator('object.intersect_curves')
 
+            # Combined Curve Operations Section
             row = layout.row()
-            row.prop(params, "booleanExpanded",
-                icon="TRIA_DOWN" if params.booleanExpanded else "TRIA_RIGHT",
+            row.prop(params, "curveOpsExpanded",
+                icon="TRIA_DOWN" if params.curveOpsExpanded else "TRIA_RIGHT",
                 icon_only=True, emboss=False
             )
-            row.label(text='Boolean Curves', icon='MOD_BOOLEAN')
-            if params.booleanExpanded:
+            row.label(text='Curve Operations', icon='MOD_BOOLEAN')
+            
+            if params.curveOpsExpanded:
                 box = layout.box()
+                
+                # Shared proximity parameter
                 col = box.column().split()
                 row = col.row()
-                row.prop(params, 'booleanOp', text = 'Operation')
+                row.prop(params, 'intersectMargin', text='Proximity')
+                
+                # Operation mode selector
                 col = box.column().split()
-                col.operator('object.boolean_curves')
+                row = col.row()
+                row.prop(params, 'curveOpsMode', expand=True)
+                
+                # Intersect-specific options
+                if params.curveOpsMode == 'INTERSECT':
+                    col = box.column().split()
+                    row = col.row()
+                    row.prop(params, 'intersectOp', text='Action')
+                    
+                    if params.intersectOp in {'INSERT_PT', 'CUT'}:
+                        row = col.row()
+                        row.prop(params, 'intersectNonactive', text='Only Non-active')
+                    
+                    row = col.row()
+                    row.prop(params, 'selfIntersect', text='Self Intersection')
+                    
+                    col = box.column().split()
+                    col.operator('object.intersect_curves')
+                
+                # Boolean-specific options
+                elif params.curveOpsMode == 'BOOLEAN':
+                    col = box.column().split()
+                    row = col.row()
+                    row.prop(params, 'booleanOp', text='Operation')
+                    
+                    col = box.column().split()
+                    col.operator('object.boolean_curves')
+
 
             row = layout.row()
             row.prop(params, "splitExpanded",

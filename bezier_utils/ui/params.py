@@ -162,9 +162,18 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
 
     removeDupliExpanded: BoolProperty(name = "Remove Duplicate Verts", default = False)
 
-    intersectExpanded: BoolProperty(name = "Intersect Curves", default = False)
-
-    booleanExpanded: BoolProperty(name = "Boolean Curves", default = False)
+    curveOpsExpanded: BoolProperty(name="Curve Operations", default=False)
+    
+    curveOpsMode: EnumProperty(
+        name="Operation Type",
+        items=[
+            ('INTERSECT', 'Intersect', 'Find and mark/insert/cut at curve intersections'),
+            ('BOOLEAN', 'Boolean', 'Combine curves using boolean operations'),
+        ],
+        default='INTERSECT'
+    )
+    
+    intersectExpanded: BoolProperty(name="Intersect Curves", default=False)
 
     otherExpanded: BoolProperty(name = "Other Tools", default = False)
 
