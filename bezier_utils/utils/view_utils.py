@@ -15,7 +15,10 @@ from ..core.props import FTProps
 from ..constants import LARGE_NO, MAX_NONSEL_CURVE_RES
 from .bezier_math import isStraightSeg, getPtsAlongBezier2D, getLinesFromPts
 from .object_utils import isBezier
-from .curve_utils import moveSplineStart
+from .curve_utils import moveSplineStart, createClipElem, getSVGPathElem
+from .math_utils import toHexStr
+from xml.dom import minidom
+import random
 
 
 def getGridSubdiv(space3d):
