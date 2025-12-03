@@ -169,7 +169,10 @@ class ModalBaseFlexiOp(Operator):
 
     # Called back after add-on preferences are changed
     def propsChanged():
-        if ModalBaseFlexiOp.opObj is not None and ModalBaseFlexiOp.opObj.snapper is not None:
+        if (
+            ModalBaseFlexiOp.opObj is not None
+            and ModalBaseFlexiOp.opObj.snapper is not None
+        ):
             ModalBaseFlexiOp.opObj.snapper.updateSnapKeyMap()
 
     def resetDisplayBase():
@@ -2942,7 +2945,10 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
         if self.bevelMode or (
             (ctrl or alt)
-            and (self.editCurveInfo is None or (self.pressT is not None and not self.click))
+            and (
+                self.editCurveInfo is None
+                or (self.pressT is not None and not self.click)
+            )
         ):
             bpy.context.window.cursor_set("CROSSHAIR")
         else:

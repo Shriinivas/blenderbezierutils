@@ -10,9 +10,9 @@ from ..utils.curve_utils import (
     intersectCurves,
     booleanCurves,
     splitCurveSelPts,
+    joinSegs,
 )
 from ..utils.view_utils import exportSVG
-
 
 
 # Import operators will be added here after extraction
