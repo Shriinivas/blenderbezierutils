@@ -1155,6 +1155,10 @@ class Snapper:
 
         custAxisLineCos = []
         custAxisLineCols = []
+        custAxisYLineCos = []
+        custAxisYLineCols = []
+        custAxisZLineCos = []
+        custAxisZLineCols = []
         custAxisGradStart = None
         custAxisGradEnd = None
 
@@ -1228,6 +1232,7 @@ class Snapper:
                 ptCol = (1, 1, 1, 1)
 
             # Custom axis visualization with full coordinate frame (X, Y, Z)
+            # Drawn as separate line infos to avoid conflict with standard axes
             if self.customAxis.length() != 0 and (
                 self.customAxis.inDrawAxis or "AXIS" in {transType, origType, axisScale}
             ):
@@ -1240,25 +1245,25 @@ class Snapper:
                 axis_orig = apts[0]
                 axis_length = 2 * rmInfo.rv3d.view_distance  # Match standard axis length
 
-                # Draw all three axes: X (custom axis), Y (perpendicular), Z (perpendicular)
-                # All axes use same subtle style with gradient for consistency
                 # X axis - along the custom axis (Red)
                 custAxisLineCos = [apts[0], apts[1]]
                 custAxisLineCols = [(0.8, 0.2, 0.2, 0.7)]  # Subtle red for X
                 custAxisGradStart = 0.9
                 custAxisGradEnd = 0.3
 
-                # Y axis - extracted from transformation matrix (Green)
+                # Y axis - perpendicular to custom axis (Green)
+                # Drawn as separate line info with same gradient as X axis
                 y_axis_start = axis_orig
                 y_axis_end = invTm_custom @ (tm_custom @ axis_orig + Vector((0, axis_length, 0)))
-                axisLineCos[1] = [y_axis_start, y_axis_end]
-                axisLineCols[1] = [(0.2, 0.6, 0.2, 0.7)]  # Subtle green for Y
+                custAxisYLineCos = [y_axis_start, y_axis_end]
+                custAxisYLineCols = [(0.2, 0.6, 0.2, 0.7)]  # Subtle green for Y
 
-                # Z axis - extracted from transformation matrix (Blue)
+                # Z axis - perpendicular to custom axis (Blue)
+                # Drawn as separate line info with same gradient as X axis
                 z_axis_start = axis_orig
                 z_axis_end = invTm_custom @ (tm_custom @ axis_orig + Vector((0, 0, axis_length)))
-                axisLineCos[2] = [z_axis_start, z_axis_end]
-                axisLineCols[2] = [(0.2, 0.2, 0.6, 0.7)]  # Subtle blue for Z
+                custAxisZLineCos = [z_axis_start, z_axis_end]
+                custAxisZLineCols = [(0.2, 0.2, 0.6, 0.7)]  # Subtle blue for Z
 
                 # Snap division points on X axis
                 custAxisPtCos = self.customAxis.getSnapPts()
@@ -1289,6 +1294,27 @@ class Snapper:
             FTProps.axisLineWidth,
             custAxisLineCols,
             custAxisLineCos,
+            custAxisGradStart,
+            custAxisGradEnd,
+            mid=False,
+        )
+
+        # Custom axis Y and Z axes - drawn separately with same gradient as X
+        bglDrawMgr.addLineInfo(
+            "CustAxisYLine",
+            FTProps.axisLineWidth,
+            custAxisYLineCols,
+            custAxisYLineCos,
+            custAxisGradStart,
+            custAxisGradEnd,
+            mid=False,
+        )
+
+        bglDrawMgr.addLineInfo(
+            "CustAxisZLine",
+            FTProps.axisLineWidth,
+            custAxisZLineCols,
+            custAxisZLineCos,
             custAxisGradStart,
             custAxisGradEnd,
             mid=False,

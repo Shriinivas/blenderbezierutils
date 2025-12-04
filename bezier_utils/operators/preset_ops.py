@@ -67,6 +67,7 @@ class ApplyPresetFreeDraw(Operator):
         params = context.window_manager.bezierToolkitParams
         params.snapOrient = 'GLOBAL'
         params.snapOrigin = 'CURSOR'
+        params.axisScale = 'DEFAULT'  # Reset to default scale
         return {'FINISHED'}
 
 
@@ -80,6 +81,7 @@ class ApplyPresetContinue(Operator):
         params = context.window_manager.bezierToolkitParams
         params.snapOrient = 'REFERENCE'
         params.snapOrigin = 'REFERENCE'
+        params.axisScale = 'DEFAULT'  # Reset to default scale
         return {'FINISHED'}
 
 
@@ -93,6 +95,7 @@ class ApplyPresetAlignObject(Operator):
         params = context.window_manager.bezierToolkitParams
         params.snapOrient = 'OBJECT'
         params.snapOrigin = 'OBJECT'
+        params.axisScale = 'DEFAULT'  # Reset to default scale
         return {'FINISHED'}
 
 
@@ -106,6 +109,7 @@ class ApplyPresetViewPlane(Operator):
         params = context.window_manager.bezierToolkitParams
         params.snapOrient = 'VIEW'
         params.snapOrigin = 'CURSOR'
+        params.axisScale = 'DEFAULT'  # Reset to default scale
         return {'FINISHED'}
 
 
@@ -133,6 +137,7 @@ class ApplyPresetSurfaceAlign(Operator):
         params = context.window_manager.bezierToolkitParams
         params.snapOrient = 'FACE'
         params.snapOrigin = 'FACE'
+        params.axisScale = 'DEFAULT'  # Reset to default scale
         return {'FINISHED'}
 
 
