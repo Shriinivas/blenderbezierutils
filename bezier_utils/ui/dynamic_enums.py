@@ -67,13 +67,18 @@ def get_orientation_items(self, context):
     # Advanced options
     if has_custom_axis():
         items.append(('AXIS', 'Custom Axis',
-                      "Orient to custom axis. Right-click in viewport to redefine custom axis"))
+                      "Orient to custom axis for arbitrary angle constraints. "
+                      "Perfect for isometric drawings (30°, 45°), angled grids, or CAD-style work. "
+                      "Right-click to redefine. Status bar shows angle and length when active"))
     else:
         items.append(('AXIS', '⚠ Custom Axis (Setup Required)',
-                      "Orient to custom axis. SETUP: Right-click in viewport to define custom axis"))
+                      "Orient to custom axis for arbitrary angle constraints. "
+                      "SETUP: Set orient or origin to 'Custom Axis', then right-click twice to define axis line. "
+                      "Scroll wheel adjusts snap divisions (0-20). Use 'Custom Angle' preset for quick setup"))
 
     items.append(('FACE', 'Normal',
-                  "Orient to normal of face under cursor. Requires mesh surface under mouse pointer"))
+                  "Orient to normal of face under cursor. Requires mesh surface under mouse pointer. "
+                  "Perfect for surface detailing and adding curves to mesh geometry"))
 
     return items
 
@@ -120,12 +125,17 @@ def get_origin_items(self, context):
     # Advanced options
     if has_custom_axis():
         items.append(('AXIS', 'Custom Axis Start',
-                      "Reference point at custom axis starting point. Right-click to redefine"))
+                      "Reference point at custom axis starting point. "
+                      "Use with Custom Axis orientation for complete control. "
+                      "Also enables custom scale (1 unit = 0.1 × axis length). Right-click to redefine"))
     else:
         items.append(('AXIS', '⚠ Custom Axis Start (Setup Required)',
-                      "Reference at custom axis start. SETUP: Right-click in viewport to define"))
+                      "Reference point at custom axis starting point. "
+                      "SETUP: Set orient or origin to 'Custom Axis', then right-click twice to define axis line. "
+                      "Use 'Custom Angle' preset for both orient and origin. Enables custom scale"))
 
     items.append(('FACE', 'Face Center',
-                  "Reference point at face center under cursor. Requires mesh surface under mouse pointer"))
+                  "Reference point at face center under cursor. Requires mesh surface under mouse pointer. "
+                  "Perfect for positioning relative to mesh surfaces"))
 
     return items

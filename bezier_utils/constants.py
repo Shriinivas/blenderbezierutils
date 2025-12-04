@@ -42,4 +42,8 @@ TRANSFORM_PRESETS = [
      'Align to active object\'s local space and origin. Use when working with object geometry.'),
     ('VIEW', 'CURSOR', 'View Plane',
      'Draw in screen-space plane with cursor as reference. Good for viewport-relative sketching.'),
+    ('AXIS', 'REFERENCE', 'Custom Angle',
+     'Use custom axis orientation with previous point origin. Right-click to define arbitrary angle. Perfect for isometric or angled work continuing from previous curve.'),
+    ('FACE', 'FACE', 'Surface Align',
+     'Align to mesh surface under cursor. Both orientation (normal) and origin (face center). Perfect for surface detailing.'),
 ]

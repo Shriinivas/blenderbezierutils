@@ -26,7 +26,7 @@ from ..utils.view_utils import (
 )
 from .hotkeys import FTHotKeys
 
-from math import sqrt, cos, sin, radians, tan, atan
+from math import sqrt, cos, sin, radians, tan, atan, atan2
 
 
 class SnapDigits:
@@ -290,7 +290,7 @@ class CustomAxis:
             Vector(bpy.data.scenes[0]["btk_co2"]),
         ]
         if bpy.data.scenes[0].get("btk_snapPtCnt") is None:
-            bpy.data.scenes[0]["btk_snapPtCnt"] = 3
+            bpy.data.scenes[0]["btk_snapPtCnt"] = 9  # 9 intervals = 11 points (10 divisions)
         self.snapCnt = bpy.data.scenes[0]["btk_snapPtCnt"]
         self.inDrawAxis = False  # User drawing the custom axis
 
@@ -311,6 +311,46 @@ class CustomAxis:
             bpy.data.scenes[0]["btk_co2"] = [c for c in co]
         bpy.data.scenes[0]["btk_snapPtCnt"] = self.snapCnt
 
+    def getAngleFromGlobalX(self):
+        """Get angle of custom axis from global X axis in degrees"""
+        if self.length() == 0:
+            return None, None
+
+        vec = (self.axisPts[1] - self.axisPts[0]).normalized()
+
+        # 2D angle (XY plane projection)
+        vec_xy = Vector((vec.x, vec.y, 0))
+        if vec_xy.length > 0.0001:
+            vec_xy.normalize()
+            angle_xy = atan2(vec_xy.y, vec_xy.x)
+        else:
+            angle_xy = 0
+
+        # 3D angle from global X axis
+        global_x = Vector((1, 0, 0))
+        angle_3d = vec.angle(global_x)
+
+        return angle_xy, angle_3d
+
+    def getAngleString(self):
+        """Get formatted angle string for display"""
+        angle_xy, angle_3d = self.getAngleFromGlobalX()
+        if angle_xy is None:
+            return "Not defined"
+
+        # Convert to degrees (atan2 returns radians, angle() returns radians)
+        from math import degrees
+        angle_xy_deg = degrees(angle_xy)
+        angle_3d_deg = degrees(angle_3d)
+
+        # Format: Show XY angle primarily, 3D angle in parentheses if different
+        if abs(angle_3d_deg - abs(angle_xy_deg)) < 1.0:
+            # Nearly planar in XY
+            return f"{angle_xy_deg:.1f}°"
+        else:
+            # Significant Z component
+            return f"{angle_xy_deg:.1f}° (3D: {angle_3d_deg:.1f}°)"
+
     def getSnapPts(self):  # ptCnt excluding end points
         pts = self.axisPts
         if self.length() == 0:
@@ -329,8 +369,10 @@ class CustomAxis:
 
     def procDrawEvent(self, context, event, snapper, rmInfo):
         if event.type == "RIGHTMOUSE":
-            snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
-            if event.value == "RELEASE" and snapOrigin == "AXIS":
+            params = bpy.context.window_manager.bezierToolkitParams
+            snapOrigin = params.snapOrigin
+            snapOrient = params.snapOrient
+            if event.value == "RELEASE" and (snapOrigin == "AXIS" or snapOrient == "AXIS"):
                 loc = snapper.get3dLocSnap(
                     rmInfo, SnapParams(snapper, snapToAxisLine=False)
                 )
@@ -372,6 +414,7 @@ class CustomAxis:
                 self.set(0, LARGE_VECT)
                 self.set(1, LARGE_VECT)
                 self.inDrawAxis = False
+                return True
 
             return True
 
@@ -1005,7 +1048,8 @@ class Snapper:
                     if axisScale in {"AXIS" or "REFERENCE"}:
                         # Independent of view distance
                         diffV = loc - refCo
-                        loc = refCo + round(diffV.length) * (diffV / diffV.length)
+                        if diffV.length > DEF_ERR_MARGIN:  # Avoid division by zero
+                            loc = refCo + round(diffV.length) * (diffV / diffV.length)
                     else:
                         rounding = getViewDistRounding(rmInfo.space3d, rv3d)
                         loc = tm @ roundedVect(

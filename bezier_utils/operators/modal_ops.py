@@ -3500,6 +3500,8 @@ def drawSettingsFT(self, context):
         ('REFERENCE', 'REFERENCE', 'bezier.preset_continue', 'Continue Curve'),
         ('OBJECT', 'OBJECT', 'bezier.preset_align_object', 'Align to Object'),
         ('VIEW', 'CURSOR', 'bezier.preset_view_plane', 'View Plane'),
+        ('AXIS', 'REFERENCE', 'bezier.preset_custom_angle', 'Custom Angle'),
+        ('FACE', 'FACE', 'bezier.preset_surface_align', 'Surface Align'),
     ]
     for orient, origin, op_id, label in presets:
         is_active = (current[0] == orient and current[1] == origin)
@@ -3510,8 +3512,6 @@ def drawSettingsFT(self, context):
     self.layout.prop(params, "snapOrigin", text="")
 
     self.layout.prop(params, "constrAxes", text="")
-    if params.constrAxes not in [a[0] for a in getConstrAxisTups()]:
-        params.constrAxes = "NONE"
 
     # Only available for planes not axis
     if showSnapToPlane(params):

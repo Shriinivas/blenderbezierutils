@@ -109,6 +109,33 @@ class ApplyPresetViewPlane(Operator):
         return {'FINISHED'}
 
 
+class ApplyPresetCustomAngle(Operator):
+    """Custom Angle: Use custom axis for orientation with previous point origin"""
+    bl_idname = "bezier.preset_custom_angle"
+    bl_label = "Custom Angle"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        params = context.window_manager.bezierToolkitParams
+        params.snapOrient = 'AXIS'
+        params.snapOrigin = 'REFERENCE'  # More intuitive - continue from previous point
+        params.axisScale = 'AXIS'  # Auto-set scale to custom axis
+        return {'FINISHED'}
+
+
+class ApplyPresetSurfaceAlign(Operator):
+    """Surface Align: Align to mesh surface (normal and face center)"""
+    bl_idname = "bezier.preset_surface_align"
+    bl_label = "Surface Align"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        params = context.window_manager.bezierToolkitParams
+        params.snapOrient = 'FACE'
+        params.snapOrigin = 'FACE'
+        return {'FINISHED'}
+
+
 # List of preset operator classes for registration
 preset_operator_classes = [
     ApplyTransformPresetOp,
@@ -116,4 +143,6 @@ preset_operator_classes = [
     ApplyPresetContinue,
     ApplyPresetAlignObject,
     ApplyPresetViewPlane,
+    ApplyPresetCustomAngle,
+    ApplyPresetSurfaceAlign,
 ]

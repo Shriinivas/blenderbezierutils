@@ -152,9 +152,18 @@ def getPtProjOnLine(region, rv3d, xy, p1, p2):
 
 
 def getLineTransMatrices(pt0, pt1):
-    diffV = pt1 - pt0
-    invTm = diffV.to_track_quat("X", "Z").to_matrix().to_4x4()
+    diffV = (pt1 - pt0).normalized()
+
+    # Calculate rotation from global X axis to custom axis
+    # This gives a proper orthogonal coordinate frame by rotating the entire global frame
+    global_x = Vector((1, 0, 0))
+    quat = global_x.rotation_difference(diffV)
+
+    # Convert quaternion to 4x4 matrix
+    # invTm transforms from custom space to global space
+    invTm = quat.to_matrix().to_4x4()
     tm = invTm.inverted_safe()
+
     return tm, invTm
 
 
