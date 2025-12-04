@@ -3371,12 +3371,19 @@ def getConstrAxisTups(scene=None, context=None):
         5: ("shift-Y", "XZ", "Constrain to XZ plane"),
         6: ("shift-X", "YZ", "Constrain to YZ plane"),
     }
-    transType = bpy.context.window_manager.bezierToolkitParams.snapOrient
+
+    # Safe access to snapOrient to avoid circular dependency during initialization
+    try:
+        transType = bpy.context.window_manager.bezierToolkitParams.snapOrient
+    except Exception:
+        transType = "GLOBAL"  # Default if not yet initialized
 
     if transType in {"AXIS", "GLOBAL", "OBJECT", "FACE"}:
         keyset = range(0, 7)
     elif transType in {"VIEW", "REFERENCE", "CURR_POS"}:
         keyset = [0] + [i for i in range(4, 7)]
+    else:
+        keyset = range(0, 7)  # Default to all options
 
     return [axesMap[key] for key in keyset]
 
@@ -3484,8 +3491,24 @@ def drawSettingsFT(self, context):
             if params.drawObjType != "RECTANGLE" and params.drawObjType != "MATH":
                 self.layout.prop(params, "drawAngleSweep", text="")
 
+    # Preset buttons row
+    row = self.layout.row(align=True)
+    row.label(text="Presets:")
+    current = (params.snapOrient, params.snapOrigin)
+    presets = [
+        ('GLOBAL', 'CURSOR', 'bezier.preset_free_draw', 'Free Drawing'),
+        ('REFERENCE', 'REFERENCE', 'bezier.preset_continue', 'Continue Curve'),
+        ('OBJECT', 'OBJECT', 'bezier.preset_align_object', 'Align to Object'),
+        ('VIEW', 'CURSOR', 'bezier.preset_view_plane', 'View Plane'),
+    ]
+    for orient, origin, op_id, label in presets:
+        is_active = (current[0] == orient and current[1] == origin)
+        row.operator(op_id, text=label, depress=is_active)
+    self.layout.separator()
+
     self.layout.prop(params, "snapOrient", text="")
     self.layout.prop(params, "snapOrigin", text="")
+
     self.layout.prop(params, "constrAxes", text="")
     if params.constrAxes not in [a[0] for a in getConstrAxisTups()]:
         params.constrAxes = "NONE"

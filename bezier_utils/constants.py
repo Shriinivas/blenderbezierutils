@@ -30,3 +30,16 @@ EVT_CONS = 1
 EVT_META_OR_SNAP = 2
 
 GP_CONTEXT_MODE = 'PAINT_GREASE_PENCIL'
+
+# Transform Orientation/Origin Presets
+# Format: (orient_value, origin_value, display_name, description)
+TRANSFORM_PRESETS = [
+    ('GLOBAL', 'CURSOR', 'Free Drawing',
+     'Standard free drawing mode. Global orientation with 3D cursor as reference.'),
+    ('REFERENCE', 'REFERENCE', 'Continue Curve',
+     'Continue from last drawn segment. Perfect for extending existing curves.'),
+    ('OBJECT', 'OBJECT', 'Align to Object',
+     'Align to active object\'s local space and origin. Use when working with object geometry.'),
+    ('VIEW', 'CURSOR', 'View Plane',
+     'Draw in screen-space plane with cursor as reference. Good for viewport-relative sketching.'),
+]

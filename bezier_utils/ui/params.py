@@ -9,6 +9,7 @@ from ..operators.modal_ops import ModalDrawBezierOp
 from ..drawing.math_fn import MathFnDraw
 from ..drawing.primitives import Primitive2DDraw
 from ..core.menus import FTMenu
+from .dynamic_enums import get_orientation_items, get_origin_items
 
 # BezierToolkitParams will be added here
 
@@ -276,37 +277,15 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     drawStarOffset: FloatProperty(name = "Offset", \
         description = 'Offset of star sides', default = .3)
 
-    snapOrient: EnumProperty(name = 'Orientation',#"Align contrained axes and snap angle to",
-        items = (('GLOBAL', 'Global Axes', "Orient to world space"), \
-        ('REFERENCE', 'Reference Line', "Orient to preceding segment or opposite handle"),
-        ('CURR_POS', 'Current Segment', "Orient to current segment or current handle"),
-        ('AXIS', 'Custom Axes', "Orient to custom axis (if available)"), \
-        ('VIEW', 'View', "Orient to window"), \
-        ('OBJECT', 'Active Object', "Orient to local space of active object"),
-        ('FACE', 'Selected Object Face', \
-         "Orient to normal of face of selected object under mouse pointer ")),
-        default = 'GLOBAL',
-        description='Orientation for Draw / Edit')
+    snapOrient: EnumProperty(
+        name = 'Transform Orientation',
+        items = get_orientation_items,
+        description='Transform orientation for Draw / Edit operations. Context-aware: unavailable options show ⚠ warning')
 
-
-    snapOrigin: EnumProperty(name = 'Origin',#"Align contrained axes and snap angle to",
-        items = (('GLOBAL', 'Global Origin', \
-          "Draw / Edit with reference to global origin"), \
-        ('CURSOR', '3D Cursor Location', \
-          "Draw / Edit with reference to 3D Cursor location"), \
-        ('AXIS', 'Custom Axis Start', \
-          "Draw / Edit with reference to starting point of custom axis"), \
-        ('REFERENCE', 'Reference Line Point', \
-          "Draw / Edit with reference to the appropriate reference line point"), \
-        ('OBJECT', 'Active Object Location', \
-          "Draw / Edit with reference to active object location"), \
-        ('FACE', 'Selected Object Face', \
-          "Draw / Edit with reference to the center of " + \
-          "Selected object face under mouse pointer"),
-        ('CURR_POS', 'Current Position', \
-          "Edit with reference to the current mouse position")), \
-        default = 'REFERENCE',
-        description='Origin for Draw / Edit')
+    snapOrigin: EnumProperty(
+        name = 'Pivot Point',
+        items = get_origin_items,
+        description='Pivot point for Draw / Edit operations. Context-aware: unavailable options show ⚠ warning')
 
     constrAxes: EnumProperty(name = 'Constrain Axis', #"Constrain axis for draw and edit ops",
         items = getConstrAxisTups,

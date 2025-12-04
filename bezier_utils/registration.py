@@ -1,12 +1,13 @@
 # bezier_utils/registration.py
 
 import bpy
-from bpy.types import Menu
+from bpy.types import Menu  # noqa: F401 - Used in exec() for dynamic menu class generation
 from .ui.panel import BezierUtilsPanel, updatePanel
 from .ui.params import BezierToolkitParams
 from .ui.preferences import BezierUtilsPreferences
 from .operators.simple_ops import *
 from .operators.modal_ops import *
+from .operators.preset_ops import preset_operator_classes
 from .drawing.math_fn import SaveMathFn, LoadMathFn, ResetMathFn, DeleteMathFn
 from .tools.workspace_tools import FlexiDrawBezierTool, FlexiEditBezierTool, FlexiGreaseBezierTool
 from .core.menus import FTMenu, FTMenuOptionOp
@@ -78,7 +79,7 @@ classes = [
     LoadMathFn,
     ResetMathFn,
     DeleteMathFn,
-]
+] + preset_operator_classes  # Add preset operators
 
 for menuData in FTMenu.editMenus:
     exec(FTMenu.getMNClassDefStr(menuData))
@@ -88,7 +89,7 @@ for menuData in FTMenu.editMenus:
 def register():
     # Initialize FTProps defaults
     FTProps.initDefault()
-    
+
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -102,7 +103,7 @@ def register():
     bpy.utils.register_tool(FlexiDrawBezierTool)
     bpy.utils.register_tool(FlexiEditBezierTool)
     bpy.utils.register_tool(FlexiGreaseBezierTool)
-    
+
     updatePanel(None, bpy.context)
 
     bpy.app.handlers.load_post.append(ModalBaseFlexiOp.loadPostHandler)
@@ -112,8 +113,10 @@ def unregister():
     BezierUtilsPanel.colorCurves(remove = True)
     bpy.app.handlers.depsgraph_update_post.remove(BezierUtilsPanel.colorCurves)
 
-    try: ModalBaseFlexiOp.opObj.cancelOp(bpy.context)
-    except: pass # If not invoked or already unregistered
+    try:
+        ModalBaseFlexiOp.opObj.cancelOp(bpy.context)
+    except (AttributeError, ReferenceError):
+        pass  # If not invoked or already unregistered
 
     bpy.app.handlers.load_post.remove(ModalBaseFlexiOp.loadPostHandler)
     bpy.app.handlers.load_pre.remove(ModalBaseFlexiOp.loadPreHandler)
