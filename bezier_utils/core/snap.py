@@ -404,16 +404,25 @@ class CustomAxis:
                     if self.snapCnt > 0:
                         self.snapCnt -= 1
 
-            if event.type == "MOUSEMOVE":
+            # Update axis point on mouse move or when numeric input changes
+            if event.type == "MOUSEMOVE" or snapper.snapDigits.hasVal():
                 loc = snapper.get3dLocSnap(
                     rmInfo, SnapParams(snapper, snapToAxisLine=False)
                 )
                 self.set(1, loc)
 
+            # Confirm numeric input with Return/Space
+            if event.type in {"RET", "SPACE"} and snapper.snapDigits.hasVal():
+                if event.value == "RELEASE":
+                    # Reset snapper so it's ready for next point
+                    snapper.resetSnap()
+                return True
+
             if event.type == "ESC":
                 self.set(0, LARGE_VECT)
                 self.set(1, LARGE_VECT)
                 self.inDrawAxis = False
+                snapper.resetSnap()  # Clear any numeric input
                 return True
 
             return True

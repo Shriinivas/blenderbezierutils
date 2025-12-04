@@ -151,10 +151,19 @@ class ModalBaseFlexiOp(Operator):
                     blf.color(*custAxisCol)
 
                     # Build status text
+                    snapper = ModalBaseFlexiOp.opObj.snapper
                     if customAxis.inDrawAxis:
                         # Currently drawing
                         length = (customAxis.axisPts[1] - customAxis.axisPts[0]).length
                         statusText = f"Custom Axis: Click 2nd point | Length: {length:.3f} | Snaps: {customAxis.snapCnt} (scroll)"
+
+                        # Show numeric input if active
+                        if snapper.snapDigits.hasVal():
+                            if snapper.snapDigits.polar:
+                                delta_str = snapper.snapDigits.getDeltaStrPolar()
+                            else:
+                                delta_str = snapper.snapDigits.getCurrDeltaStr()
+                            statusText += f" | Input: {delta_str} (Enter to confirm)"
                     elif customAxis.length() > 0:
                         # Defined
                         angle_str = customAxis.getAngleString()
