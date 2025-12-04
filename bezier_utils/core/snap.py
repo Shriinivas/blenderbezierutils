@@ -1202,6 +1202,12 @@ class Snapper:
         snapIndPtCos = []
         snapIndPtCols = []
 
+        pivotPtCos = []
+        pivotPtCols = []
+
+        constraintPlaneCos = []
+        constraintPlaneCols = []
+
         rmInfo = self.rmInfo
 
         if rmInfo is not None:  # self.snapParams is also not None
@@ -1228,7 +1234,7 @@ class Snapper:
 
             if (
                 dispAxes
-                and FTProps.dispAxes
+                and FTProps.showGuides
                 and (
                     (
                         refLineOrig is not None
@@ -1253,21 +1259,31 @@ class Snapper:
                     pt2[axis] = -l + refCo[axis]
                     axisLineCos[axis] = [invTm @ pt1, invTm @ pt2]
 
-            if (
+            # Reference line highlighting
+            # Show when: angle snap, polar input, or REFERENCE mode with guides on
+            isRefMode = transType == "REFERENCE" or origType == "REFERENCE"
+            showRefLine = (
                 refLineOrig is not None
                 and self.lastSelCo is not None
                 and (
                     self.angleSnap
                     or ("keyboard" in self.lastSnapTypes and self.snapDigits.polar)
+                    or (FTProps.showGuides and isRefMode)
                 )
-            ):
+            )
+            if showRefLine:
                 snapLineCos = [orig, self.lastSelCo]
-                snapLineCols = [(0.4, 0.4, 0.4, 1)]
+                # Brighter color when in REFERENCE mode
+                if isRefMode and FTProps.showGuides:
+                    snapLineCols = [(0.8, 0.5, 0.2, 1)]  # Orange-ish for reference highlight
+                else:
+                    snapLineCols = [(0.4, 0.4, 0.4, 1)]  # Default gray
                 ptCol = (1, 1, 1, 1)
 
             # Custom axis visualization with full coordinate frame (X, Y, Z)
             # Drawn as separate line infos to avoid conflict with standard axes
-            if self.customAxis.length() != 0 and (
+            # Controlled by FTProps.showGuides preference
+            if self.customAxis.length() != 0 and FTProps.showGuides and (
                 self.customAxis.inDrawAxis or "AXIS" in {transType, origType, axisScale}
             ):
                 apts = self.customAxis.axisPts
@@ -1302,6 +1318,35 @@ class Snapper:
                 # Snap division points on X axis
                 custAxisPtCos = self.customAxis.getSnapPts()
                 custAxisPtCols = [(1, 0.4, 0, 1)]
+
+            # Pivot point marker - show origin when guides enabled
+            if FTProps.showGuides and orig is not None:
+                pivotPtCos = [orig]
+                pivotPtCols = [(1.0, 0.6, 0.0, 1.0)]  # Orange color for pivot
+
+            # Constraint plane visualization - show when 2 axes are free (plane constraint)
+            if FTProps.showGuides and len(freeAxesN) == 2 and orig is not None:
+                planeSize = rmInfo.rv3d.view_distance * 0.5  # Half the view distance
+                refCo = tm @ orig
+                # Get the two free axes
+                ax1, ax2 = freeAxesN[0], freeAxesN[1]
+                # Create 4 corners of the plane
+                corners = []
+                for s1 in [-1, 1]:
+                    for s2 in [-1, 1]:
+                        corner = refCo.copy()
+                        corner[ax1] += s1 * planeSize
+                        corner[ax2] += s2 * planeSize
+                        corners.append(invTm @ corner)
+                # Draw as outline (4 lines forming a square)
+                # Order: 0(-,-), 1(-,+), 2(+,-), 3(+,+)
+                constraintPlaneCos = [
+                    corners[0], corners[1],  # Left edge
+                    corners[1], corners[3],  # Top edge
+                    corners[3], corners[2],  # Right edge
+                    corners[2], corners[0],  # Bottom edge
+                ]
+                constraintPlaneCols = [(0.5, 0.5, 0.5, 0.4)]  # Semi-transparent gray
 
             if FTProps.dispSnapInd and self.snapCo is not None:
                 snapIndPtCos = [self.snapCo]
@@ -1359,6 +1404,17 @@ class Snapper:
         )
 
         bglDrawMgr.addPtInfo("SnapPt", FTProps.snapPtSize, snapIndPtCols, snapIndPtCos)
+
+        # Pivot point marker - larger size for visibility
+        bglDrawMgr.addPtInfo("PivotPt", FTProps.snapPtSize * 1.5, pivotPtCols, pivotPtCos)
+
+        # Constraint plane outline
+        bglDrawMgr.addLineInfo(
+            "ConstraintPlane",
+            FTProps.axisLineWidth * 0.5,  # Thinner line for plane
+            constraintPlaneCols,
+            constraintPlaneCos,
+        )
 
 
 ################################## Flexi Tool Classes ##################################

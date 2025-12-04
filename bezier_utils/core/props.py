@@ -26,7 +26,7 @@ class FTProps:
             'colHdlFree', 'colHdlVector', 'colHdlAligned', 'colHdlAuto', 'colSelTip', \
             'colHltTip', 'colBezPt', 'colHdlPtTip', 'colAdjBezTip', 'colEditSubdiv', \
             'colGreaseSubdiv', 'colGreaseBezPt', 'colKeymapText', 'colKeymapKey', 'snapDist', \
-            'dispSnapInd', 'dispAxes', 'snapPtSize', 'liveUpdate', 'dispCurveRes', \
+            'dispSnapInd', 'showGuides', 'snapPtSize', 'liveUpdate', 'dispCurveRes', \
             'showKeyMap', 'keyMapFontSize', 'keyMapLocX', 'keyMapLocY', 'keyMapNextToTool', \
             'defBevelFact', 'maxBevelFact', 'minBevelFact', 'bevelIncr', 'numpadEntry', \
             'mathFnTxtFontSize', 'colMathFnTxt']
@@ -97,7 +97,7 @@ class FTProps:
 
         FTProps.snapDist = 20
         FTProps.dispSnapInd = False
-        FTProps.dispAxes = True
+        FTProps.showGuides = True
         FTProps.showKeyMap = False
         FTProps.keyMapFontSize = 10
         FTProps.keyMapLocX = 10

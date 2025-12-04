@@ -84,6 +84,7 @@ class FTHotKeys:
 
     # Common
     hkToggleKeyMap = 'hkToggleKeyMap'
+    hkToggleGuides = 'hkToggleGuides'
     hkSwitchOut = 'hkSwitchOut'
     hkTweakPos = 'hkTweakPos'
     hkToggleDrwEd = 'hkToggleDrwEd'
@@ -93,6 +94,9 @@ class FTHotKeys:
     commonHotkeys.append(FTHotKeyData(hkToggleKeyMap, 'Ctrl+Shift+H', \
         'Hide / Unhide Keymap', \
             'Hide / Unhide Keymap Displayed When Flexi Tool Is Active'))
+    commonHotkeys.append(FTHotKeyData(hkToggleGuides, 'Ctrl+Alt+H', \
+        'Hide / Unhide Visual Guides', \
+            'Toggle visual guides: orientation axes, custom axis frame, pivot marker, constraint plane'))
     commonHotkeys.append(FTHotKeyData(hkSwitchOut, 'F1', 'Exit Flexi Tool', \
             'Switch out of the Flexi Tool mode'))
     commonHotkeys.append(FTHotKeyData(hkTweakPos, 'P', 'Tweak Position', \

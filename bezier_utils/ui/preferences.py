@@ -143,10 +143,10 @@ class BezierUtilsPreferences(AddonPreferences):
             update = FTProps.updateProps
     )
 
-    dispAxes: BoolProperty(
-            name="Orientation / Origin Axis", \
-            description='Display axes for selected orientation / origin', \
-            default = False,
+    showGuides: BoolProperty(
+            name="Show Visual Guides", \
+            description='Display visual guides: orientation axes, custom axis frame, pivot marker, constraint plane (Ctrl+Alt+H to toggle)', \
+            default = True,
             update = FTProps.updateProps
     )
 
@@ -567,8 +567,8 @@ class BezierUtilsPreferences(AddonPreferences):
             col.label(text='Display Curve Resolution:')
             col.prop(self, "dispCurveRes", text = '')
             col = box.column().split()
-            col.label(text='Display Orientation / Origin Axes:')
-            col.prop(self, "dispAxes", text = '')
+            col.label(text='Show Visual Guides (Ctrl+Alt+H):')
+            col.prop(self, "showGuides", text = '')
             col = box.column().split()
             col.label(text='Allow Numpad Entry:')
             col.prop(self, "numpadEntry", text = '')

@@ -13,16 +13,35 @@ from .dynamic_enums import get_orientation_items, get_origin_items
 
 # BezierToolkitParams will be added here
 
-def getConstrAxisTups(scene = None, context = None):
-    tups = [('NONE', 'None', "Don't constrain axis"), \
-         ('X', 'X', "Constrain to X axis"), \
-         ('Y', 'Y', "Constrain to Y axis"), \
-         ('Z', 'Z', "Constrain to Z axis")]
+def getConstrAxisTups(scene=None, context=None):
+    """Generate constraint axis options based on current transform orientation.
 
-    # ~ if(context.active_object != None and isBezier(context.active_object)):
-    # ~     tups.append(('NORMAL', 'Normal', "Constrain to curve normal"))
+    For VIEW, REFERENCE, CURR_POS orientations: only show planes (XY, XZ, YZ)
+    For other orientations: show both axes (X, Y, Z) and planes (XY, XZ, YZ)
+    """
+    axesMap = {
+        0: ("NONE", "None", "Constrain only on hotkey event"),
+        1: ("X", "X", "Constrain to X axis"),
+        2: ("Y", "Y", "Constrain to Y axis"),
+        3: ("Z", "Z", "Constrain to Z axis"),
+        4: ("shift-Z", "XY", "Constrain to XY plane"),
+        5: ("shift-Y", "XZ", "Constrain to XZ plane"),
+        6: ("shift-X", "YZ", "Constrain to YZ plane"),
+    }
 
-    return tups
+    # Safe access to snapOrient to avoid issues during initialization
+    try:
+        transType = bpy.context.window_manager.bezierToolkitParams.snapOrient
+    except Exception:
+        transType = "GLOBAL"  # Default if not yet initialized
+
+    # VIEW, REFERENCE, CURR_POS work with planes, not individual axes
+    if transType in {"VIEW", "REFERENCE", "CURR_POS"}:
+        keyset = [0] + list(range(4, 7))  # NONE + planes only
+    else:
+        keyset = range(0, 7)  # All options
+
+    return [axesMap[key] for key in keyset]
 
 class BezierToolkitParams(bpy.types.PropertyGroup):
 

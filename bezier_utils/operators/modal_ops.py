@@ -342,6 +342,17 @@ class ModalBaseFlexiOp(Operator):
                     FTProps.showKeyMap = not FTProps.showKeyMap
             return {"RUNNING_MODAL"}
 
+        if FTHotKeys.isHotKey(FTHotKeys.hkToggleGuides, event.type, metakeys):
+            if event.value == "RELEASE":
+                try:
+                    addon_prefs = context.preferences.addons.get("bezier_utils")
+                    prefs = addon_prefs.preferences if addon_prefs else None
+                    prefs.showGuides = not prefs.showGuides
+                except Exception as e:
+                    print(e)
+                    FTProps.showGuides = not FTProps.showGuides
+            return {"RUNNING_MODAL"}
+
         # Special condition for case where user has configured a different snap key
         # In such case, pass through mouse clicks, if there's a meta key held down...
         # to allow e.g. alt + LMB to rotate view
@@ -3404,33 +3415,6 @@ class ModalFlexiEditBezierOp(ModalBaseFlexiOp):
 
 
 ###################### Global Params ######################
-
-
-def getConstrAxisTups(scene=None, context=None):
-    axesMap = {
-        0: ("NONE", "None", "Constrain only on hotkey event"),
-        1: ("-X", "X", "Constrain to only X axis"),
-        2: ("-Y", "Y", "Constrain to only Y axis"),
-        3: ("-Z", "Z", "Constrain to only Z axis"),
-        4: ("shift-Z", "XY", "Constrain to XY plane"),
-        5: ("shift-Y", "XZ", "Constrain to XZ plane"),
-        6: ("shift-X", "YZ", "Constrain to YZ plane"),
-    }
-
-    # Safe access to snapOrient to avoid circular dependency during initialization
-    try:
-        transType = bpy.context.window_manager.bezierToolkitParams.snapOrient
-    except Exception:
-        transType = "GLOBAL"  # Default if not yet initialized
-
-    if transType in {"AXIS", "GLOBAL", "OBJECT", "FACE"}:
-        keyset = range(0, 7)
-    elif transType in {"VIEW", "REFERENCE", "CURR_POS"}:
-        keyset = [0] + [i for i in range(4, 7)]
-    else:
-        keyset = range(0, 7)  # Default to all options
-
-    return [axesMap[key] for key in keyset]
 
 
 class ModalMarkSegStartOp(bpy.types.Operator):
