@@ -137,6 +137,41 @@ class ModalBaseFlexiOp(Operator):
                 blf.draw(font_id, t)
                 yOff += 1.5 * lineHeight
 
+        # Custom axis info overlay
+        if ModalBaseFlexiOp.opObj is not None:
+            from ..core.snap import CustomAxis
+            try:
+                customAxis = ModalBaseFlexiOp.opObj.snapper.customAxis
+                params = bpy.context.window_manager.bezierToolkitParams
+
+                # Show custom axis info only when AXIS mode is active (orient/origin/scale)
+                if (params.snapOrient == 'AXIS' or params.snapOrigin == 'AXIS' or params.axisScale == 'AXIS'):
+                    custAxisCol = [0, 1.0, 0.8, 0.2, 1.0]  # Yellow-orange
+                    blf.size(font_id, FTProps.mathFnTxtFontSize)
+                    blf.color(*custAxisCol)
+
+                    # Build status text
+                    if customAxis.inDrawAxis:
+                        # Currently drawing
+                        length = (customAxis.axisPts[1] - customAxis.axisPts[0]).length
+                        statusText = f"Custom Axis: Click 2nd point | Length: {length:.3f} | Snaps: {customAxis.snapCnt} (scroll)"
+                    elif customAxis.length() > 0:
+                        # Defined
+                        angle_str = customAxis.getAngleString()
+                        length = customAxis.length()
+                        statusText = f"Custom Axis: {angle_str} | Length: {length:.3f} | Snaps: {customAxis.snapCnt}"
+                    else:
+                        statusText = "Custom Axis: Right-click to define"
+
+                    # Draw centered at bottom of viewport
+                    textWidth = blf.dimensions(font_id, statusText)[0]
+                    textX = (currRegion.width - textWidth) / 2
+                    textY = lineHeight  # Bottom of viewport
+                    blf.position(font_id, textX, textY, 0)
+                    blf.draw(font_id, statusText)
+            except Exception:
+                pass  # Silently ignore if custom axis info not available
+
     def addDrawHandlers(context):
         hdlr = ModalBaseFlexiOp.opObj.__class__.drawHandler
         ModalBaseFlexiOp.drawHdlrRef = bpy.types.SpaceView3D.draw_handler_add(

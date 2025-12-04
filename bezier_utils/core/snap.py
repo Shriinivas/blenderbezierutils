@@ -26,7 +26,7 @@ from ..utils.view_utils import (
 )
 from .hotkeys import FTHotKeys
 
-from math import sqrt, cos, sin, radians, tan, atan, atan2
+from math import sqrt, cos, sin, radians, tan, atan, atan2, degrees
 
 
 class SnapDigits:
@@ -1218,15 +1218,40 @@ class Snapper:
                 snapLineCols = [(0.4, 0.4, 0.4, 1)]
                 ptCol = (1, 1, 1, 1)
 
+            # Custom axis visualization with full coordinate frame (X, Y, Z)
             if self.customAxis.length() != 0 and (
                 self.customAxis.inDrawAxis or "AXIS" in {transType, origType, axisScale}
             ):
                 apts = self.customAxis.axisPts
+
+                # Get transformation matrix for custom axis to extract Y and Z axes
+                tm_custom, invTm_custom = getLineTransMatrices(apts[0], apts[1])
+
+                # Origin point for custom axis frame
+                axis_orig = apts[0]
+                axis_length = 2 * rmInfo.rv3d.view_distance  # Match standard axis length
+
+                # Draw all three axes: X (custom axis), Y (perpendicular), Z (perpendicular)
+                # All axes use same subtle style with gradient for consistency
+                # X axis - along the custom axis (Red)
                 custAxisLineCos = [apts[0], apts[1]]
-                custAxisLineCols = [(1, 1, 1, 1)]
+                custAxisLineCols = [(0.8, 0.2, 0.2, 0.7)]  # Subtle red for X
                 custAxisGradStart = 0.9
                 custAxisGradEnd = 0.3
 
+                # Y axis - extracted from transformation matrix (Green)
+                y_axis_start = axis_orig
+                y_axis_end = invTm_custom @ (tm_custom @ axis_orig + Vector((0, axis_length, 0)))
+                axisLineCos[1] = [y_axis_start, y_axis_end]
+                axisLineCols[1] = [(0.2, 0.6, 0.2, 0.7)]  # Subtle green for Y
+
+                # Z axis - extracted from transformation matrix (Blue)
+                z_axis_start = axis_orig
+                z_axis_end = invTm_custom @ (tm_custom @ axis_orig + Vector((0, 0, axis_length)))
+                axisLineCos[2] = [z_axis_start, z_axis_end]
+                axisLineCols[2] = [(0.2, 0.2, 0.6, 0.7)]  # Subtle blue for Z
+
+                # Snap division points on X axis
                 custAxisPtCos = self.customAxis.getSnapPts()
                 custAxisPtCols = [(1, 0.4, 0, 1)]
 
