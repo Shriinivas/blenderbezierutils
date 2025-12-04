@@ -404,17 +404,41 @@ class CustomAxis:
                     if self.snapCnt > 0:
                         self.snapCnt -= 1
 
-            # Update axis point on mouse move or when numeric input changes
-            if event.type == "MOUSEMOVE" or snapper.snapDigits.hasVal():
-                loc = snapper.get3dLocSnap(
-                    rmInfo, SnapParams(snapper, snapToAxisLine=False)
-                )
+            # Update axis point on:
+            # - Mouse move
+            # - Numeric input changes
+            # - Snap key press/release (Ctrl for grid, Alt for vert, Shift for angle)
+            needsUpdate = (
+                event.type == "MOUSEMOVE"
+                or snapper.snapDigits.hasVal()
+                or event.type in {
+                    "LEFT_CTRL", "RIGHT_CTRL",
+                    "LEFT_ALT", "RIGHT_ALT",
+                    "LEFT_SHIFT", "RIGHT_SHIFT"
+                }
+            )
+            if needsUpdate:
+                if snapper.snapDigits.hasVal():
+                    # Numeric input: apply delta directly from first axis point
+                    delta = snapper.snapDigits.getCurrDelta()
+                    loc = self.axisPts[0] + delta
+                else:
+                    # Mouse move or snap key: use get3dLocSnap for snapping
+                    loc = snapper.get3dLocSnap(
+                        rmInfo, SnapParams(snapper, snapToAxisLine=False)
+                    )
                 self.set(1, loc)
 
-            # Confirm numeric input with Return/Space
+            # Confirm numeric input with Return/Space - finalize axis
             if event.type in {"RET", "SPACE"} and snapper.snapDigits.hasVal():
                 if event.value == "RELEASE":
-                    # Reset snapper so it's ready for next point
+                    # Apply the numeric input one final time before finalizing
+                    delta = snapper.snapDigits.getCurrDelta()
+                    loc = self.axisPts[0] + delta
+                    self.set(1, loc)
+                    # Finalize the axis
+                    self.inDrawAxis = False
+                    # Reset snapper for next operation
                     snapper.resetSnap()
                 return True
 
@@ -723,7 +747,10 @@ class Snapper:
             else self.getRefLineOrig()
         )
 
-        if refLineOrig is not None:
+        # Allow numeric input when:
+        # 1. There's a reference line origin (normal bezier drawing), or
+        # 2. Custom axis is being drawn (use axis start point as reference)
+        if refLineOrig is not None or self.customAxis.inDrawAxis:
             snapDProc = self.snapDigits.procEvent(context, event, metakeys)
             if snapDProc:
                 self.digitsConfirmed = (
@@ -1054,7 +1081,7 @@ class Snapper:
                         self.lastSnapTypes.add("axis1")
 
                 if not self.snapDigits.hasVal() and gridSnap:
-                    if axisScale in {"AXIS" or "REFERENCE"}:
+                    if axisScale in {"AXIS", "REFERENCE"}:
                         # Independent of view distance
                         diffV = loc - refCo
                         if diffV.length > DEF_ERR_MARGIN:  # Avoid division by zero
@@ -1124,6 +1151,13 @@ class Snapper:
         return loc
 
     def getEditCoPair(self):
+        # Support numeric input during custom axis drawing
+        if self.customAxis.inDrawAxis and self.customAxis.length() > 0:
+            # Use custom axis points: start point as origin, end point as current
+            axisPts = self.customAxis.axisPts
+            # Return in global coordinates (no transformation needed for custom axis)
+            return (axisPts[0], axisPts[1])
+
         refLineOrig = self.getRefLineOrig()
         if self.lastSelCo is None or refLineOrig is None:
             return []
