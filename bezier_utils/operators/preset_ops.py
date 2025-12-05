@@ -87,36 +87,6 @@ class ApplyPresetContinue(Operator):
         return {'FINISHED'}
 
 
-class ApplyPresetAlignObject(Operator):
-    """Align to Object: Local orientation and object location"""
-    bl_idname = "bezier.preset_align_object"
-    bl_label = "Align to Object"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        params = context.window_manager.bezierToolkitParams
-        params.snapOrient = 'OBJECT'
-        params.snapOrigin = 'OBJECT'
-        params.offsetRef = 'PIVOT'
-        params.axisScale = 'DEFAULT'
-        return {'FINISHED'}
-
-
-class ApplyPresetViewPlane(Operator):
-    """View Plane: Screen space orientation with cursor"""
-    bl_idname = "bezier.preset_view_plane"
-    bl_label = "View Plane"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        params = context.window_manager.bezierToolkitParams
-        params.snapOrient = 'VIEW'
-        params.snapOrigin = 'CURSOR'
-        params.offsetRef = 'PIVOT'
-        params.axisScale = 'DEFAULT'
-        return {'FINISHED'}
-
-
 class ApplyPresetCustomAngle(Operator):
     """Custom Angle: Custom axis orientation, offsets from previous point"""
     bl_idname = "bezier.preset_custom_angle"
@@ -152,8 +122,6 @@ preset_operator_classes = [
     ApplyTransformPresetOp,
     ApplyPresetFreeDraw,
     ApplyPresetContinue,
-    ApplyPresetAlignObject,
-    ApplyPresetViewPlane,
     ApplyPresetCustomAngle,
     ApplyPresetSurfaceAlign,
 ]

@@ -3520,34 +3520,35 @@ def drawSettingsFT(self, context):
             if params.drawObjType != "RECTANGLE" and params.drawObjType != "MATH":
                 self.layout.prop(params, "drawAngleSweep", text="")
 
-    # Preset buttons row
+    # Preset buttons row - compact labels
     row = self.layout.row(align=True)
-    row.label(text="Presets:")
+    row.scale_x = 0.9
     current = (params.snapOrient, params.snapOrigin)
     presets = [
-        ('GLOBAL', 'CURSOR', 'bezier.preset_free_draw', 'Free Drawing'),
-        ('REFERENCE', 'REFERENCE', 'bezier.preset_continue', 'Continue Curve'),
-        ('OBJECT', 'OBJECT', 'bezier.preset_align_object', 'Align to Object'),
-        ('VIEW', 'CURSOR', 'bezier.preset_view_plane', 'View Plane'),
-        ('AXIS', 'REFERENCE', 'bezier.preset_custom_angle', 'Custom Angle'),
-        ('FACE', 'FACE', 'bezier.preset_surface_align', 'Surface Align'),
+        ('GLOBAL', 'CURSOR', 'bezier.preset_free_draw', 'Free'),
+        ('REFERENCE', 'CURSOR', 'bezier.preset_continue', 'Continue'),
+        ('AXIS', 'AXIS', 'bezier.preset_custom_angle', 'Axis'),
+        ('FACE', 'FACE', 'bezier.preset_surface_align', 'Surface'),
     ]
     for orient, origin, op_id, label in presets:
         is_active = (current[0] == orient and current[1] == origin)
         row.operator(op_id, text=label, depress=is_active)
-    self.layout.separator()
 
-    self.layout.prop(params, "snapOrient", text="")
-    self.layout.prop(params, "snapOrigin", text="")
-    self.layout.prop(params, "offsetRef", text="")
+    # Dropdowns row - compact
+    row = self.layout.row(align=True)
+    row.scale_x = 0.85
+    row.prop(params, "snapOrient", text="")
+    row.prop(params, "snapOrigin", text="")
+    row.prop(params, "offsetRef", text="")
 
-    self.layout.prop(params, "constrAxes", text="")
-
+    # Constraint and scale row - compact
+    row = self.layout.row(align=True)
+    row.scale_x = 0.85
+    row.prop(params, "constrAxes", text="")
+    row.prop(params, "axisScale", text="")
     # Only available for planes not axis
     if showSnapToPlane(params):
-        self.layout.prop(params, "snapToPlane")
-
-    self.layout.prop(params, "axisScale", text="")
+        row.prop(params, "snapToPlane", text="Plane")
 
     # if((context.mode == 'OBJECT' and toolObj.idname  == 'flexi_bezier.draw_tool')):
     if context.mode == "OBJECT" and toolObj.idname == FlexiDrawBezierTool.bl_idname:
