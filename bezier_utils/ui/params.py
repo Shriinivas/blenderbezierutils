@@ -9,7 +9,7 @@ from ..operators.modal_ops import ModalDrawBezierOp
 from ..drawing.math_fn import MathFnDraw
 from ..drawing.primitives import Primitive2DDraw
 from ..core.menus import FTMenu
-from .dynamic_enums import get_orientation_items, get_origin_items
+from .dynamic_enums import get_orientation_items, get_origin_items, get_offset_ref_items
 
 # BezierToolkitParams will be added here
 
@@ -304,7 +304,12 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     snapOrigin: EnumProperty(
         name = 'Pivot Point',
         items = get_origin_items,
-        description='Pivot point for Draw / Edit operations. Context-aware: unavailable options show ⚠ warning')
+        description='Pivot point - center for transformation axes. Context-aware: unavailable options show ⚠ warning')
+
+    offsetRef: EnumProperty(
+        name = 'Offset Reference',
+        items = get_offset_ref_items,
+        description='Reference point for numeric input and angle snapping. Determines where offsets are calculated from')
 
     constrAxes: EnumProperty(name = 'Constrain Axis', #"Constrain axis for draw and edit ops",
         items = getConstrAxisTups,

@@ -3539,6 +3539,7 @@ def drawSettingsFT(self, context):
 
     self.layout.prop(params, "snapOrient", text="")
     self.layout.prop(params, "snapOrigin", text="")
+    self.layout.prop(params, "offsetRef", text="")
 
     self.layout.prop(params, "constrAxes", text="")
 

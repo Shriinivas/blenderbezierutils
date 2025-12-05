@@ -475,6 +475,7 @@ class SnapParams:
         hasSel=None,
         transType=None,
         origType=None,
+        offsetRef=None,
         axisScale=None,
         freeAxesN=None,
         dispAxes=True,
@@ -507,6 +508,7 @@ class SnapParams:
         params = bpy.context.window_manager.bezierToolkitParams
         self.transType = params.snapOrient if (transType is None) else transType
         self.origType = params.snapOrigin if (origType is None) else origType
+        self.offsetRef = params.offsetRef if (offsetRef is None) else offsetRef
         self.axisScale = params.axisScale if (axisScale is None) else axisScale
 
         self.freeAxesN = (
@@ -646,15 +648,10 @@ class Snapper:
             return self.getFreeAxesNormalized()
 
     def getCurrOrig(self, rmInfo, obj, origType, refLineOrig, selCo):
+        """Get the pivot point location based on origType (pivot point setting)."""
         if origType == "AXIS":
             if self.customAxis.length() != 0:
                 return self.customAxis.axisPts[0]
-        elif origType == "REFERENCE":
-            if refLineOrig is not None:
-                return refLineOrig
-        elif origType == "CURR_POS":
-            if selCo is not None:
-                return selCo
         elif origType == "OBJECT" and obj is not None:
             return obj.location
         elif origType == "FACE" and rmInfo is not None:
@@ -665,7 +662,24 @@ class Snapper:
                 return selObj.matrix_world @ selObj.data.polygons[faceIdx].center
         elif origType == "CURSOR":
             return bpy.context.scene.cursor.location
+        # Default: GLOBAL origin
         return Vector((0, 0, 0))
+
+    def getOffsetRefPoint(self, rmInfo, obj, origType, offsetRef, refLineOrig, selCo):
+        """Get the offset reference point for numeric input and angle snapping.
+
+        Args:
+            offsetRef: 'PIVOT' to use pivot point, 'PREVIOUS' to use previous point
+        Returns:
+            Vector: The point from which offsets should be calculated
+        """
+        if offsetRef == "PREVIOUS":
+            # Use previous point (refLineOrig) if available
+            if refLineOrig is not None:
+                return refLineOrig
+            # Fall back to pivot if no previous point
+        # Default: use pivot point
+        return self.getCurrOrig(rmInfo, obj, origType, refLineOrig, selCo)
 
     def getTransMatsForOrient(self, rmInfo, obj, transType, axisScale):
         custAxis = self.customAxis
@@ -909,6 +923,7 @@ class Snapper:
 
         transType = snapParams.transType
         origType = snapParams.origType
+        offsetRef = snapParams.offsetRef
         axisScale = snapParams.axisScale
 
         vec = snapParams.vec
@@ -995,14 +1010,18 @@ class Snapper:
                 or (inEdit and (len(freeAxesN) < 3 or angleSnap))
             ):
                 # snapToPlane means global constrain axes selection is a plane
-                # ~ if(snapToPlane or refLineOrig == None): refCo = orig
-                # ~ else: refCo = refLineOrig
-
+                # refCo is used for axis constraint calculations
                 refCo = tm @ orig
+
+                # offsetRefPt is used for numeric input delta calculations
+                offsetRefPt = self.getOffsetRefPoint(
+                    rmInfo, bpy.context.object, origType, offsetRef, refLineOrig, selCo
+                )
 
                 if self.snapDigits.hasVal():
                     delta = self.snapDigits.getCurrDelta()
-                    loc = tm @ orig + delta
+                    # Apply delta from offset reference point, not pivot
+                    loc = tm @ offsetRefPt + delta
                     self.lastSnapTypes.add("keyboard")
                 else:
                     # Special condition for lock to single axis
@@ -1095,7 +1114,8 @@ class Snapper:
 
                 if not self.snapDigits.hasVal() and angleSnap and len(refLine) > 0:
                     # ~ freeAxesC = [0, 1, 2] if len(freeAxesC) == 0 else freeAxesC
-                    snapStart = tm @ orig
+                    # Use offset reference point for angle snapping
+                    snapStart = tm @ offsetRefPt
                     actualLoc = loc.copy()
 
                     # First decide the main movement axis
@@ -1151,6 +1171,11 @@ class Snapper:
         return loc
 
     def getEditCoPair(self):
+        """Get the reference and current point pair for numeric input.
+
+        Returns pair of (offset reference point, current point) in transformed coordinates.
+        The offset reference point is where numeric deltas are calculated from.
+        """
         # Support numeric input during custom axis drawing
         if self.customAxis.inDrawAxis and self.customAxis.length() > 0:
             # Use custom axis points: start point as origin, end point as current
@@ -1161,18 +1186,24 @@ class Snapper:
         refLineOrig = self.getRefLineOrig()
         if self.lastSelCo is None or refLineOrig is None:
             return []
+
+        params = bpy.context.window_manager.bezierToolkitParams
         if self.snapParams is None:
-            origType = bpy.context.window_manager.bezierToolkitParams.origType
+            origType = params.snapOrigin
+            offsetRef = params.offsetRef
             refLineOrig = self.getRefLineOrig()
             selCo = self.getSelCo()
         else:
             origType = self.snapParams.origType
+            offsetRef = self.snapParams.offsetRef
             refLineOrig = self.snapParams.refLineOrig
             selCo = self.snapParams.selCo
-        orig = self.getCurrOrig(
-            self.rmInfo, bpy.context.object, origType, refLineOrig, selCo
+
+        # Use offset reference point for numeric input, not pivot
+        offsetRefPt = self.getOffsetRefPoint(
+            self.rmInfo, bpy.context.object, origType, offsetRef, refLineOrig, selCo
         )
-        return (self.tm @ orig, self.tm @ self.lastSelCo)
+        return (self.tm @ offsetRefPt, self.tm @ self.lastSelCo)
 
     def setStatus(self, area, text):  # TODO Global
         area.header_text_set(text)
@@ -1219,6 +1250,7 @@ class Snapper:
 
             transType = snapParams.transType
             origType = snapParams.origType
+            offsetRef = snapParams.offsetRef
             axisScale = snapParams.axisScale
             dispAxes = snapParams.dispAxes
 
@@ -1241,7 +1273,7 @@ class Snapper:
                         or transType == "VIEW"
                         or len(freeAxesN) == 1
                     )
-                    or (len(freeAxesN) > 0 and origType != "REFERENCE")
+                    or len(freeAxesN) > 0
                 )
             ):
                 colors = [(0.6, 0.2, 0.2, 1), (0.2, 0.6, 0.2, 1), (0.2, 0.4, 0.6, 1)]
@@ -1260,21 +1292,25 @@ class Snapper:
                     axisLineCos[axis] = [invTm @ pt1, invTm @ pt2]
 
             # Reference line highlighting
-            # Show when: angle snap, polar input, or REFERENCE mode with guides on
-            isRefMode = transType == "REFERENCE" or origType == "REFERENCE"
+            # Show when: angle snap, polar input, or PREVIOUS offset mode with guides on
+            isPreviousMode = offsetRef == "PREVIOUS"
             showRefLine = (
                 refLineOrig is not None
                 and self.lastSelCo is not None
                 and (
                     self.angleSnap
                     or ("keyboard" in self.lastSnapTypes and self.snapDigits.polar)
-                    or (FTProps.showGuides and isRefMode)
+                    or (FTProps.showGuides and isPreviousMode)
                 )
             )
             if showRefLine:
-                snapLineCos = [orig, self.lastSelCo]
-                # Brighter color when in REFERENCE mode
-                if isRefMode and FTProps.showGuides:
+                # Show line from offset reference point to current point
+                offsetRefPt = self.getOffsetRefPoint(
+                    rmInfo, bpy.context.object, origType, offsetRef, refLineOrig, selCo
+                )
+                snapLineCos = [offsetRefPt, self.lastSelCo]
+                # Brighter color when in PREVIOUS mode
+                if isPreviousMode and FTProps.showGuides:
                     snapLineCols = [(0.8, 0.5, 0.2, 1)]  # Orange-ish for reference highlight
                 else:
                     snapLineCols = [(0.4, 0.4, 0.4, 1)]  # Default gray

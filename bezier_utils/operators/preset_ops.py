@@ -58,7 +58,7 @@ class ApplyTransformPresetOp(Operator):
 
 
 class ApplyPresetFreeDraw(Operator):
-    """Free Drawing: Global orientation with 3D cursor"""
+    """Free Drawing: Global orientation with 3D cursor pivot"""
     bl_idname = "bezier.preset_free_draw"
     bl_label = "Free Drawing"
     bl_options = {'REGISTER', 'UNDO'}
@@ -67,12 +67,13 @@ class ApplyPresetFreeDraw(Operator):
         params = context.window_manager.bezierToolkitParams
         params.snapOrient = 'GLOBAL'
         params.snapOrigin = 'CURSOR'
-        params.axisScale = 'DEFAULT'  # Reset to default scale
+        params.offsetRef = 'PIVOT'
+        params.axisScale = 'DEFAULT'
         return {'FINISHED'}
 
 
 class ApplyPresetContinue(Operator):
-    """Continue Curve: Previous segment orientation and point"""
+    """Continue Curve: Previous segment orientation, offsets from previous point"""
     bl_idname = "bezier.preset_continue"
     bl_label = "Continue Curve"
     bl_options = {'REGISTER', 'UNDO'}
@@ -80,8 +81,9 @@ class ApplyPresetContinue(Operator):
     def execute(self, context):
         params = context.window_manager.bezierToolkitParams
         params.snapOrient = 'REFERENCE'
-        params.snapOrigin = 'REFERENCE'
-        params.axisScale = 'DEFAULT'  # Reset to default scale
+        params.snapOrigin = 'CURSOR'  # Pivot at cursor
+        params.offsetRef = 'PREVIOUS'  # But offsets from previous point
+        params.axisScale = 'DEFAULT'
         return {'FINISHED'}
 
 
@@ -95,7 +97,8 @@ class ApplyPresetAlignObject(Operator):
         params = context.window_manager.bezierToolkitParams
         params.snapOrient = 'OBJECT'
         params.snapOrigin = 'OBJECT'
-        params.axisScale = 'DEFAULT'  # Reset to default scale
+        params.offsetRef = 'PIVOT'
+        params.axisScale = 'DEFAULT'
         return {'FINISHED'}
 
 
@@ -109,12 +112,13 @@ class ApplyPresetViewPlane(Operator):
         params = context.window_manager.bezierToolkitParams
         params.snapOrient = 'VIEW'
         params.snapOrigin = 'CURSOR'
-        params.axisScale = 'DEFAULT'  # Reset to default scale
+        params.offsetRef = 'PIVOT'
+        params.axisScale = 'DEFAULT'
         return {'FINISHED'}
 
 
 class ApplyPresetCustomAngle(Operator):
-    """Custom Angle: Use custom axis for orientation with previous point origin"""
+    """Custom Angle: Custom axis orientation, offsets from previous point"""
     bl_idname = "bezier.preset_custom_angle"
     bl_label = "Custom Angle"
     bl_options = {'REGISTER', 'UNDO'}
@@ -122,8 +126,9 @@ class ApplyPresetCustomAngle(Operator):
     def execute(self, context):
         params = context.window_manager.bezierToolkitParams
         params.snapOrient = 'AXIS'
-        params.snapOrigin = 'REFERENCE'  # More intuitive - continue from previous point
-        params.axisScale = 'AXIS'  # Auto-set scale to custom axis
+        params.snapOrigin = 'AXIS'  # Pivot at custom axis start
+        params.offsetRef = 'PREVIOUS'  # Offsets from previous point
+        params.axisScale = 'AXIS'
         return {'FINISHED'}
 
 
@@ -137,7 +142,8 @@ class ApplyPresetSurfaceAlign(Operator):
         params = context.window_manager.bezierToolkitParams
         params.snapOrient = 'FACE'
         params.snapOrigin = 'FACE'
-        params.axisScale = 'DEFAULT'  # Reset to default scale
+        params.offsetRef = 'PIVOT'
+        params.axisScale = 'DEFAULT'
         return {'FINISHED'}
 
 
