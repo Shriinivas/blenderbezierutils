@@ -608,18 +608,18 @@ class Snapper:
         # ~ self.snapStack = [] # TODO
 
     # Return user selection in header menu, [] for None
-    # (Tightly coupled with strings in BezierToolkitParams)
+    # Values: "X","Y","Z" for axis; "shift-Z","shift-Y","shift-X" for planes
     def getFreeAxesGlobal(self):
         constrAxes = bpy.context.window_manager.bezierToolkitParams.constrAxes
-        if constrAxes != "NONE":
-            idx = constrAxes.find("-")
-            axis = constrAxes[idx + 1]
-            freeAxes = [ord(axis) - ord("X")]
-            if idx > 0:
-                freeAxes = sorted(list({0, 1, 2} - set(freeAxes)))
-            return freeAxes
-        else:
+        # Empty string can occur during dynamic enum transitions
+        if not constrAxes or constrAxes == "NONE":
             return []
+        idx = constrAxes.find("-")
+        axis = constrAxes[idx + 1]
+        freeAxes = [ord(axis) - ord("X")]
+        if idx > 0:
+            freeAxes = sorted(list({0, 1, 2} - set(freeAxes)))
+        return freeAxes
 
     # Return actual free axes (menu + hotkey combined), [] for None
     def getFreeAxesCombined(self):
@@ -1002,12 +1002,15 @@ class Snapper:
             loc = tm @ loc
 
             # TODO: Get gridSnap and angleSnap out of this if
+            # Apply constraint when: axis constraints active (freeAxesN < 3),
+            # or other snap modes enabled
             if (
                 (transType != "GLOBAL" and inEdit)
                 or snapToPlane
                 or gridSnap
                 or self.snapDigits.hasVal()
-                or (inEdit and (len(freeAxesN) < 3 or angleSnap))
+                or len(freeAxesN) < 3  # Axis constraint - apply even for first point
+                or (inEdit and angleSnap)
             ):
                 # snapToPlane means global constrain axes selection is a plane
                 # refCo is used for axis constraint calculations
