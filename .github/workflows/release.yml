@@ -1,0 +1,64 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create Addon Zip
+        run: |
+          # Create the zip file containing the bezier_utils folder
+          # The zip should extract to bezier_utils/ so Blender can recognize it
+          cd bezier_utils
+          zip -r ../bezier_utils.zip .
+          cd ..
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Bezier Utilities ${{ steps.get_version.outputs.VERSION }}
+          body: |
+            # Bézier Utilities for Blender
+
+            **Version:** ${{ steps.get_version.outputs.VERSION }}
+            **Supported Blender Versions:** 4.2 LTS, 4.3+
+
+            ## Installation
+
+            1. Download `bezier_utils.zip` from the assets below
+            2. Open Blender and select Edit → Preferences
+            3. Click "Add-ons" tab and then "Install Add-on from File"
+            4. Select the downloaded `bezier_utils.zip` file
+            5. Check the 'Bézier Utilities' option in the add-ons dialog
+
+            ## What's New
+
+            See the [README](https://github.com/Shriinivas/blenderbezierutils/blob/master/README.md) for full documentation.
+
+            ## Video Tutorials
+
+            https://www.youtube.com/playlist?list=PLxsh4i5F_h9G6QFoPzKvBRMayz8533fSW
+
+            ## Support
+
+            Report issues at: https://github.com/Shriinivas/blenderbezierutils/issues
+          draft: false
+          prerelease: ${{ contains(steps.get_version.outputs.VERSION, 'beta') || contains(steps.get_version.outputs.VERSION, 'alpha') }}
+          files: |
+            bezier_utils.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
