@@ -1,41 +1,27 @@
-# Bezier Utilities - Blender Addon
+# Bézier Utilities for Blender
 
 **Version:** 1.0.0-beta
 
-This is the modular version of the Bezier Utilities addon for Blender.
+Interactive Bézier curve drawing and editing tools for Blender 4.2+
 
 ## Installation
 
-### For Users
+1. In Blender, go to Edit → Preferences → Add-ons
+2. Click "Install from File"
+3. Select the `bezier_utils.zip` file you downloaded from releases
+4. Enable the "Bézier Utilities" checkbox
 
-Download the latest `bezier_utils.zip` from [Releases](https://github.com/Shriinivas/blenderbezierutils/releases) and install via Blender Preferences → Add-ons → Install from File.
-
-### For Developers
-
-1. Copy or symlink the entire `bezier_utils` directory to your Blender addons folder:
-   - **Linux**: `~/.config/blender/{version}/scripts/addons/`
-   - **macOS**: `~/Library/Application Support/Blender/{version}/scripts/addons/`
-   - **Windows**: `%APPDATA%\Blender Foundation\Blender\{version}\scripts\addons\`
-
-2. Restart Blender or reload scripts (F3 → "Reload Scripts")
-
-3. Enable in: Edit → Preferences → Add-ons → Search "Bezier Utilities"
+The tools will appear in the 3D Viewport toolbar.
 
 ## Documentation
 
-See the main [README](../README.md) for full documentation, features, and usage instructions.
+For complete feature documentation, usage instructions, and examples, see:
+https://github.com/Shriinivas/blenderbezierutils/blob/master/README.md
 
-## Development
+## Video Tutorials
 
-This modular structure makes it easier to navigate, maintain, and extend the codebase.
+https://www.youtube.com/playlist?list=PLxsh4i5F_h9G6QFoPzKvBRMayz8533fSW
 
-### Linting
-```bash
-ruff check .
-```
+## Support
 
-See [CLAUDE.md](CLAUDE.md) for detailed architecture and development guidelines.
-
-## Reporting Issues
-
-Report issues on the [GitHub Issues page](https://github.com/Shriinivas/blenderbezierutils/issues).
+Report issues: https://github.com/Shriinivas/blenderbezierutils/issues
