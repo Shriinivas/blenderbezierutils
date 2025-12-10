@@ -18,9 +18,20 @@ jobs:
         run: |
           # Create the zip file containing the bezier_utils folder
           # The zip should extract to bezier_utils/ so Blender can recognize it
-          cd bezier_utils
-          zip -r ../bezier_utils.zip .
-          cd ..
+          zip -r bezier_utils.zip bezier_utils/ \
+            -x "bezier_utils/__pycache__/*" \
+            -x "bezier_utils/*/__pycache__/*" \
+            -x "bezier_utils/*/*/__pycache__/*" \
+            -x "bezier_utils/.claude/*" \
+            -x "bezier_utils/.git/*" \
+            -x "bezier_utils/.ruff_cache/*" \
+            -x "bezier_utils/.ruff_cache/*/*" \
+            -x "bezier_utils/.docs/*" \
+            -x "bezier_utils/*.pyc" \
+            -x "bezier_utils/*/*.pyc" \
+            -x "bezier_utils/*/*/*.pyc" \
+            -x "bezier_utils/.gitignore" \
+            -x "bezier_utils/CLAUDE.md"
 
       - name: Get version from tag
         id: get_version
