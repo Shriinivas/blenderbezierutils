@@ -156,20 +156,37 @@ class BezierUtilsPanel(Panel):
                 box = layout.box()
                 col = box.column().split()
                 col.prop(params, 'fillType')
-                if(params.fillType == 'QUAD'):
+                if params.fillType == 'QUAD':
                     col = box.column().split()
                     row = col.row()
                     row.prop(params, 'remeshDepth')
                     row.prop(params, 'unsubdivide')
-                else:
+                
+                elif params.fillType in {'GRID', 'OFFSET'}:
                     col = box.column().split()
                     row = col.row()
-                    row.prop(params, 'remeshRes')
-                    row.prop(params, 'remeshApplyTo')
-                    if(params.remeshApplyTo == 'PERSEG'):
-                        col = box.column().split()
-                        row = col.row()
-                        row.prop(params, 'remeshOptimized')
+                    row.prop(params, 'fillDetail')
+                    
+                    if params.fillType == 'OFFSET':
+                        row.prop(params, 'offsetSize')
+                        
+                elif params.fillType == 'QUADRIFLOW':
+                    col = box.column().split()
+                    row = col.row()
+                    row.prop(params, 'quadriflowFaces')
+                    row.prop(params, 'quadriflowSeed')
+                    
+                    col = box.column().split()
+                    row = col.row()
+                    row.prop(params, 'quadriflowPreserveSharp')
+                    row.prop(params, 'quadriflowPreserveBoundary')
+                
+                # Common Params (Curve Resolution) - Valid for all or most
+                # Assuming 'remeshRes' controls the initial curve sampling
+                col = box.column().split()
+                row = col.row()
+                row.prop(params, 'remeshRes') 
+                # row.prop(params, 'remeshApplyTo') # Make optional/advanced? Keeping for now if relevant
                 col = box.column().split()
                 col.operator('object.convert_2d_mesh')
 

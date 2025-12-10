@@ -2180,10 +2180,10 @@ def applyGridRemesh(meshObj, resolution):
 
 def applyOffsetRemesh(meshObj, layers, size):
     """
-    Apply Offset (Inset) Remesh:
+    Apply Offset (Inset) Remesh with Grid Fill Center (Hybrid):
     1. Ensure mesh has a single face.
     2. Iteratively Inset the face to create concentric loops.
-    3. Fill the center.
+    3. Fill the center hole with a Grid Fill (patch).
     """
     bpy.context.view_layer.objects.active = meshObj
     bpy.ops.object.mode_set(mode='EDIT')
@@ -2193,22 +2193,61 @@ def applyOffsetRemesh(meshObj, layers, size):
     
     # 2. Iterative Inset
     for i in range(layers):
-        # Inset
         try:
             bpy.ops.mesh.inset(thickness=size, use_boundary=True, use_even_offset=True)
         except Exception as e:
-            print(f"Inset failed at layer {i}: {e}")
+            print(f"Inset break layer {i}: {e}")
             break
             
     # 3. Fill Center
     # After insets, the selection is the inner-most face(s).
-    # We can try Grid Fill or just leave the N-gon if it's small.
-    # Let's try to simple triangulate the center to avoid N-gons
-    bpy.ops.mesh.quads_convert_to_tris(quad_method='BEAUTY', ngon_method='BEAUTY')
+    # We expect one main hole.
     
-    # Optional: Tris to Quads on center
-    bpy.ops.mesh.tris_convert_to_quads()
+    # Switch to Object mode to analyze selection
+    bpy.ops.object.mode_set(mode='OBJECT')
     
+    # Identify center faces (selected)
+    center_indices = [p.index for p in meshObj.data.polygons if p.select]
+    
+    if center_indices:
+        # Corrections (Odd -> Even) using BMesh
+        bm = bmesh.new()
+        bm.from_mesh(meshObj.data)
+        bm.faces.ensure_lookup_table()
+        
+        needs_update = False
+        for idx in center_indices:
+            # Check range just in case
+            if idx < len(bm.faces):
+                f = bm.faces[idx]
+                if len(f.verts) % 2 != 0:
+                    # Fix: Subdivide one edge
+                    edge = f.edges[0]
+                    bmesh.ops.subdivide_edges(bm, edges=[edge], cuts=1, use_grid_fill=True)
+                    needs_update = True
+        
+        if needs_update:
+            bm.to_mesh(meshObj.data)
+        bm.free()
+        
+        # Now apply Grid Fill
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        # Select center faces (N-gons)
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.mesh.select_face_by_sides(number=4, type='GREATER')
+        
+        try:
+            bpy.ops.mesh.fill_grid(span=0)
+        except Exception as e:
+            print(f"Grid Fill Failed: {e}")
+            # Fallback: Triangulate + Tris to Quads
+            bpy.ops.mesh.quads_convert_to_tris(quad_method='BEAUTY', ngon_method='BEAUTY')
+            bpy.ops.mesh.tris_convert_to_quads()
+
+        # Optional: Smooth the grid fill result to relax vertices
+        bpy.ops.mesh.vertices_smooth(factor=0.5, repeat=2)
+            
     bpy.ops.object.mode_set(mode='OBJECT')
     
     return meshObj
