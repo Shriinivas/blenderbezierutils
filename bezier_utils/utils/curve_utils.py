@@ -2011,3 +2011,204 @@ def buildSplinesFromSegments(curveData, segments, invMW, margin):
             bp.handle_right = invMW @ end
 
         spline.use_cyclic_u = isClosed
+
+
+def applyQuadriflowRemesh(meshObj, target_faces, preserve_sharp, preserve_boundary, seed=0):
+    """
+    Apply Quadriflow remeshing to a mesh object using Blender's built-in operator.
+    """
+    bpy.context.view_layer.objects.active = meshObj
+    
+    # Quadriflow works best on meshes that have some geometry (not just a single N-gon)
+    mod = meshObj.modifiers.new("Triangulate", type="TRIANGULATE")
+    mod.min_vertices = 4
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+
+    # Quadriflow requires volume to work well. Add thickness temporarily.
+    solid = meshObj.modifiers.new("Solidify", type="SOLIDIFY")
+    solid.thickness = 1.0 
+    solid.offset = 0
+    bpy.ops.object.modifier_apply(modifier=solid.name)
+
+    # Mark boundary edges as sharp to help Quadriflow preserve the shape
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.mesh.select_non_manifold() # Selects boundaries
+    bpy.ops.mesh.mark_sharp()
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Use context override to ensure the operator runs on the correct object
+    try:
+        bpy.ops.object.quadriflow_remesh(
+            use_mesh_symmetry=False,
+            use_preserve_sharp=preserve_sharp,
+            use_preserve_boundary=preserve_boundary,
+            preserve_attributes=False,
+            smooth_normals=False,
+            mode='FACES',
+            target_faces=target_faces,
+            seed=seed
+        )
+        
+        # Cleanup extra surfaces (Sides and Bottoms)
+        # We only want the Top surface (Normal Z > 0)
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='DESELECT')
+        
+        # We need to select faces based on normal. 
+        # Since we can't easily iterate bmesh in Edit Mode without switching to Object mode first to update data,
+        # we can toggle modes.
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Identify faces to delete (Side/Bottom)
+        to_delete = []
+        for p in meshObj.data.polygons:
+            # Check normal Z
+            # Assumes object is roughly planar on XY or applied rotation.
+            # Normal Z > 0.5 means facing UP.
+            if p.normal.z < 0.5:
+                p.select = True
+            else:
+                p.select = False
+                
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.delete(type='FACE')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Flatten back to 2D
+        for v in meshObj.data.vertices:
+            v.co.z = 0
+            
+    except Exception as e:
+        print(f"Quadriflow Remesh failed: {e}")
+    
+    return meshObj
+
+
+def applyGridRemesh(meshObj, resolution):
+    """
+    Apply Grid Overlay Remesh:
+    1. Create a quad grid covering the object's bbox using subdivision.
+    2. Extrude the meshObj to act as a cutter.
+    3. Use Boolean Intersect to cut the shape out of the grid.
+    4. Clean up boundaries.
+    """
+    bpy.context.view_layer.objects.active = meshObj
+    
+    # 1. Get Bounding Box
+    bbox_corners = [meshObj.matrix_world @ Vector(corner) for corner in meshObj.bound_box]
+    min_x = min(v.x for v in bbox_corners)
+    max_x = max(v.x for v in bbox_corners)
+    min_y = min(v.y for v in bbox_corners)
+    max_y = max(v.y for v in bbox_corners)
+    
+    # Center and Dimensions
+    center = Vector(((min_x + max_x) / 2, (min_y + max_y) / 2, 0))
+    width = max_x - min_x
+    height = max_y - min_y
+    size = max(width, height)
+    
+    # Add Padding (e.g. 10%)
+    padding = size * 0.1
+    size += padding
+    
+    # 2. Create Grid (Plane)
+    bpy.ops.mesh.primitive_plane_add(size=size, location=center)
+    gridObj = bpy.context.active_object
+    gridObj.name = meshObj.name + "_Grid"
+    
+    # Subdivide Grid
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.subdivide(number_cuts=resolution)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    
+    # 3. Prepare Cutter (meshObj)
+    # Extrude meshObj to ensure it cuts through the grid
+    # meshObj is currently a flat mesh (from convertToMesh). 
+    # We need to make it a volume or just ensure normals are good for 2D boolean.
+    # Blender's "Intersect" Boolean works best with volumes.
+    
+    # Temporarily solidify the cutter
+    cutter = meshObj
+    mod = cutter.modifiers.new("Solidify", type="SOLIDIFY")
+    mod.thickness = 1.0
+    mod.offset = 0
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    
+    # 4. Apply Boolean (Intersect) to Grid
+    bool_mod = gridObj.modifiers.new("Intersect", type="BOOLEAN")
+    bool_mod.operation = 'INTERSECT'
+    bool_mod.object = cutter
+    bool_mod.solver = 'EXACT' # Better for 2D
+    bpy.ops.object.modifier_apply(modifier=bool_mod.name)
+    
+    # 5. Cleanup
+    
+    # Flatten grid (just in case boolean added thickness artifacts)
+    for v in gridObj.data.vertices:
+        v.co.z = 0
+        
+    # Remove cutter
+    original_name = meshObj.name
+    bpy.data.objects.remove(cutter)
+    
+    # Rename grid to appear as the result
+    gridObj.name = original_name # This might conflict if meshObj wasn't removed fully, but here we removed cutter (meshObj)
+    
+    # 6. Intelligent Cleanup (Remove N-gons)
+    bpy.context.view_layer.objects.active = gridObj
+    bpy.ops.object.mode_set(mode='EDIT')
+    
+    # Triangulate N-gons
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.mesh.select_face_by_sides(number=4, type='GREATER')
+    bpy.ops.mesh.quads_convert_to_tris(quad_method='BEAUTY', ngon_method='BEAUTY')
+    
+    # Tris to Quads (on everything, to merge the new triangles)
+    bpy.ops.mesh.select_all(action='SELECT')
+    # ~40 deg threshold
+    bpy.ops.mesh.tris_convert_to_quads(face_threshold=0.698, shape_threshold=0.698)
+    
+    bpy.ops.object.mode_set(mode='OBJECT')
+    
+    # Ensure correct collection linking (grid is created in active collection)
+    # If original was elsewhere, we might need to move it. 
+    # But simpler to assume standard usage.
+    
+    return gridObj
+
+
+def applyOffsetRemesh(meshObj, layers, size):
+    """
+    Apply Offset (Inset) Remesh:
+    1. Ensure mesh has a single face.
+    2. Iteratively Inset the face to create concentric loops.
+    3. Fill the center.
+    """
+    bpy.context.view_layer.objects.active = meshObj
+    bpy.ops.object.mode_set(mode='EDIT')
+    
+    # 1. Ensure clean slate (Select All)
+    bpy.ops.mesh.select_all(action='SELECT')
+    
+    # 2. Iterative Inset
+    for i in range(layers):
+        # Inset
+        try:
+            bpy.ops.mesh.inset(thickness=size, use_boundary=True, use_even_offset=True)
+        except Exception as e:
+            print(f"Inset failed at layer {i}: {e}")
+            break
+            
+    # 3. Fill Center
+    # After insets, the selection is the inner-most face(s).
+    # We can try Grid Fill or just leave the N-gon if it's small.
+    # Let's try to simple triangulate the center to avoid N-gons
+    bpy.ops.mesh.quads_convert_to_tris(quad_method='BEAUTY', ngon_method='BEAUTY')
+    
+    # Optional: Tris to Quads on center
+    bpy.ops.mesh.tris_convert_to_quads()
+    
+    bpy.ops.object.mode_set(mode='OBJECT')
+    
+    return meshObj

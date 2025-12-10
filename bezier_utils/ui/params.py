@@ -66,6 +66,9 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     fillType: EnumProperty(name="Fill Type", items = \
         [("NONE", 'Nothing', "Don't fill at all"),
          ("QUAD", 'Quads', "Fill with quad faces (with Remesh Modifier)"), \
+         ("QUADRIFLOW", 'Quadriflow', "Fill with quads using Quadriflow"), \
+         ("GRID", 'Mesh Grid', "Fill with a Boolean Cut Grid"), \
+         ("OFFSET", 'Offset Loops', "Fill with concentric edge loops"), \
          ("NGON", 'Ngon', "Fill with single ngon face"), \
          ('FAN', 'Triangle Fan', 'File with triangles emanating from center')], \
         description = 'Fill type for converted mesh', default = 'NGON')
@@ -73,6 +76,32 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     remeshRes: IntProperty(name="Resolution", \
         description='Segment resolution (0 for straight edges)', \
         default = 0, min = 0, max = 1000)
+
+    # General Fill Parameters
+    fillDetail: IntProperty(name="Fill Detail", \
+        description='Level of detail for the selected fill type (Grid Res / Offset Layers)', \
+        default = 5, min = 1, max=100)
+
+    offsetSize: FloatProperty(name="Offset Size", \
+        description='Distance between loops (for Offset fill)', \
+        default = 0.5, min = 0.001, max=100.0)
+
+    # Quadriflow Parameters
+    quadriflowFaces: IntProperty(name="Target Faces", \
+        description='Target number of faces for Quadriflow remesh', \
+        default = 1000, min = 10)
+
+    quadriflowPreserveSharp: BoolProperty(name="Preserve Sharp", \
+        description='Preserve sharp edges during remesh', \
+        default = True)
+
+    quadriflowPreserveBoundary: BoolProperty(name="Preserve Boundary", \
+        description='Preserve mesh boundary during remesh', \
+        default = True)
+
+    quadriflowSeed: IntProperty(name="Seed", \
+        description='Random seed for Quadriflow', \
+        default = 0, min = 0)
 
     remeshApplyTo: EnumProperty(name="Apply To", items = \
         [("PERSEG", 'Segment', "Apply resolution to segment separately"), \

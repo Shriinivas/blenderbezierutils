@@ -14,6 +14,10 @@ from ..utils.curve_utils import (
     convertToFace,
     convertToMesh,
     applyMeshModifiers,
+    applyMeshModifiers,
+    applyQuadriflowRemesh,
+    applyGridRemesh,
+    applyOffsetRemesh,
     pasteLength,
 )
 from ..utils.view_utils import exportSVG
@@ -320,14 +324,27 @@ class convertToMeshOp(Operator):
 
         for curve in curves:
             center, normal = None, None
-            if fillType == "QUAD":
+            if fillType == "QUAD" or fillType == "QUADRIFLOW" or fillType == "GRID" or fillType == "OFFSET":
                 for spline in curve.data.splines:
                     spline.use_cyclic_u = True
                 curve.data.dimensions = "2D"
                 curve.data.fill_mode = "BOTH"
                 meshObj = convertToMesh(curve)
 
-                applyMeshModifiers(meshObj, remeshDepth)
+                if fillType == "QUAD":
+                    applyMeshModifiers(meshObj, remeshDepth)
+                elif fillType == "QUADRIFLOW":
+                    applyQuadriflowRemesh(
+                        meshObj, 
+                        params.quadriflowFaces, 
+                        params.quadriflowPreserveSharp, 
+                        params.quadriflowPreserveBoundary,
+                        params.quadriflowSeed
+                    )
+                elif fillType == "GRID":
+                   meshObj = applyGridRemesh(meshObj, params.fillDetail)
+                elif fillType == "OFFSET":
+                    applyOffsetRemesh(meshObj, params.fillDetail, params.offsetSize)
 
                 if unsubdivide:
                     unsubdivideObj(meshObj)
