@@ -73,7 +73,12 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
             ('QUAD', "Quad (Grid)", "Simple Quad Grid"),
             ('GRID', "Mesh Grid", "Overlay Grid (Straight)"),
             ('OFFSET', "Offset Loops", "Contour-aligned Quads (Hybrid)"),
-            ('MEDIAL', "Medial Axis", "Medial axis decomposition with TFI quads"),
+            ('MEDIAL', "Medial Axis", "Offset rings + Grid Fill TFI center"),
+            ('GRID_TFI', "Grid Fill (TFI)", "Direct TFI grid without rings - preserves shape"),
+            ('POLAR', "Polar Grid", "Radial sectors for circles/ellipses"),
+            ('RECT_GRID', "Rectangle Grid", "Axis-aligned grid for rectangles"),
+            ('POLYGON', "Polygon Radial", "Radial sectors for regular polygons"),
+            ('QMORPH', "Q-Morph", "Advancing front quad generation"),
             ('QUADRIFLOW', "Quadriflow", "Organic Quad Remesh"),
             ('FAN', "Fan", "Triangle Fan (Central Vertex)")
         ],

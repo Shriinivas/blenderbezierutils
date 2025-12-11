@@ -240,6 +240,292 @@ class RectangleGridMesher(QuadMeshGenerator):
 
 
 # =============================================================================
+# Grid TFI Mesher - Direct TFI without offset rings
+# =============================================================================
+
+class GridTFIMesher(QuadMeshGenerator):
+    """
+    Direct Grid Fill using Transfinite Interpolation.
+
+    Maps an n-gon boundary directly to a structured quad grid without
+    intermediate offset rings. Preserves boundary shape well and creates
+    clean quad topology.
+
+    Algorithm (Blender's Grid Fill):
+    1. Resample boundary to multiple of 4 vertices
+    2. Identify 4 corners at n/4 intervals
+    3. Map the n-gon to a square grid:
+       - 4 edges become grid boundaries
+       - Interior filled with TFI
+    4. Result: (n/4) × (n/4) quads, no poles
+    """
+
+    def generate(self) -> bpy.types.Object:
+        boundary = self._get_boundary_verts()
+        if len(boundary) < 4:
+            return self._finalize()
+
+        # Detect corners to preserve sharp angles
+        corners = self._detect_corners(boundary)
+
+        # Resample to multiple of 4, preserving corners
+        n = len(boundary)
+        target_n = ((n + 2) // 4) * 4
+        target_n = max(8, target_n)
+
+        # Respect fill_detail to control grid density
+        # fill_detail controls the target edge count (n/4)
+        min_target = self.fill_detail * 4
+        target_n = max(target_n, min_target)
+
+        if n != target_n or corners:
+            boundary = self._resample_preserving_corners(boundary, corners, target_n)
+
+        n = len(boundary)
+        if n < 4 or n % 4 != 0:
+            # Fallback: simple n-gon face
+            verts = [self.bm.verts.new(pt) for pt in boundary]
+            try:
+                self.bm.faces.new(verts)
+            except ValueError:
+                pass
+            return self._finalize()
+
+        # Create boundary vertices in BMesh
+        boundary_verts = [self.bm.verts.new(pt) for pt in boundary]
+
+        # Apply Grid Fill TFI
+        self._grid_fill_tfi(boundary_verts)
+
+        return self._finalize()
+
+    def _detect_corners(self, boundary: List[Vector], angle_thresh: float = 140.0) -> List[int]:
+        """Detect corner vertices (sharp angles) in the boundary."""
+        corners = []
+        n = len(boundary)
+
+        for i in range(n):
+            prev_pt = boundary[(i - 1) % n]
+            curr_pt = boundary[i]
+            next_pt = boundary[(i + 1) % n]
+
+            v1 = (prev_pt - curr_pt)
+            v2 = (next_pt - curr_pt)
+
+            if v1.length < DEF_ERR_MARGIN or v2.length < DEF_ERR_MARGIN:
+                continue
+
+            dot = max(-1.0, min(1.0, v1.normalized().dot(v2.normalized())))
+            angle = degrees(acos(dot))
+
+            if angle < angle_thresh:
+                corners.append(i)
+
+        return corners
+
+    def _resample_preserving_corners(
+        self, boundary: List[Vector], corner_indices: List[int], target_n: int
+    ) -> List[Vector]:
+        """Resample boundary to target count while preserving corner positions."""
+        n = len(boundary)
+
+        if not corner_indices:
+            return self._resample_boundary_uniform(boundary, target_n)
+
+        corner_indices = sorted(corner_indices)
+        n_corners = len(corner_indices)
+
+        remaining = target_n - n_corners
+
+        # Calculate arc lengths between corners
+        arc_lengths = []
+        for i in range(n_corners):
+            start_idx = corner_indices[i]
+            end_idx = corner_indices[(i + 1) % n_corners]
+
+            arc_len = 0.0
+            idx = start_idx
+            while idx != end_idx:
+                next_idx = (idx + 1) % n
+                arc_len += (boundary[next_idx] - boundary[idx]).length
+                idx = next_idx
+            arc_lengths.append(arc_len)
+
+        total_arc = sum(arc_lengths)
+
+        # Distribute vertices proportionally
+        verts_per_segment = []
+        distributed = 0
+        for arc_len in arc_lengths:
+            if total_arc > DEF_ERR_MARGIN:
+                count = int(round(remaining * arc_len / total_arc))
+            else:
+                count = remaining // n_corners
+            verts_per_segment.append(count)
+            distributed += count
+
+        # Adjust for rounding
+        diff = remaining - distributed
+        if diff != 0:
+            longest_idx = arc_lengths.index(max(arc_lengths))
+            verts_per_segment[longest_idx] += diff
+
+        # Build resampled boundary
+        resampled = []
+        for i in range(n_corners):
+            start_idx = corner_indices[i]
+            end_idx = corner_indices[(i + 1) % n_corners]
+            n_intermediate = verts_per_segment[i]
+
+            resampled.append(boundary[start_idx].copy())
+
+            if n_intermediate <= 0:
+                continue
+
+            arc_len = arc_lengths[i]
+            target_spacing = arc_len / (n_intermediate + 1)
+
+            idx = start_idx
+            accumulated = 0.0
+            placed = 0
+
+            while placed < n_intermediate and idx != end_idx:
+                next_idx = (idx + 1) % n
+                edge_vec = boundary[next_idx] - boundary[idx]
+                edge_len = edge_vec.length
+
+                while accumulated + edge_len >= target_spacing * (placed + 1) and placed < n_intermediate:
+                    t = (target_spacing * (placed + 1) - accumulated) / edge_len
+                    t = max(0.0, min(1.0, t))
+                    new_pt = boundary[idx] + edge_vec * t
+                    resampled.append(new_pt.copy())
+                    placed += 1
+
+                accumulated += edge_len
+                idx = next_idx
+
+        return resampled
+
+    def _grid_fill_tfi(self, boundary_verts: List):
+        """
+        Fill n-gon with quads using Grid Fill TFI.
+
+        Maps the n-gon boundary to a square grid where:
+        - n must be multiple of 4
+        - Grid is (n/4 + 1) × (n/4 + 1) vertices
+        - Interior vertices computed via Transfinite Interpolation
+        """
+        n = len(boundary_verts)
+
+        if n < 4:
+            return
+
+        if n == 4:
+            try:
+                self.bm.faces.new(boundary_verts)
+            except ValueError:
+                pass
+            return
+
+        if n % 4 != 0:
+            # Can't make perfect quad grid, create single n-gon
+            try:
+                self.bm.faces.new(boundary_verts)
+            except ValueError:
+                pass
+            return
+
+        # Grid dimensions
+        k = n // 4  # Vertices per edge (not counting shared corner)
+        grid_size = k + 1
+
+        # Identify corners at indices 0, k, 2k, 3k
+        corners = [0, k, 2 * k, 3 * k]
+
+        # Extract the 4 edges
+        edges = []
+        for i in range(4):
+            start = corners[i]
+            end = corners[(i + 1) % 4]
+            if end == 0:
+                end = n
+            edge = [boundary_verts[j % n] for j in range(start, end + 1)]
+            edges.append(edge)
+
+        # Build grid using TFI
+        grid = [[None for _ in range(grid_size)] for _ in range(grid_size)]
+
+        # Fill boundary from edges
+        # Top row (row=0): edge0
+        for col in range(grid_size):
+            if col < len(edges[0]):
+                grid[0][col] = edges[0][col]
+
+        # Right column (col=k): edge1
+        for row in range(grid_size):
+            if row < len(edges[1]):
+                grid[row][grid_size - 1] = edges[1][row]
+
+        # Bottom row (row=k): edge2 reversed
+        for col in range(grid_size):
+            rev_col = grid_size - 1 - col
+            if rev_col < len(edges[2]):
+                grid[grid_size - 1][col] = edges[2][rev_col]
+
+        # Left column (col=0): edge3 reversed
+        for row in range(grid_size):
+            rev_row = grid_size - 1 - row
+            if rev_row < len(edges[3]):
+                grid[row][0] = edges[3][rev_row]
+
+        # Fill interior using TFI
+        center = sum((v.co for v in boundary_verts), Vector((0, 0, 0))) / n
+
+        for row in range(1, grid_size - 1):
+            for col in range(1, grid_size - 1):
+                u = col / (grid_size - 1)
+                v = row / (grid_size - 1)
+
+                # Get boundary points
+                top = grid[0][col].co if grid[0][col] else center
+                bottom = grid[grid_size - 1][col].co if grid[grid_size - 1][col] else center
+                left = grid[row][0].co if grid[row][0] else center
+                right = grid[row][grid_size - 1].co if grid[row][grid_size - 1] else center
+
+                # Get corner points
+                p00 = grid[0][0].co if grid[0][0] else center
+                p10 = grid[0][grid_size - 1].co if grid[0][grid_size - 1] else center
+                p01 = grid[grid_size - 1][0].co if grid[grid_size - 1][0] else center
+                p11 = grid[grid_size - 1][grid_size - 1].co if grid[grid_size - 1][grid_size - 1] else center
+
+                # TFI formula
+                pt = (
+                    (1 - v) * top + v * bottom +
+                    (1 - u) * left + u * right -
+                    (1 - u) * (1 - v) * p00 -
+                    u * (1 - v) * p10 -
+                    (1 - u) * v * p01 -
+                    u * v * p11
+                )
+
+                grid[row][col] = self.bm.verts.new(pt)
+
+        # Create quad faces
+        for row in range(grid_size - 1):
+            for col in range(grid_size - 1):
+                v00 = grid[row][col]
+                v10 = grid[row][col + 1]
+                v01 = grid[row + 1][col]
+                v11 = grid[row + 1][col + 1]
+
+                if v00 and v10 and v01 and v11:
+                    try:
+                        self.bm.faces.new([v00, v10, v11, v01])
+                    except ValueError:
+                        pass
+
+
+# =============================================================================
 # Circle/Ellipse Mesher - True O-Grid topology (no pole)
 # =============================================================================
 
@@ -1842,4 +2128,89 @@ def medial_axis_quad_mesh(
     analysis = detect_shape(curve_obj)
 
     mesher = MedialAxisMesher(mesh_obj, analysis, params)
+    return mesher.generate()
+
+
+def grid_tfi_quad_mesh(
+    mesh_obj: bpy.types.Object,
+    curve_obj: bpy.types.Object,
+    params: dict
+) -> bpy.types.Object:
+    """
+    Entry point for Grid Fill TFI quad meshing.
+
+    Direct TFI grid fill without offset rings - preserves boundary shape
+    and creates clean quad topology by mapping n-gon to square grid.
+    """
+    analysis = detect_shape(curve_obj)
+
+    mesher = GridTFIMesher(mesh_obj, analysis, params)
+    return mesher.generate()
+
+
+def polar_grid_quad_mesh(
+    mesh_obj: bpy.types.Object,
+    curve_obj: bpy.types.Object,
+    params: dict
+) -> bpy.types.Object:
+    """
+    Entry point for Polar Grid quad meshing.
+
+    Uses O-Grid topology optimal for circles and ellipses.
+    Creates radial sectors with no center pole.
+    """
+    analysis = detect_shape(curve_obj)
+
+    mesher = PolarGridMesher(mesh_obj, analysis, params)
+    return mesher.generate()
+
+
+def rectangle_grid_quad_mesh(
+    mesh_obj: bpy.types.Object,
+    curve_obj: bpy.types.Object,
+    params: dict
+) -> bpy.types.Object:
+    """
+    Entry point for Rectangle Grid quad meshing.
+
+    Creates axis-aligned quad grid optimal for rectangles.
+    Uses bilinear TFI for clean quad topology.
+    """
+    analysis = detect_shape(curve_obj)
+
+    mesher = RectangleGridMesher(mesh_obj, analysis, params)
+    return mesher.generate()
+
+
+def polygon_radial_quad_mesh(
+    mesh_obj: bpy.types.Object,
+    curve_obj: bpy.types.Object,
+    params: dict
+) -> bpy.types.Object:
+    """
+    Entry point for Polygon Radial quad meshing.
+
+    Creates radial sectors for regular polygons - each side maps to
+    a trapezoid sector meshed with TFI. No center pole.
+    """
+    analysis = detect_shape(curve_obj)
+
+    mesher = PolygonRadialMesher(mesh_obj, analysis, params)
+    return mesher.generate()
+
+
+def qmorph_quad_mesh(
+    mesh_obj: bpy.types.Object,
+    curve_obj: bpy.types.Object,
+    params: dict
+) -> bpy.types.Object:
+    """
+    Entry point for Q-Morph quad meshing.
+
+    Advancing front algorithm that converts triangulation to quads.
+    Good for convex freeform shapes.
+    """
+    analysis = detect_shape(curve_obj)
+
+    mesher = QMorphMesher(mesh_obj, analysis, params)
     return mesher.generate()

@@ -328,7 +328,11 @@ class convertToMeshOp(Operator):
         
         for curve in curves:
             center, normal = None, None
-            if fillType in {"QUAD", "QUADRIFLOW", "GRID", "OFFSET", "SMART", "MEDIAL"}:
+            advanced_fill_types = {
+                "QUAD", "QUADRIFLOW", "GRID", "OFFSET", "SMART", "MEDIAL",
+                "GRID_TFI", "POLAR", "RECT_GRID", "POLYGON", "QMORPH"
+            }
+            if fillType in advanced_fill_types:
                 for spline in curve.data.splines:
                     spline.use_cyclic_u = True
                 curve.data.dimensions = "2D"
@@ -338,20 +342,32 @@ class convertToMeshOp(Operator):
                 # DEBUG: Print to confirm which fill type is being used
                 print(f"[CONVERT DEBUG] fillType = {fillType}")
 
+                mesh_params = {
+                    'fillDetail': params.fillDetail,
+                    'offsetSize': params.offsetSize,
+                }
+
                 if fillType == "SMART":
-                    print("[CONVERT DEBUG] Using SMART quad mesh")
                     from ..utils.quad_meshing import smart_quad_mesh
-                    meshObj = smart_quad_mesh(meshObj, curve, {
-                        'fillDetail': params.fillDetail,
-                        'offsetSize': params.offsetSize,
-                    })
+                    meshObj = smart_quad_mesh(meshObj, curve, mesh_params)
                 elif fillType == "MEDIAL":
-                    print("[CONVERT DEBUG] Using MEDIAL axis quad mesh")
                     from ..utils.quad_meshing import medial_axis_quad_mesh
-                    meshObj = medial_axis_quad_mesh(meshObj, curve, {
-                        'fillDetail': params.fillDetail,
-                        'offsetSize': params.offsetSize,
-                    })
+                    meshObj = medial_axis_quad_mesh(meshObj, curve, mesh_params)
+                elif fillType == "GRID_TFI":
+                    from ..utils.quad_meshing import grid_tfi_quad_mesh
+                    meshObj = grid_tfi_quad_mesh(meshObj, curve, mesh_params)
+                elif fillType == "POLAR":
+                    from ..utils.quad_meshing import polar_grid_quad_mesh
+                    meshObj = polar_grid_quad_mesh(meshObj, curve, mesh_params)
+                elif fillType == "RECT_GRID":
+                    from ..utils.quad_meshing import rectangle_grid_quad_mesh
+                    meshObj = rectangle_grid_quad_mesh(meshObj, curve, mesh_params)
+                elif fillType == "POLYGON":
+                    from ..utils.quad_meshing import polygon_radial_quad_mesh
+                    meshObj = polygon_radial_quad_mesh(meshObj, curve, mesh_params)
+                elif fillType == "QMORPH":
+                    from ..utils.quad_meshing import qmorph_quad_mesh
+                    meshObj = qmorph_quad_mesh(meshObj, curve, mesh_params)
                 elif fillType == "QUAD":
                     applyMeshModifiers(meshObj, remeshDepth)
                 elif fillType == "QUADRIFLOW":

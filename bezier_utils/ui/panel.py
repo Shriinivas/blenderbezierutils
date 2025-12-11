@@ -187,6 +187,11 @@ class BezierUtilsPanel(Panel):
                     row.prop(params, 'fillDetail')
                     row.prop(params, 'offsetSize')
 
+                elif params.fillType in {'GRID_TFI', 'POLAR', 'RECT_GRID', 'POLYGON', 'QMORPH'}:
+                    col = box.column().split()
+                    row = col.row()
+                    row.prop(params, 'fillDetail')
+
                 # Common Params (Curve Resolution) - Valid for all or most
                 # Assuming 'remeshRes' controls the initial curve sampling
                 col = box.column().split()
