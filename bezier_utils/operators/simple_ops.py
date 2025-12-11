@@ -14,14 +14,16 @@ from ..utils.curve_utils import (
     convertToFace,
     convertToMesh,
     applyMeshModifiers,
-    applyMeshModifiers,
     applyQuadriflowRemesh,
     applyGridRemesh,
     applyOffsetRemesh,
     pasteLength,
+    removeDupliVert,
+    unsubdivideObj,
 )
 from ..utils.view_utils import exportSVG
-from ..utils.object_utils import shiftOrigin, shiftMatrixWorld
+from ..utils.object_utils import shiftOrigin, shiftMatrixWorld, getObjBBoxCenter
+from .modal_ops import NestedListSearch
 
 
 # Import operators will be added here after extraction
@@ -174,6 +176,7 @@ class SelectInCollOp(Operator):
             for obj in bpy.context.selected_objects:
                 collections = obj.users_collection
                 for collection in collections:
+
                     objs = [o for o in collection.objects]
                     idx = objs.index(obj)
                     for i, o in enumerate(objs[idx:]):
@@ -315,34 +318,52 @@ class convertToMeshOp(Operator):
             if o in bpy.context.selected_objects and isBezier(o)
         ]
         params = bpy.context.window_manager.bezierToolkitParams
+        
         remeshDepth = params.remeshDepth
         unsubdivide = params.unsubdivide
         fillType = params.fillType
         optimized = params.remeshOptimized
         remeshRes = params.remeshRes
         perSeg = params.remeshApplyTo == "PERSEG"
-
+        
         for curve in curves:
             center, normal = None, None
-            if fillType == "QUAD" or fillType == "QUADRIFLOW" or fillType == "GRID" or fillType == "OFFSET":
+            if fillType in {"QUAD", "QUADRIFLOW", "GRID", "OFFSET", "SMART", "MEDIAL"}:
                 for spline in curve.data.splines:
                     spline.use_cyclic_u = True
                 curve.data.dimensions = "2D"
                 curve.data.fill_mode = "BOTH"
                 meshObj = convertToMesh(curve)
 
-                if fillType == "QUAD":
+                # DEBUG: Print to confirm which fill type is being used
+                print(f"[CONVERT DEBUG] fillType = {fillType}")
+
+                if fillType == "SMART":
+                    print("[CONVERT DEBUG] Using SMART quad mesh")
+                    from ..utils.quad_meshing import smart_quad_mesh
+                    meshObj = smart_quad_mesh(meshObj, curve, {
+                        'fillDetail': params.fillDetail,
+                        'offsetSize': params.offsetSize,
+                    })
+                elif fillType == "MEDIAL":
+                    print("[CONVERT DEBUG] Using MEDIAL axis quad mesh")
+                    from ..utils.quad_meshing import medial_axis_quad_mesh
+                    meshObj = medial_axis_quad_mesh(meshObj, curve, {
+                        'fillDetail': params.fillDetail,
+                        'offsetSize': params.offsetSize,
+                    })
+                elif fillType == "QUAD":
                     applyMeshModifiers(meshObj, remeshDepth)
                 elif fillType == "QUADRIFLOW":
                     applyQuadriflowRemesh(
-                        meshObj, 
-                        params.quadriflowFaces, 
-                        params.quadriflowPreserveSharp, 
+                        meshObj,
+                        params.quadriflowFaces,
+                        params.quadriflowPreserveSharp,
                         params.quadriflowPreserveBoundary,
                         params.quadriflowSeed
                     )
                 elif fillType == "GRID":
-                   meshObj = applyGridRemesh(meshObj, params.fillDetail)
+                    meshObj = applyGridRemesh(meshObj, params.fillDetail)
                 elif fillType == "OFFSET":
                     applyOffsetRemesh(meshObj, params.fillDetail, params.offsetSize)
 
@@ -355,6 +376,7 @@ class convertToMeshOp(Operator):
 
             meshObj.matrix_world = curve.matrix_world.copy()
             meshObj.select_set(True)
+            context.view_layer.objects.active = meshObj
             if center is not None and normal is not None:
                 newOrig = meshObj.matrix_world @ center
                 shiftOrigin(meshObj, newOrig)

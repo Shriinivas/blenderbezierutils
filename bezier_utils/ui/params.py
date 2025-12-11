@@ -63,15 +63,22 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         description = 'Handle type of the control points',
         default = 'ALIGNED')
 
-    fillType: EnumProperty(name="Fill Type", items = \
-        [("NONE", 'Nothing', "Don't fill at all"),
-         ("QUAD", 'Quads', "Fill with quad faces (with Remesh Modifier)"), \
-         ("QUADRIFLOW", 'Quadriflow', "Fill with quads using Quadriflow"), \
-         ("GRID", 'Mesh Grid', "Fill with a Boolean Cut Grid"), \
-         ("OFFSET", 'Offset Loops', "Fill with concentric edge loops"), \
-         ("NGON", 'Ngon', "Fill with single ngon face"), \
-         ('FAN', 'Triangle Fan', 'File with triangles emanating from center')], \
-        description = 'Fill type for converted mesh', default = 'NGON')
+    fillType: EnumProperty(
+        name="Fill Type",
+        description="Method to fill the curve",
+        items=[
+            ('SMART', "Smart (Auto)", "Auto-detect shape and use optimal quad algorithm"),
+            ('NGON', "N-gon", "Single face"),
+            ('TRI', "Triangle", "Triangulated mesh"),
+            ('QUAD', "Quad (Grid)", "Simple Quad Grid"),
+            ('GRID', "Mesh Grid", "Overlay Grid (Straight)"),
+            ('OFFSET', "Offset Loops", "Contour-aligned Quads (Hybrid)"),
+            ('MEDIAL', "Medial Axis", "Medial axis decomposition with TFI quads"),
+            ('QUADRIFLOW', "Quadriflow", "Organic Quad Remesh"),
+            ('FAN', "Fan", "Triangle Fan (Central Vertex)")
+        ],
+        default='SMART'
+    )
 
     remeshRes: IntProperty(name="Resolution", \
         description='Segment resolution (0 for straight edges)', \

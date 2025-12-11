@@ -175,12 +175,18 @@ class BezierUtilsPanel(Panel):
                     row = col.row()
                     row.prop(params, 'quadriflowFaces')
                     row.prop(params, 'quadriflowSeed')
-                    
+
                     col = box.column().split()
                     row = col.row()
                     row.prop(params, 'quadriflowPreserveSharp')
                     row.prop(params, 'quadriflowPreserveBoundary')
-                
+
+                elif params.fillType in {'SMART', 'MEDIAL'}:
+                    col = box.column().split()
+                    row = col.row()
+                    row.prop(params, 'fillDetail')
+                    row.prop(params, 'offsetSize')
+
                 # Common Params (Curve Resolution) - Valid for all or most
                 # Assuming 'remeshRes' controls the initial curve sampling
                 col = box.column().split()

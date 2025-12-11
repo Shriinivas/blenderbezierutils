@@ -31,6 +31,26 @@ EVT_META_OR_SNAP = 2
 
 GP_CONTEXT_MODE = 'PAINT_GREASE_PENCIL'
 
+# Shape Detection Thresholds (for Smart Quad Meshing)
+SHAPE_CIRCULARITY_CIRCLE_THRESH = 0.95   # Min circularity to classify as circle
+SHAPE_CIRCULARITY_ELLIPSE_THRESH = 0.85  # Min circularity to classify as ellipse
+SHAPE_ANGLE_TOLERANCE = 15.0             # Degrees tolerance for corner angle detection
+SHAPE_SIDE_VARIANCE_THRESH = 0.1         # Max 10% variance for regular polygon sides
+SHAPE_ASPECT_RATIO_CIRCLE_MIN = 0.9      # Min aspect ratio for circle (vs ellipse)
+SHAPE_ASPECT_RATIO_CIRCLE_MAX = 1.1      # Max aspect ratio for circle (vs ellipse)
+SHAPE_DETECTION_SAMPLE_RES = 100         # Number of samples for shape analysis
+SHAPE_MIN_CORNER_ANGLE = 30.0            # Min angle (degrees) to detect as corner
+SHAPE_MAX_CORNER_ANGLE = 150.0           # Max angle (degrees) to detect as corner
+
+# Q-Morph Algorithm Thresholds
+QMORPH_END_ANGLE_THRESH = 75.0           # Angle < this → END state (sharp corner)
+QMORPH_SIDE_ANGLE_THRESH = 135.0         # Angle < this → SIDE state, else CLOSE
+QMORPH_MAX_ITERATIONS = 10000            # Safety limit for main loop
+
+# Medial Axis Algorithm Parameters
+MEDIAL_AXIS_PRUNE_RATIO = 0.1            # Prune branches shorter than 10% of max radius
+MEDIAL_AXIS_SAMPLE_DENSITY = 2.0         # Samples per unit length for Voronoi
+
 # Transform Orientation/Origin Presets
 # Format: (orient_value, origin_value, display_name, description)
 TRANSFORM_PRESETS = [
