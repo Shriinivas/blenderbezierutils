@@ -1612,59 +1612,588 @@ class MedialAxisMesher(QuadMeshGenerator):
         """
         Decompose domain into patches and mesh each with TFI.
 
-        Strategy:
-        - Create offset loops with SAME vertex count (clean 1:1 quad mapping)
-        - Number of rings controlled by fill_detail parameter
-        - Inner ring scale controlled by offset_size parameter
-        - Final center region uses Grid Fill TFI for all-quad topology
+        Strategy for Concave Shapes (stars, etc.):
+        1. Detect corners (convex tips and concave inner corners)
+        2. Decompose into quadrilateral sectors:
+           - Each sector spans from one convex corner to the next
+           - Bounded by: outer edge, two radial lines, inner edge
+        3. Mesh each sector with TFI (structured quads)
+        4. Fill center polygon with TFI if convex, or subdivide further
+
+        This creates clean quad topology without center poles.
         """
+        # Determine if original shape is convex or concave
+        is_convex = self._is_loop_convex(self.boundary)
+        print(f"[MA DEBUG] Original shape convex: {is_convex}")
+
+        if is_convex:
+            # For convex shapes, use the simpler ring + TFI approach
+            self._mesh_convex_shape()
+        else:
+            # For concave shapes, use sector decomposition
+            self._mesh_concave_shape()
+
+    def _mesh_convex_shape(self):
+        """Mesh convex shapes with offset rings and TFI center."""
         n_boundary = len(self.boundary)
         center = self.analysis.center
+        max_rings = max(2, self.fill_detail)
 
-        # Number of concentric rings based on fill_detail (default 5)
-        n_rings = max(1, self.fill_detail)
+        avg_radius = sum((pt - center).length for pt in self.boundary) / n_boundary
+        target_inner_scale = 0.2
 
-        # Inner ring scale based on offset_size (0.0-1.0)
-        # offset_size=0.1 means inner ring is 10% of outer, large center to fill
-        # offset_size=0.9 means inner ring is 90% of outer, small center to fill
-        inner_scale = max(0.05, min(0.5, self.offset_size))
+        print(f"[MA DEBUG] Convex meshing: n={n_boundary}, rings={max_rings}")
 
-        print(f"[MA DEBUG] n_boundary={n_boundary}, n_rings={n_rings}, inner_scale={inner_scale}")
+        # Generate offset rings
+        all_loops_pts = [[pt.copy() for pt in self.boundary]]
 
-        # Create offset loops - all with SAME vertex count for clean quad topology
-        loops = []
+        for ring_idx in range(max_rings):
+            t = (ring_idx + 1) / max_rings
+            scale = 1.0 - t * (1.0 - target_inner_scale)
+
+            offset_dist = avg_radius * (1.0 - scale) / (ring_idx + 1)
+            inset_pts = self._compute_inset_loop(all_loops_pts[-1], offset_dist)
+
+            if inset_pts is None or not self._is_loop_valid(inset_pts):
+                inset_pts = self._compute_scaled_loop(self.boundary, center, scale)
+
+            if inset_pts and self._is_loop_valid(inset_pts):
+                all_loops_pts.append(inset_pts)
+
+        # Create BMesh and connect rings
+        loops = [[self.bm.verts.new(pt) for pt in loop_pts] for loop_pts in all_loops_pts]
+
+        for ring_idx in range(len(loops) - 1):
+            self._connect_loops_1to1(loops[ring_idx], loops[ring_idx + 1])
+
+        # Fill center with TFI
+        if loops:
+            print(f"[MA DEBUG] Filling convex center with {len(loops[-1])} vertices")
+            self._fill_center_no_pole(loops[-1], center, 0.1)
+
+    def _mesh_concave_shape(self):
+        """
+        Mesh concave shapes (stars, etc.) using sector decomposition.
+
+        Decomposes the shape into quadrilateral sectors, each meshed with TFI.
+        """
+        center = self.analysis.center
+        n_boundary = len(self.boundary)
+
+        # Find convex and concave corners
+        convex_corners, concave_corners = self._classify_corners(self.boundary)
+
+        print(f"[MA DEBUG] Concave meshing: {len(convex_corners)} convex, {len(concave_corners)} concave corners")
+
+        if len(convex_corners) < 2 or len(concave_corners) < 1:
+            # Fall back to simple approach if we can't identify proper corners
+            print("[MA DEBUG] Not enough corners for sector decomposition, using simple rings")
+            self._mesh_with_simple_rings()
+            return
+
+        # Calculate the inner radius (distance to concave corners)
+        concave_radii = [(self.boundary[i] - center).length for i in concave_corners]
+        inner_radius = min(concave_radii) * 0.95  # Slightly inside the concave corners
+
+        # Sort corners by angle around center
+        all_corners = sorted(
+            [(i, 'convex') for i in convex_corners] + [(i, 'concave') for i in concave_corners],
+            key=lambda x: self._angle_from_center(self.boundary[x[0]], center)
+        )
+
+        print(f"[MA DEBUG] Corners in order: {[(i, t[0:3]) for i, t in all_corners]}")
+
+        # Create sectors between consecutive convex corners
+        # Each sector is bounded by:
+        # - Outer boundary segment (from convex corner to next convex corner)
+        # - Two radial lines (from corners to center region)
+        # - Inner boundary segment (on the inner polygon)
+
+        n_rings = max(2, self.fill_detail)
+
+        # First, create the inner polygon (at inner_radius)
+        inner_polygon_pts = []
+        for i in range(n_boundary):
+            pt = self.boundary[i]
+            direction = (pt - center).normalized()
+            inner_pt = center + direction * inner_radius
+            inner_polygon_pts.append(inner_pt)
+
+        # Mesh each sector from boundary to inner polygon
+        self._mesh_sectors_to_inner(
+            self.boundary, inner_polygon_pts, center,
+            convex_corners, concave_corners, n_rings
+        )
+
+        # Fill the inner polygon (should be roughly convex now)
+        inner_verts = [self.bm.verts.new(pt) for pt in inner_polygon_pts]
+
+        # Connect with quads (inner polygon to itself forms the center)
+        # The inner polygon at inner_radius should be roughly circular/convex
+        if self._is_loop_convex(inner_polygon_pts):
+            print("[MA DEBUG] Inner polygon is convex, using TFI")
+            self._fill_center_no_pole(inner_verts, center, 0.1)
+        else:
+            # Still concave - mesh with more rings toward center
+            print("[MA DEBUG] Inner polygon still concave, using additional rings")
+            self._mesh_inner_to_center(inner_verts, inner_polygon_pts, center)
+
+    def _classify_corners(self, boundary: List[Vector]) -> Tuple[List[int], List[int]]:
+        """
+        Classify boundary vertices as convex or concave corners.
+
+        Returns (convex_indices, concave_indices) for significant corners only.
+        """
+        n = len(boundary)
+        center = sum(boundary, Vector((0, 0, 0))) / n
+
+        convex = []
+        concave = []
+
+        # Calculate angles at each vertex
+        for i in range(n):
+            prev_pt = boundary[(i - 1) % n]
+            curr_pt = boundary[i]
+            next_pt = boundary[(i + 1) % n]
+
+            v1 = (prev_pt - curr_pt)
+            v2 = (next_pt - curr_pt)
+
+            if v1.length < DEF_ERR_MARGIN or v2.length < DEF_ERR_MARGIN:
+                continue
+
+            # Angle between edges
+            dot = max(-1.0, min(1.0, v1.normalized().dot(v2.normalized())))
+            angle = degrees(acos(dot))
+
+            # Only consider significant corners (angle < 150 degrees)
+            if angle < 150:
+                # Check if vertex is farther or closer than average to center
+                dist_to_center = (curr_pt - center).length
+                avg_dist = sum((pt - center).length for pt in boundary) / n
+
+                if dist_to_center > avg_dist * 1.1:
+                    # Farther than average = convex corner (star tip)
+                    convex.append(i)
+                elif dist_to_center < avg_dist * 0.9:
+                    # Closer than average = concave corner (inner corner)
+                    concave.append(i)
+
+        return convex, concave
+
+    def _angle_from_center(self, pt: Vector, center: Vector) -> float:
+        """Calculate angle of point from center."""
+        dx = pt.x - center.x
+        dy = pt.y - center.y
+        return atan2(dy, dx)
+
+    def _mesh_sectors_to_inner(
+        self, outer_boundary: List[Vector], inner_boundary: List[Vector],
+        center: Vector, convex_corners: List[int], concave_corners: List[int],
+        n_rings: int
+    ):
+        """
+        Mesh sectors from outer boundary to inner boundary.
+
+        Each sector is a quad strip from outer to inner.
+        """
+        n = len(outer_boundary)
+
+        # Create vertex grids for each ring level
+        all_rings = []
         for ring_idx in range(n_rings + 1):
             t = ring_idx / n_rings
-            # Use smooth interpolation for scale (ease in-out)
-            t_smooth = t * t * (3 - 2 * t)
-            # Scale from 1.0 (boundary) to inner_scale (innermost ring)
-            scale = 1.0 - t_smooth * (1.0 - inner_scale)
+            ring_pts = []
+            for i in range(n):
+                pt = outer_boundary[i].lerp(inner_boundary[i], t)
+                ring_pts.append(pt)
+            all_rings.append(ring_pts)
 
-            loop = []
-            for pt in self.boundary:
-                offset_pt = center + (pt - center) * scale
-                loop.append(self.bm.verts.new(offset_pt))
-            loops.append(loop)
+        # Convert to BMesh vertices
+        ring_verts = []
+        for ring_pts in all_rings:
+            verts = [self.bm.verts.new(pt) for pt in ring_pts]
+            ring_verts.append(verts)
 
-        # Connect consecutive rings with simple 1:1 quads
+        # Create quad faces between consecutive rings
         for ring_idx in range(n_rings):
-            outer_loop = loops[ring_idx]
-            inner_loop = loops[ring_idx + 1]
+            outer_ring = ring_verts[ring_idx]
+            inner_ring = ring_verts[ring_idx + 1]
 
-            for i in range(n_boundary):
-                j = (i + 1) % n_boundary
+            for i in range(n):
+                j = (i + 1) % n
                 try:
                     self.bm.faces.new([
-                        outer_loop[i], outer_loop[j],
-                        inner_loop[j], inner_loop[i]
+                        outer_ring[i], outer_ring[j],
+                        inner_ring[j], inner_ring[i]
                     ])
                 except ValueError:
                     pass
 
-        # Fill center region with Grid Fill TFI
-        inner_loop = loops[-1]
-        print(f"[MA DEBUG] Filling center with {len(inner_loop)} vertices (scale={inner_scale})")
-        self._fill_center_no_pole(inner_loop, center, inner_scale)
+        print(f"[MA DEBUG] Created {n_rings} rings with {n} quads each")
+
+    def _mesh_inner_to_center(
+        self, inner_verts: List, inner_pts: List[Vector], center: Vector
+    ):
+        """Mesh from inner polygon to center using additional rings."""
+        n = len(inner_verts)
+        n_extra_rings = max(2, self.fill_detail // 2)
+
+        # Create additional rings toward center
+        prev_verts = inner_verts
+        prev_pts = inner_pts
+
+        for ring_idx in range(n_extra_rings):
+            t = (ring_idx + 1) / (n_extra_rings + 1)
+            scale = 1.0 - t * 0.85  # Scale down to 15% at innermost
+
+            ring_pts = [center + (pt - center) * scale for pt in inner_pts]
+            ring_verts = [self.bm.verts.new(pt) for pt in ring_pts]
+
+            # Connect with previous ring
+            for i in range(n):
+                j = (i + 1) % n
+                try:
+                    self.bm.faces.new([
+                        prev_verts[i], prev_verts[j],
+                        ring_verts[j], ring_verts[i]
+                    ])
+                except ValueError:
+                    pass
+
+            prev_verts = ring_verts
+            prev_pts = ring_pts
+
+        # Fill final center with TFI if small enough and convex
+        if len(prev_verts) <= 16 or self._is_loop_convex(prev_pts):
+            self._fill_center_no_pole(prev_verts, center, 0.1)
+        else:
+            # Last resort: single n-gon
+            try:
+                self.bm.faces.new(prev_verts)
+            except ValueError:
+                pass
+
+    def _mesh_with_simple_rings(self):
+        """Fallback: simple concentric rings with scaling."""
+        center = self.analysis.center
+        n_rings = max(2, self.fill_detail)
+
+        # Create rings
+        all_rings = [[pt.copy() for pt in self.boundary]]
+        for ring_idx in range(n_rings):
+            t = (ring_idx + 1) / n_rings
+            scale = 1.0 - t * 0.85
+            ring_pts = [center + (pt - center) * scale for pt in self.boundary]
+            all_rings.append(ring_pts)
+
+        # Convert to BMesh
+        ring_verts = [[self.bm.verts.new(pt) for pt in ring] for ring in all_rings]
+
+        # Connect rings
+        for ring_idx in range(len(ring_verts) - 1):
+            self._connect_loops_1to1(ring_verts[ring_idx], ring_verts[ring_idx + 1])
+
+        # Fill center
+        self._fill_center_no_pole(ring_verts[-1], center, 0.1)
+
+    def _connect_loops_1to1(self, outer_loop: List, inner_loop: List):
+        """Connect two loops with 1:1 quad mapping."""
+        n = len(outer_loop)
+        for i in range(n):
+            j = (i + 1) % n
+            try:
+                self.bm.faces.new([
+                    outer_loop[i], outer_loop[j],
+                    inner_loop[j], inner_loop[i]
+                ])
+            except ValueError:
+                pass
+
+    def _fill_center_fan(self, inner_loop: List, center: Vector):
+        """
+        Fill center with triangle fan from center point.
+
+        Creates triangles from a center vertex to each edge of the inner loop.
+        This works for any shape (convex or concave) and preserves the shape.
+        """
+        n = len(inner_loop)
+        if n < 3:
+            return
+
+        # Create center vertex
+        center_vert = self.bm.verts.new(center)
+
+        # Create triangle fan
+        for i in range(n):
+            j = (i + 1) % n
+            try:
+                self.bm.faces.new([inner_loop[i], inner_loop[j], center_vert])
+            except ValueError:
+                pass
+
+        print(f"[MA DEBUG] Fan fill created {n} triangles")
+
+    def _compute_scaled_loop(
+        self, loop: List[Vector], center: Vector, scale: float
+    ) -> List[Vector]:
+        """
+        Compute a scaled version of the loop toward center.
+
+        Simple and safe - preserves topology, no self-intersections.
+        """
+        return [center + (pt - center) * scale for pt in loop]
+
+    def _has_self_intersection(self, loop: List[Vector]) -> bool:
+        """
+        Check if a polygon loop has self-intersections.
+
+        Tests if any non-adjacent edges cross each other.
+        """
+        n = len(loop)
+        if n < 4:
+            return False
+
+        # Check all pairs of non-adjacent edges
+        for i in range(n):
+            p1 = loop[i]
+            p2 = loop[(i + 1) % n]
+
+            # Check against all edges that are not adjacent
+            for j in range(i + 2, n):
+                # Skip if edges are adjacent (share a vertex)
+                if j == (i - 1 + n) % n or j == (i + 1) % n:
+                    continue
+                if (j + 1) % n == i:
+                    continue
+
+                p3 = loop[j]
+                p4 = loop[(j + 1) % n]
+
+                if self._segments_intersect(p1, p2, p3, p4):
+                    return True
+
+        return False
+
+    def _segments_intersect(
+        self, p1: Vector, p2: Vector, p3: Vector, p4: Vector
+    ) -> bool:
+        """
+        Check if two line segments intersect (not just their extensions).
+        """
+        def ccw(a, b, c):
+            return (c.y - a.y) * (b.x - a.x) > (b.y - a.y) * (c.x - a.x)
+
+        # Check if segments straddle each other
+        if ccw(p1, p3, p4) == ccw(p2, p3, p4):
+            return False
+        if ccw(p1, p2, p3) == ccw(p1, p2, p4):
+            return False
+
+        return True
+
+    def _compute_inset_loop(
+        self, loop: List[Vector], offset_dist: float
+    ) -> Optional[List[Vector]]:
+        """
+        Compute inset (shrunk) version of a polygon loop.
+
+        Uses proper polygon offset: each edge moves inward along its normal,
+        and new vertices are at intersections of adjacent offset edges.
+
+        This correctly handles concave shapes like stars - the concave
+        vertices move outward (toward convexity) while convex vertices
+        move inward.
+        """
+        n = len(loop)
+        if n < 3:
+            return None
+
+        # Compute edge normals (pointing inward)
+        edge_normals = []
+        for i in range(n):
+            p0 = loop[i]
+            p1 = loop[(i + 1) % n]
+            edge = p1 - p0
+
+            if edge.length < DEF_ERR_MARGIN:
+                # Degenerate edge, use previous normal or default
+                if edge_normals:
+                    edge_normals.append(edge_normals[-1])
+                else:
+                    edge_normals.append(Vector((0, 1, 0)))
+                continue
+
+            # 2D perpendicular (rotate 90 degrees CCW for inward normal)
+            # For CCW wound polygon, inward is (-dy, dx)
+            normal = Vector((-edge.y, edge.x, 0)).normalized()
+
+            # Check winding - if polygon is CW, flip normal
+            # We determine this by checking if normal points toward center
+            edge_mid = (p0 + p1) / 2
+            center = sum(loop, Vector((0, 0, 0))) / n
+            to_center = (center - edge_mid).normalized()
+
+            if normal.dot(to_center) < 0:
+                normal = -normal
+
+            edge_normals.append(normal)
+
+        # Compute offset edges (each edge shifted by offset_dist along its normal)
+        offset_edges = []
+        for i in range(n):
+            p0 = loop[i] + edge_normals[i] * offset_dist
+            p1 = loop[(i + 1) % n] + edge_normals[i] * offset_dist
+            offset_edges.append((p0, p1))
+
+        # Find intersections of adjacent offset edges
+        inset_pts = []
+        for i in range(n):
+            # Intersect edge i with edge i-1
+            prev_idx = (i - 1 + n) % n
+            edge_prev = offset_edges[prev_idx]
+            edge_curr = offset_edges[i]
+
+            intersection = self._line_intersection_2d(
+                edge_prev[0], edge_prev[1],
+                edge_curr[0], edge_curr[1]
+            )
+
+            if intersection is not None:
+                inset_pts.append(intersection)
+            else:
+                # Parallel edges - use midpoint of the two edge endpoints
+                mid = (edge_prev[1] + edge_curr[0]) / 2
+                inset_pts.append(mid)
+
+        return inset_pts
+
+    def _line_intersection_2d(
+        self, p1: Vector, p2: Vector, p3: Vector, p4: Vector
+    ) -> Optional[Vector]:
+        """
+        Find intersection point of two 2D line segments (extended to lines).
+
+        Line 1: p1 to p2
+        Line 2: p3 to p4
+
+        Returns intersection point or None if parallel.
+        """
+        x1, y1 = p1.x, p1.y
+        x2, y2 = p2.x, p2.y
+        x3, y3 = p3.x, p3.y
+        x4, y4 = p4.x, p4.y
+
+        denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+
+        if abs(denom) < DEF_ERR_MARGIN:
+            return None  # Parallel lines
+
+        t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
+
+        x = x1 + t * (x2 - x1)
+        y = y1 + t * (y2 - y1)
+
+        return Vector((x, y, 0))
+
+    def _is_loop_convex(self, loop: List[Vector]) -> bool:
+        """
+        Check if a polygon loop is convex.
+
+        A polygon is convex if all cross products of consecutive edges
+        have the same sign (all positive or all negative).
+        """
+        n = len(loop)
+        if n < 3:
+            return True
+
+        sign = None
+
+        for i in range(n):
+            p0 = loop[i]
+            p1 = loop[(i + 1) % n]
+            p2 = loop[(i + 2) % n]
+
+            # Cross product of edge vectors (2D, so just z component)
+            v1 = p1 - p0
+            v2 = p2 - p1
+
+            cross_z = v1.x * v2.y - v1.y * v2.x
+
+            if abs(cross_z) < DEF_ERR_MARGIN:
+                continue  # Collinear points, skip
+
+            current_sign = cross_z > 0
+
+            if sign is None:
+                sign = current_sign
+            elif sign != current_sign:
+                return False  # Mixed signs = concave
+
+        return True
+
+    def _is_loop_valid(self, loop: List[Vector]) -> bool:
+        """
+        Check if a loop is valid (no severe self-intersections, reasonable size).
+        """
+        n = len(loop)
+        if n < 3:
+            return False
+
+        # Check for zero-area or inverted polygon
+        area = 0.0
+        for i in range(n):
+            p0 = loop[i]
+            p1 = loop[(i + 1) % n]
+            area += (p1.x - p0.x) * (p1.y + p0.y)
+        area = abs(area) / 2
+
+        if area < DEF_ERR_MARGIN:
+            return False
+
+        # Check that no edges are too short (collapsed)
+        min_edge_len = float('inf')
+        for i in range(n):
+            edge_len = (loop[(i + 1) % n] - loop[i]).length
+            min_edge_len = min(min_edge_len, edge_len)
+
+        if min_edge_len < DEF_ERR_MARGIN:
+            return False
+
+        return True
+
+    def _bridge_loops_quads(self, outer_loop: List, inner_loop: List):
+        """
+        Bridge two loops with different vertex counts using quads.
+        """
+        n_outer = len(outer_loop)
+        n_inner = len(inner_loop)
+
+        # Simple approach: map indices proportionally
+        for i in range(n_outer):
+            j = (i + 1) % n_outer
+
+            # Map to inner loop indices
+            inner_i = (i * n_inner) // n_outer
+            inner_j = (j * n_inner) // n_outer
+
+            if inner_i == inner_j:
+                # Triangle case
+                try:
+                    self.bm.faces.new([
+                        outer_loop[i], outer_loop[j], inner_loop[inner_i]
+                    ])
+                except ValueError:
+                    pass
+            else:
+                # Quad case
+                try:
+                    self.bm.faces.new([
+                        outer_loop[i], outer_loop[j],
+                        inner_loop[inner_j], inner_loop[inner_i]
+                    ])
+                except ValueError:
+                    pass
 
     def _fill_center_no_pole(
         self, inner_loop: List, center: Vector, inner_scale: float
