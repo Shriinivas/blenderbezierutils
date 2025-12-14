@@ -1108,6 +1108,14 @@ class Snapper:
                         diffV = loc - refCo
                         if diffV.length > DEF_ERR_MARGIN:  # Avoid division by zero
                             loc = refCo + round(diffV.length) * (diffV / diffV.length)
+                    elif transType == "GLOBAL" and len(freeAxesN) == 2:
+                        # Fixed 1.0 unit grid snapping for Global constraint plane
+                        # This matches the visual grid spacing
+                        gridSpacing = 1.0
+                        locInTm = invTm @ loc
+                        for axis in freeAxesN:
+                            locInTm[axis] = round(locInTm[axis] / gridSpacing) * gridSpacing
+                        loc = tm @ locInTm
                     else:
                         rounding = getViewDistRounding(rmInfo.space3d, rv3d)
                         loc = tm @ roundedVect(
@@ -1242,6 +1250,9 @@ class Snapper:
         constraintPlaneCos = []
         constraintPlaneCols = []
 
+        constraintGridCos = []
+        constraintGridCols = []
+
         rmInfo = self.rmInfo
 
         if rmInfo is not None:  # self.snapParams is also not None
@@ -1369,6 +1380,14 @@ class Snapper:
                 refCo = tm @ orig
                 # Get the two free axes
                 ax1, ax2 = freeAxesN[0], freeAxesN[1]
+
+                # For grid alignment: use integer-aligned origin in Global mode
+                if transType == "GLOBAL":
+                    # Align grid to integer world coordinates
+                    gridOrigin = Vector([round(orig[i]) for i in range(3)])
+                    gridRefCo = tm @ gridOrigin
+                else:
+                    gridRefCo = refCo
                 # Create 4 corners of the plane
                 corners = []
                 for s1 in [-1, 1]:
@@ -1386,6 +1405,54 @@ class Snapper:
                     corners[2], corners[0],  # Bottom edge
                 ]
                 constraintPlaneCols = [(0.5, 0.5, 0.5, 0.4)]  # Semi-transparent gray
+
+                # Grid lines within the constraint plane
+                gridSpacing = 1.0  # Fixed 1.0 unit spacing
+                gridLines = []
+
+                # Calculate grid range based on plane size and alignment
+                # For aligned grids, extend range to include integer grid lines
+                if transType == "GLOBAL":
+                    # Calculate how many grid lines we need from aligned origin
+                    numLines = int(planeSize / gridSpacing) + 1
+                    gridMin = -numLines * gridSpacing
+                    gridMax = numLines * gridSpacing
+                else:
+                    gridMin = -planeSize
+                    gridMax = planeSize
+
+                # Lines parallel to ax1 (varying along ax2)
+                pos = gridMin
+                while pos <= gridMax:
+                    if abs(pos) < 0.01:  # Skip center line (near zero)
+                        pos += gridSpacing
+                        continue
+                    pt1 = gridRefCo.copy()
+                    pt2 = gridRefCo.copy()
+                    pt1[ax1] = gridMin + gridRefCo[ax1]
+                    pt1[ax2] = pos + gridRefCo[ax2]
+                    pt2[ax1] = gridMax + gridRefCo[ax1]
+                    pt2[ax2] = pos + gridRefCo[ax2]
+                    gridLines.extend([invTm @ pt1, invTm @ pt2])
+                    pos += gridSpacing
+
+                # Lines parallel to ax2 (varying along ax1)
+                pos = gridMin
+                while pos <= gridMax:
+                    if abs(pos) < 0.01:  # Skip center line (near zero)
+                        pos += gridSpacing
+                        continue
+                    pt1 = gridRefCo.copy()
+                    pt2 = gridRefCo.copy()
+                    pt1[ax1] = pos + gridRefCo[ax1]
+                    pt1[ax2] = gridMin + gridRefCo[ax2]
+                    pt2[ax1] = pos + gridRefCo[ax1]
+                    pt2[ax2] = gridMax + gridRefCo[ax2]
+                    gridLines.extend([invTm @ pt1, invTm @ pt2])
+                    pos += gridSpacing
+
+                constraintGridCos = gridLines
+                constraintGridCols = [(0.15, 0.15, 0.15, 0.6)]  # Dark gray, high opacity for visibility
 
             if FTProps.dispSnapInd and self.snapCo is not None:
                 snapIndPtCos = [self.snapCo]
@@ -1446,6 +1513,14 @@ class Snapper:
 
         # Pivot point marker - larger size for visibility
         bglDrawMgr.addPtInfo("PivotPt", FTProps.snapPtSize * 1.5, pivotPtCols, pivotPtCos)
+
+        # Constraint grid - drawn first so plane outline is on top
+        bglDrawMgr.addLineInfo(
+            "ConstraintGrid",
+            FTProps.axisLineWidth * 0.4,  # Thin but visible lines for grid
+            constraintGridCols,
+            constraintGridCos,
+        )
 
         # Constraint plane outline
         bglDrawMgr.addLineInfo(
