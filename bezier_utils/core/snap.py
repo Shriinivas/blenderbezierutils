@@ -1386,15 +1386,21 @@ class Snapper:
                     # Align grid to integer world coordinates
                     gridOrigin = Vector([round(orig[i]) for i in range(3)])
                     gridRefCo = tm @ gridOrigin
+                    # Calculate grid range for aligned plane sizing
+                    gridSpacing = 1.0
+                    numLines = int(planeSize / gridSpacing) + 1
+                    actualPlaneSize = numLines * gridSpacing
                 else:
                     gridRefCo = refCo
+                    actualPlaneSize = planeSize
+
                 # Create 4 corners of the plane
                 corners = []
                 for s1 in [-1, 1]:
                     for s2 in [-1, 1]:
                         corner = refCo.copy()
-                        corner[ax1] += s1 * planeSize
-                        corner[ax2] += s2 * planeSize
+                        corner[ax1] += s1 * actualPlaneSize
+                        corner[ax2] += s2 * actualPlaneSize
                         corners.append(invTm @ corner)
                 # Draw as outline (4 lines forming a square)
                 # Order: 0(-,-), 1(-,+), 2(+,-), 3(+,+)
