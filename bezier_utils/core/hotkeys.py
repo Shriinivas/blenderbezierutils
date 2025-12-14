@@ -94,7 +94,7 @@ class FTHotKeys:
     commonHotkeys.append(FTHotKeyData(hkToggleKeyMap, 'Ctrl+Shift+H', \
         'Hide / Unhide Keymap', \
             'Hide / Unhide Keymap Displayed When Flexi Tool Is Active'))
-    commonHotkeys.append(FTHotKeyData(hkToggleGuides, 'Alt+Shift+G', \
+    commonHotkeys.append(FTHotKeyData(hkToggleGuides, 'Ctrl+Alt+H', \
         'Hide / Unhide Visual Guides', \
             'Toggle visual guides: orientation axes, custom axis frame, pivot marker, constraint plane'))
     commonHotkeys.append(FTHotKeyData(hkSwitchOut, 'F1', 'Exit Flexi Tool', \
