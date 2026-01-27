@@ -360,21 +360,37 @@ class BezierUtilsPreferences(AddonPreferences):
     )
 
 ############################ Hotkeys ###############################
+    # Injection of dynamic properties must happen at class definition time or before registration
+    # We will collect them here and assign them.
+    
+    _dynamic_props = []
+
     for i, keySet in enumerate([FTHotKeys.drawHotkeys, \
         FTHotKeys.editHotkeys, FTHotKeys.commonHotkeys]):
         for j, keydata in enumerate(keySet):
-            exec(FTHotKeys.getHKFieldStr(keydata, addMeta = (not keydata.isExclusive)))
+            # exec(FTHotKeys.getHKFieldStr(keydata, addMeta = (not keydata.isExclusive)))
+            _dynamic_props.extend(FTHotKeys.getHKPropDef(keydata, addMeta=(not keydata.isExclusive)))
+            
             expStr = keydata.id + 'Exp'
-            exec(expStr + ': BoolProperty(name="' + expStr + '", default = False)')
+            # exec(expStr + ': BoolProperty(name="' + expStr + '", default = False)')
+            _dynamic_props.append((expStr, BoolProperty, {"name": expStr, "default": False}))
+
         expStr = 'hotKeySet'+ str(i)+'Exp'
-        exec(expStr + ': BoolProperty(name="' + expStr + '", default = False)')
+        # exec(expStr + ': BoolProperty(name="' + expStr + '", default = False)')
+        _dynamic_props.append((expStr, BoolProperty, {"name": expStr, "default": False}))
 
     for i, keydata in enumerate(FTHotKeys.snapHotkeys):
         keydataMeta = FTHotKeys.snapHotkeysMeta[i]
-        exec(FTHotKeys.getMetaHKFieldStr(keydataMeta))
-        exec(FTHotKeys.getHKFieldStr(keydata, addMeta = False))
+        # exec(FTHotKeys.getMetaHKFieldStr(keydataMeta))
+        _dynamic_props.extend(FTHotKeys.getMetaHKPropDef(keydataMeta))
+
+        # exec(FTHotKeys.getHKFieldStr(keydata, addMeta = False))
+        _dynamic_props.extend(FTHotKeys.getHKPropDef(keydata, addMeta=False))
+        
         expStr = keydata.id + 'Exp'
-        exec(expStr + ': BoolProperty(name="' + expStr + '", default = True)')
+        # exec(expStr + ': BoolProperty(name="' + expStr + '", default = True)')
+        _dynamic_props.append((expStr, BoolProperty, {"name": expStr, "default": True}))
+    
     hkSnapExp: BoolProperty(name="Snap Hotkey", default = False)
 
     colSizeExp: BoolProperty(name="Color & Size", default = False)
@@ -679,3 +695,15 @@ class BezierUtilsPreferences(AddonPreferences):
         col.operator('object.reset_default_props')
         col.operator('object.reset_default_hotkeys')
 
+
+# Apply dynamic properties to the class immediately
+for prop_name, prop_type, prop_kwargs in BezierUtilsPreferences._dynamic_props:
+    # In newer Blender/Python versions, we should set the annotation
+    # and assign the property
+    if not hasattr(BezierUtilsPreferences, '__annotations__'):
+        BezierUtilsPreferences.__annotations__ = {}
+    
+    BezierUtilsPreferences.__annotations__[prop_name] = prop_type(**prop_kwargs)
+
+# Clean up temp list
+del BezierUtilsPreferences._dynamic_props

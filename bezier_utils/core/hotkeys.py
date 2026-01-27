@@ -1,5 +1,6 @@
 # bezier_utils/core/hotkeys.py
 
+from bpy.props import EnumProperty, BoolProperty
 from ..constants import INVAL, TOOL_TYPES_FLEXI_ALL, TOOL_TYPES_FLEXI_DRAW_COMMON, \
     TOOL_TYPE_FLEXI_EDIT, TOOL_TYPE_FLEXI_GREASE
 
@@ -410,43 +411,84 @@ class FTHotKeys:
         return ''.join(["('" + t[0] + "','" + t[1] + "','" + t[2] +"')," \
             for t in tuples])
 
-    def getHKFieldStr(keydata, addMeta):
+    def getHKPropDef(keydata, addMeta):
+        """
+        Returns a list of tuples defining properies to be injected.
+        Each tuple: (prop_name, prop_type_class, keywords_dict)
+        """
         propName = keydata.id
         text = keydata.label
         description = keydata.description
-        updateFn = 'FTHotKeys.updateHotkeys'
+        updateFn = FTHotKeys.updateHotkeys
         default = keydata.default
         keys = default.split('+')
         key = keys[-1]
-                # ~ "items = (('A', 'A','A'),('B', 'B', 'B')), " + \
-        retVal = propName + ": EnumProperty(name = '" + text + "', " + \
-                "items = (" + FTHotKeys.getKeyMapTupleStr() + "), " + \
-                (("default = '"+ key + "', ") if default != INVAL else '') + \
-                "update = " + updateFn + ", " + \
-                "description = '"+ description +"') \n"
+        
+        defs = []
+        
+        # Main EnumProperty
+        defs.append((
+            propName, 
+            EnumProperty, 
+            {
+                "name": text,
+                "items": eval("(" + FTHotKeys.getKeyMapTupleStr() + ")"), # We still have the tuple str generator, easiest is to eval it or refactor it too. Refactoring keyMapTupleStr is safer but larger. Let's rely on the existing str gen for items for now but avoid exec for property creation. 
+                # Actually, getKeyMapTupleStr returns a string representation of a tuple of tuples.
+                # evaling it here is safe-ish since it comes from internal generator.
+                "default": key if default != INVAL else None, 
+                "update": updateFn,
+                "description": description
+            }
+        ))
+
         if(addMeta):
             for meta in FTHotKeys.metas:
-                retVal += propName + meta + ": BoolProperty(name='"+ meta +"', " + \
-                        "description='"+ meta +" Key', " + \
-                        "update = " + updateFn + ", " + \
-                        "default = "+ ('True' if meta in keys[:-1] else 'False') +") \n"
-        return retVal
+                defs.append((
+                    propName + meta,
+                    BoolProperty,
+                    {
+                        "name": meta,
+                        "description": meta + " Key",
+                        "update": updateFn,
+                        "default": (meta in keys[:-1])
+                    }
+                ))
+        return defs
 
-    def getMetaHKFieldStr(keydataMeta):
+    def getMetaHKPropDef(keydataMeta):
         propName = keydataMeta.id
         text = keydataMeta.label
         description = keydataMeta.description
-        updateFn = 'FTHotKeys.updateSnapMetaKeys'
+        updateFn = FTHotKeys.updateSnapMetaKeys
         default = keydataMeta.default
 
-        itemsStr = "('CTRL', 'Ctrl', 'Ctrl'), ('ALT', 'Alt', 'Alt'), \
-                ('SHIFT', 'Shift', 'Shift'), ('KEY', 'Keyboard', 'Other keyboard key')"
-        retVal = propName + ": EnumProperty(name = '" + text + "', " + \
-                "items = (" + itemsStr + "), " + \
-                "default = '"+ default + "', " + \
-                "update = " + updateFn + ", " + \
-                "description = '"+ description +"') \n"
-        return retVal
+        items = (('CTRL', 'Ctrl', 'Ctrl'), ('ALT', 'Alt', 'Alt'), \
+                ('SHIFT', 'Shift', 'Shift'), ('KEY', 'Keyboard', 'Other keyboard key'))
+        
+        return [(
+            propName,
+            EnumProperty,
+            {
+                "name": text,
+                "items": items,
+                "default": default,
+                "update": updateFn,
+                "description": description
+            }
+        )]
+    
+    # helper for getKeyMapTupleStr to return actual list instead, if we wanted clean code, but let's stick to minimal changes first.
+    
+    def getHKFieldStr(keydata, addMeta):
+        # Legacy support if needed? No, we will replace usage.
+        # But wait, we can't easily change the caller in preferences.py without big diffs?
+        # preferences.py iterates and calls exec().
+        # We should keep this if something else uses it? 
+        # No, preferences.py is the only user.
+        return "" 
+
+    def getMetaHKFieldStr(keydataMeta):
+        return ""
 
     def getHKDispLines(toolType):
         hkData = [k for k in FTHotKeys.commonHotkeys if toolType not in k.exclTools]

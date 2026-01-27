@@ -87,6 +87,57 @@ class Primitive2DDraw(BaseDraw):
             for p in range(len(Primitive2DDraw.dynamicParams))
         ]
 
+    def getParamPropDefs():
+        """
+        Returns a list of tuples defining dynamic properties.
+        Each tuple: (prop_name, prop_type_class, keywords_dict)
+        """
+        import bpy
+        from bpy.props import FloatProperty # Ensure we have FloatProperty available or import it here
+        from .math_fn import MathFnDraw # Import locally if needed or assume available
+        
+        # We need access to MathFnDraw constants but they are imported at top level.
+        # But MathFnDraw is in math_fn.py which is imported in params.py... 
+        # primitives.py imports nothing from math_fn. 
+        # Wait, params.py imported MathFnDraw. 
+        # primitives.py does NOT import MathFnDraw. 
+        # The original code in params.py used MathFnDraw.startPrefix etc.
+        # So we should put this logic in params.py or import MathFnDraw here.
+        # Let's import it here.
+        from .math_fn import MathFnDraw
+
+        defs = []
+        hks = Primitive2DDraw.getParamHotKeyDescriptions()
+
+        for i in range(Primitive2DDraw.getParamCnt()):
+            char = chr(ord('A') + i)
+            
+            # Start Value Property
+            propName = MathFnDraw.startPrefix + str(i)
+            defs.append((
+                propName,
+                FloatProperty,
+                {
+                    "name": 'Constant ' + char + ' Value', 
+                    "description": 'Value of ' + char + ' used in equation', 
+                    "default": MathFnDraw.defConstStart
+                }
+            ))
+
+            # Incr Value Property
+            propName = MathFnDraw.incrPrefix + str(i)
+            defs.append((
+                propName,
+                FloatProperty,
+                {
+                    "name": 'Constant ' + char + ' Step', 
+                    "description": 'Constant ' + char + ' increment / decrement step ' + \
+                        ' (hot keys: ' + hks[i]+ ')', 
+                    "default": MathFnDraw.defConstIncr
+                }
+            ))
+        return defs
+
     for i in range(len(dynamicParams)):
         exec("def updateParam" + str(i) + "(self, event, rmInfo, isIncr):\n\tpass")
 

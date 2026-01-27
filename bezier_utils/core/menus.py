@@ -140,6 +140,21 @@ class FTMenu:
             retStr += propName +': BoolProperty(default = False)\n'
         return retStr
 
+    def getMNPropDefs(menuData):
+        """
+        Returns a list of tuples defining dynamic properties.
+        Each tuple: (prop_name, prop_type_class, keywords_dict)
+        """
+        from bpy.props import BoolProperty
+        defs = []
+        for propName in FTMenu.getAllOptPropNames():
+            defs.append((
+                propName,
+                BoolProperty,
+                {"default": False}
+            ))
+        return defs
+
 class FTMenuOptionOp(Operator):
     bl_idname = "object.ft_menu_options"
     bl_label = "Set FT Menu Options"

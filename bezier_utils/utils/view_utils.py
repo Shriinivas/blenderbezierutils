@@ -11,6 +11,7 @@ from bpy_extras.view3d_utils import (
     location_3d_to_region_2d,
     region_2d_to_origin_3d,
 )
+from bpy_extras.object_utils import world_to_camera_view
 from ..core.props import FTProps
 from ..constants import LARGE_NO, MAX_NONSEL_CURVE_RES
 from .bezier_math import isStraightSeg, getPtsAlongBezier2D, getLinesFromPts
@@ -874,6 +875,91 @@ def getSVGPt(co, docW, docH, camera=None, region=None, rv3d=None):
         return complex(xy[0], docH - xy[1])
 
 
+def cubic_eval(p0, p1, p2, p3, t):
+    """Evaluate cubic bezier at t"""
+    return (1-t)**3 * p0 + 3*(1-t)**2 * t * p1 + 3*(1-t) * t**2 * p2 + t**3 * p3
+
+def subdivide_cubic_simple(p0, p1, p2, p3, t=0.5):
+    """Split a cubic bezier into two segments at t."""
+    p01 = (1-t)*p0 + t*p1
+    p12 = (1-t)*p1 + t*p2
+    p23 = (1-t)*p2 + t*p3
+    p012 = (1-t)*p01 + t*p12
+    p123 = (1-t)*p12 + t*p23
+    p0123 = (1-t)*p012 + t*p123
+    return (p0, p01, p012, p0123), (p0123, p123, p23, p3)
+
+def approx_segment_single_complex(p0, p1, p2, p3, project_func):
+    q0 = project_func(p0)
+    q3 = project_func(p3)
+    h0 = project_func(p1)
+    h3 = project_func(p2)
+    
+    if any(pt is None for pt in [q0, q3, h0, h3]):
+        return q0, q0, q3, q3
+
+    v1 = h0 - q0
+    v2 = h3 - q3
+    
+    # Complex abs()**2 for length squared
+    if abs(v1)**2 < 1e-7 or abs(v2)**2 < 1e-7:
+        return q0, h0, h3, q3
+
+    m_3d = cubic_eval(p0, p1, p2, p3, 0.5)
+    k = project_func(m_3d)
+    
+    if k is None:
+        return q0, h0, h3, q3
+
+    T = (k - 0.5 * (q0 + q3)) / 0.375
+    
+    # Complex determinant equivalent: x1*y2 - y1*x2
+    # v1 = x1 + i*y1
+    det = v1.real * v2.imag - v1.imag * v2.real
+    
+    if abs(det) < 1e-6:
+        return q0, h0, h3, q3
+        
+    alpha = (T.real * v2.imag - T.imag * v2.real) / det
+    beta  = (v1.real * T.imag - v1.imag * T.real) / det
+    
+    if alpha <= 0 or beta <= 0:
+        return q0, h0, h3, q3
+        
+    q1 = q0 + alpha * v1
+    q2 = q3 + beta * v2
+    
+    return q0, q1, q2, q3
+
+def approx_segment_recursive_complex(p0, p1, p2, p3, project_func, tolerance=0.5):
+    # 1. Generate candidate
+    q0, q1, q2, q3 = approx_segment_single_complex(p0, p1, p2, p3, project_func)
+    
+    # 2. Error Check at 0.25 and 0.75
+    m_25_3d = cubic_eval(p0, p1, p2, p3, 0.25)
+    m_75_3d = cubic_eval(p0, p1, p2, p3, 0.75)
+    
+    k_25 = project_func(m_25_3d)
+    k_75 = project_func(m_75_3d)
+    
+    if k_25 is None or k_75 is None: 
+         return [[q0, q1, q2, q3]]
+
+    c_25 = cubic_eval(q0, q1, q2, q3, 0.25)
+    c_75 = cubic_eval(q0, q1, q2, q3, 0.75)
+    
+    dist_sq_25 = abs(k_25 - c_25)**2
+    dist_sq_75 = abs(k_75 - c_75)**2
+    
+    # Tolerance logic. 0.5 pixels tolerance.
+    threshold = tolerance**2
+    
+    if dist_sq_25 > threshold or dist_sq_75 > threshold:
+        seg1, seg2 = subdivide_cubic_simple(p0, p1, p2, p3, 0.5)
+        return (approx_segment_recursive_complex(*seg1, project_func, tolerance) + 
+                approx_segment_recursive_complex(*seg2, project_func, tolerance))
+    
+    return [[q0, q1, q2, q3]]
 def exportSVG(
     context,
     filepath,
@@ -929,38 +1015,43 @@ def exportSVG(
         if isBezier(o) and o.visible_get():
             path = []
             filledPath = []
+            
+            # Define projection function used by recursive approximator
+            def proj_func(co):
+                 return getSVGPt(co, docW, docH, camera, region, rv3d)
+
             for spline in o.data.splines:
                 part = []
                 bpts = spline.bezier_points
-                for i in range(1, len(bpts)):
-                    prevBezierPt = bpts[i - 1]
-                    pt = bpts[i]
-                    seg = [
-                        prevBezierPt.co,
-                        prevBezierPt.handle_right,
-                        pt.handle_left,
-                        pt.co,
-                    ]
-                    part.append(
-                        [
-                            getSVGPt(mw @ co, docW, docH, camera, region, rv3d)
-                            for co in seg
-                        ]
-                    )
+                
+                # Check for cyclic. If cyclic, we process N segments (0 to N-1, wrapping).
+                # If not cyclic, we process N-1 segments.
+                count = len(bpts)
+                if count < 2: 
+                    continue
+                    
+                num_segments = count if spline.use_cyclic_u else count - 1
 
-                if spline.use_cyclic_u:
-                    seg = [
-                        bpts[-1].co,
-                        bpts[-1].handle_right,
-                        bpts[0].handle_left,
-                        bpts[0].co,
-                    ]
-                    part.append(
-                        [
-                            getSVGPt(mw @ co, docW, docH, camera, region, rv3d)
-                            for co in seg
-                        ]
-                    )
+                for i in range(num_segments):
+                    curr_idx = i
+                    next_idx = (i + 1) % count
+                    
+                    prevBezierPt = bpts[curr_idx]
+                    pt = bpts[next_idx]
+                    
+                    # Get World Space control points
+                    p0 = mw @ prevBezierPt.co
+                    p1 = mw @ prevBezierPt.handle_right
+                    p2 = mw @ pt.handle_left
+                    p3 = mw @ pt.co
+
+                    # Recursively approximate
+                    # Tolerance: 0.5 pixels
+                    segments = approx_segment_recursive_complex(p0, p1, p2, p3, proj_func, tolerance=0.5)
+                    
+                    # 'part' expects a list of segments. 
+                    # Each segment in 'segments' is [q0, q1, q2, q3] (complex numbers)
+                    part.extend(segments)
 
                 if len(part) > 0:
                     if (

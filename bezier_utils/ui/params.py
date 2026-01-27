@@ -311,18 +311,8 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         description = 'Starting value of param t', default = MathFnDraw.defTStart)
 
     # Dynamic parameters for draw math plot - start
-    hks = Primitive2DDraw.getParamHotKeyDescriptions()
-
-    for i in range(Primitive2DDraw.getParamCnt()):
-        char = chr(ord('A') + i)
-        paramStr = MathFnDraw.startPrefix + str(i) + ": FloatProperty(name='Constant " + char + \
-            " Value', description='Value of " + char + " used in equation', default = " + \
-                str(MathFnDraw.defConstStart) + ")"
-        exec(paramStr)
-        paramStr = MathFnDraw.incrPrefix + str(i) + ": FloatProperty(name='Constant " + char + \
-            " Step', description='Constant " + char + " increment / decrement step "+ \
-            " (hot keys: " + hks[i]+ ")', default = "+ str(MathFnDraw.defConstIncr) + ")"
-        exec(paramStr)
+    # Properties are injected at the end of the file.
+    # hks = Primitive2DDraw.getParamHotKeyDescriptions()
     # Dynamic parameters for draw math plot - end
 
     drawStartAngle: FloatProperty(name = "Arc Start Angle", \
@@ -378,9 +368,39 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
 
 
 
+
     ############################ Menu ###############################
 
+    # Dynamic Menu properties will be injected after class definition
+    _dynamic_menu_props = []
     for menudata in FTMenu.editMenus:
-        exec(FTMenu.getMNPropDefStr(menudata))
+        # exec(FTMenu.getMNPropDefStr(menudata))
+        _dynamic_menu_props.extend(FTMenu.getMNPropDefs(menudata))
+
+
+# Apply dynamic properties to the class immediately
+# 1. Math Function Draw Params
+_dynamic_props = Primitive2DDraw.getParamPropDefs()
+for prop_name, prop_type, prop_kwargs in _dynamic_props:
+    if not hasattr(BezierToolkitParams, '__annotations__'):
+        BezierToolkitParams.__annotations__ = {}
+    
+    BezierToolkitParams.__annotations__[prop_name] = prop_type
+    setattr(BezierToolkitParams, prop_name, prop_type(**prop_kwargs))
+
+# 2. Menu Params
+# We collected them in _dynamic_menu_props inside the class, but we need to access them here.
+# Since they were defined in class body, they are local to class body execution? 
+# No, standard list comprehension or loop in class body executes immediately.
+# But _dynamic_menu_props will be a member of the class.
+if hasattr(BezierToolkitParams, '_dynamic_menu_props'):
+    for prop_name, prop_type, prop_kwargs in BezierToolkitParams._dynamic_menu_props:
+        if not hasattr(BezierToolkitParams, '__annotations__'):
+            BezierToolkitParams.__annotations__ = {}
+        
+        BezierToolkitParams.__annotations__[prop_name] = prop_type
+        setattr(BezierToolkitParams, prop_name, prop_type(**prop_kwargs))
+    
+    del BezierToolkitParams._dynamic_menu_props
 
 
