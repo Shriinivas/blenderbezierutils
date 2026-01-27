@@ -55,6 +55,7 @@ classes = [
     CloseStraightOp,
     OpenSplinesOp,
     ExportSVGOp,
+    Smart2DProjectOp,
     RemoveDupliVertCurveOp,
     IntersectCurvesOp,
     BooleanCurvesOp,

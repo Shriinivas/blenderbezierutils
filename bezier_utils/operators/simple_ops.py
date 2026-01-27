@@ -746,6 +746,67 @@ class ExportSVGOp(Operator):
         return {"RUNNING_MODAL"}
 
 
+
+class Smart2DProjectOp(Operator):
+    """Smart Project 3D Curve to Best-Fit 2D Plane"""
+    bl_idname = "object.smart_2d_project"
+    bl_label = "Smart 2D Project"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'OBJECT' and \
+               context.active_object and \
+               context.active_object.type == 'CURVE'
+
+    def execute(self, context):
+        obj = context.active_object
+        
+        # 1. Collect all World Space points
+        world_pts = []
+        mw = obj.matrix_world
+        
+        for spline in obj.data.splines:
+            for bp in spline.bezier_points:
+                world_pts.extend([mw @ bp.co, mw @ bp.handle_left, mw @ bp.handle_right])
+
+        if not world_pts:
+            self.report({'WARNING'}, "No points found in curve")
+            return {'CANCELLED'}
+
+        # 2. Compute Best Fit Plane
+        from ..utils.math_utils import get_best_fit_matrix
+        m_plane = get_best_fit_matrix(world_pts)
+        m_plane_inv = m_plane.inverted()
+
+        # 3. Transform points to local space of the plane (approximated 2D)
+        # We perform the transform in place relative to the new object origin
+        
+        for spline in obj.data.splines:
+            for bp in spline.bezier_points:
+                # Transform to plane space
+                v_co = m_plane_inv @ (mw @ bp.co)
+                v_l  = m_plane_inv @ (mw @ bp.handle_left)
+                v_r  = m_plane_inv @ (mw @ bp.handle_right)
+                
+                # Flatten to 2D
+                v_co.z = 0
+                v_l.z  = 0
+                v_r.z  = 0
+                
+                # Update (these are now local coordinates relative to m_plane)
+                bp.co = v_co
+                bp.handle_left = v_l
+                bp.handle_right = v_r
+
+        # 4. Update Object Transform and Dimensions
+        obj.matrix_world = m_plane
+        obj.data.dimensions = '2D'
+        
+        self.report({'INFO'}, "Projected curve to best-fit 2D plane")
+        return {'FINISHED'}
+
+
 def markVertHandler(self, context):
     if self.markVertex:
         bpy.ops.wm.bb_mark_vertex()

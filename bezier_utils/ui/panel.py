@@ -272,6 +272,8 @@ class BezierUtilsPanel(Panel):
                 col.operator('object.close_straight')
                 col = box.column().split()
                 col.operator('object.open_splines')
+                col = box.column().split()
+                col.operator('object.smart_2d_project')
 
             tool = context.workspace.tools.from_space_view3d_mode('OBJECT', \
                 create = False)
