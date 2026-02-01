@@ -3,12 +3,12 @@
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (1, 0, 0),
-    "blender": (2, 80, 0),
+    "version": (1, 1, 0),
+    "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Bezier Utilities",
     "description": "Utilities for Bezier curves",
     "warning": "",
-    "doc_url": "",
+    "doc_url": "https://github.com/Shriinivas/blenderbezierutils",
     "category": "Curve",
 }
 

@@ -1,9 +1,13 @@
 # Blender Add-on with Bézier Utility Operations
 
-**Add-on Version: 1.0.0-beta**
+**Add-on Version: 1.1**
 
 This add-on contains several tools and utility ops for working with Bézier curves.
-**Supported Blender Versions:** 4.2 LTS, 4.3+
+**Supported Blender Versions:** 4.2 LTS, 4.3+, 5.0
+
+> [!NOTE]
+> This version is optimized for **Blender 5.0**. If you experience issues with earlier Blender versions (4.2, 4.3), please download [v1.0.0-beta](https://github.com/Shriinivas/blenderbezierutils/releases/tag/v1.0.0-beta) from the releases page.
+
 **Video Tutorials:** https://www.youtube.com/playlist?list=PLxsh4i5F_h9G6QFoPzKvBRMayz8533fSW
 
 ---
@@ -12,7 +16,7 @@ This add-on contains several tools and utility ops for working with Bézier curv
 
 ## Download and Install
 
-1. Download the latest `bezier_utils.zip` from [Releases](https://github.com/Shriinivas/blenderbezierutils/releases)
+1. Download the latest `bezier_utils.zip` from [Releases](https://github.com/Shriinivas/blenderbezierutils/releases/latest)
 2. Open Blender and select Edit → Preferences
 3. Click "Add-ons" tab and then "Install Add-on from File"
 4. Select the downloaded `bezier_utils.zip` file
@@ -227,7 +231,7 @@ User-defined line serving multiple purposes.
 
 # Visual Guides
 
-Toggle visual feedback elements with **Alt+Shift+G** (configurable in preferences).
+Toggle visual feedback elements with **Ctrl+Alt+H** (configurable in preferences).
 
 **Displayed Elements:**
 1. **Orientation Axes** - Red (X), Green (Y), Blue (Z) lines from pivot point
@@ -242,13 +246,17 @@ Toggle visual feedback elements with **Alt+Shift+G** (configurable in preference
 
 Active for point being drawn/edited:
 
-- **Ctrl** - Snap to grid
+- **Ctrl** - Snap to grid (1.0 unit intervals, aligned to integer world coordinates)
 - **Shift** - Restrict angle to fixed increments (0°, 45°, 90°, etc.)
 - **Alt** - Snap to Bézier points, vertices, faces, pivot point
 
 After starting drawing, if Snapping Orientation or Pivot Point is 'Selected Object Face', orientation/origin locks to face under cursor. Press **U** to reposition to new face.
 
 By default, snapping to endpoints joins new curve to existing curves. Hold Ctrl while ending curve to keep separate.
+
+## Grid Overlay
+
+When constraining to planes (XY, XZ, YZ), a visual grid overlay appears with 1.0 unit spacing. The grid aligns to integer world coordinates in Global mode. Ctrl-snapping snaps to grid intersections. Grid visibility is controlled by the guide toggle (**Ctrl+Alt+H**).
 
 ## Locking Options
 
@@ -321,13 +329,31 @@ Combine with split/separate ops for powerful workflows.
 
 ## Convert Curve to Mesh
 
-Converts curve to quad mesh. Curve made 2D, all splines made cyclic, remesh modifier applied.
+> [!WARNING]
+> The advanced meshing algorithms (Smart, Medial Axis, Grid TFI, Polar, Rectangle, Polygon, QMorph) are **experimental** and may not work correctly for all curve shapes. Use with caution.
 
-**Options:**
-- **Fill Type** - Quad mesh or triangulated faces
+Converts curve to quad mesh with intelligent meshing algorithms. Curve made 2D, all splines made cyclic.
+
+**Fill Type Options:**
+- **Smart** - Automatic shape detection with optimized mesher selection
+- **Medial Axis** - Medial axis-based meshing with Grid Fill TFI
+- **Grid TFI** - Direct Transfinite Interpolation grid
+- **Polar** - O-Grid topology for circles/ellipses (pole-free)
+- **Rectangle** - Pure quad grid for rectangular shapes (no poles)
+- **Polygon** - Radial meshing for regular polygons (pole-free)
+- **QMorph** - Q-Morph algorithm for convex freeform shapes
+- **Quad** - Remesh modifier-based quad mesh
+- **Quadriflow** - Quadriflow remeshing
+- **Grid** - Grid-based remeshing
+- **Offset** - Offset ring meshing
+- **Triangulated** - Standard triangulated faces
+
+**Additional Options:**
 - **Remesh Depth** - Subdivision depth for quad mesh
 - **Unsubdivide** - Reduce poly count after conversion
 - **Resolution** - Mesh density for triangulated faces
+- **Fill Detail** - Detail level for advanced meshers
+- **Offset Size** - Offset ring size for offset meshing
 
 ## Set Handle Type
 
@@ -346,7 +372,8 @@ Set viewport display colors for curves. Colors drawn on top of Blender curve obj
 
 ## Other Tools
 
-- **Export to SVG** - Export curves to SVG format. Preserves bezier data for vector graphics applications.
+- **Smart 2D Project** - Flatten 3D curves onto a best-fit plane while preserving shape. Uses SVD to compute optimal projection plane.
+- **Export to SVG** - Export curves to SVG format. Preserves bezier data with adaptive recursive subdivision for accuracy.
 - **Paste Length** - Match curve lengths to active curve. Scale unchanged.
 - **Close Splines** - Mark non-cyclic splines as cyclic
 - **Close with Straight Segment** - Close with straight line segment
@@ -374,7 +401,7 @@ Configure via Edit → Preferences → Add-ons → Bezier Utilities:
 - Toggle visibility of orientation axes, custom axis frame, pivot marker, constraint plane
 
 **Keymap:**
-- Customize all hotkeys including toggle guides hotkey (Alt+Shift+G)
+- Customize all hotkeys including toggle guides hotkey (Ctrl+Alt+H)
 
 ---
 

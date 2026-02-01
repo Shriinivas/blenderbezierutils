@@ -46,7 +46,9 @@ jobs:
             # Bézier Utilities for Blender
 
             **Version:** ${{ steps.get_version.outputs.VERSION }}
-            **Supported Blender Versions:** 4.2 LTS, 4.3+
+            **Supported Blender Versions:** 4.2 LTS, 4.3+, 5.0
+
+            > **Note:** This version is optimized for **Blender 5.0**. If you experience issues with earlier Blender versions, please use [v1.0.0-beta](https://github.com/Shriinivas/blenderbezierutils/releases/tag/v1.0.0-beta).
 
             ## Installation
 
@@ -56,9 +58,26 @@ jobs:
             4. Select the downloaded `bezier_utils.zip` file
             5. Check the 'Bézier Utilities' option in the add-ons dialog
 
-            ## What's New
+            ## What's New in v1.1
 
-            See the [README](https://github.com/Shriinivas/blenderbezierutils/blob/master/README.md) for full documentation.
+            ### New Features
+            - **Smart 2D Project** - Flatten 3D curves onto a best-fit plane using SVD
+            - **Grid Overlay** - Visual grid on constraint planes with 1.0 unit spacing
+            - **Grid Snapping** - Ctrl-snap now aligns to integer world coordinates
+
+            ### Enhanced Convert to Mesh (Experimental)
+            - **Smart Mesher** - Automatic shape detection with optimized algorithm selection
+            - **Medial Axis** - Medial axis-based meshing with Grid Fill TFI
+            - **Grid TFI** - Direct Transfinite Interpolation grid
+            - **Polar** - O-Grid topology for circles/ellipses (pole-free)
+            - **Rectangle** - Pure quad grid for rectangular shapes
+            - **Polygon** - Radial meshing for regular polygons
+            - **QMorph** - Q-Morph algorithm for convex freeform shapes
+
+            ### Improvements
+            - Toggle guides hotkey changed to **Ctrl+Alt+H** (avoids conflict with Blender's add to collection)
+            - Improved SVG export with adaptive recursive subdivision
+            - Fixed Grease Pencil autoclose and hotkey errors
 
             ## Video Tutorials
 
