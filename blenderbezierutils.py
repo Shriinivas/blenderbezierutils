@@ -25,6 +25,7 @@ import random, time, math
 from bpy.app.handlers import persistent
 from xml.dom import minidom
 from shutil import copyfile
+import re
 
 bl_info = {
     "name": "Bezier Utilities",
@@ -1615,21 +1616,84 @@ def getSVGPt(co, docW, docH, camera = None, region = None, rv3d = None):
         xy = getCoordFromLoc(region, rv3d, co)
         return complex(xy[0], docH - xy[1])
 
-def getPathD(path):
-    curve = ''
+def getPathD(path, cyclicPathFlags, maxPrecision, repeatThreshold, relative):
+    def sanitizeFloat(num):
+        numStr = str(num)
+        idxSpan = re.search(
+            f'(\.\d*?)(0{{{repeatThreshold},}}|9{{{repeatThreshold},}})',
+            numStr
+        )
 
-    for i, part in enumerate(path):
-        comps = []
-        for j, segment in enumerate(part):
-            if(j == 0):
-                comps.append('M {},{} C'.format(segment[0].real, segment[0].imag))
-            args = (segment[1].real, segment[1].imag,
-                    segment[2].real, segment[2].imag,
-                    segment[3].real, segment[3].imag)
-            comps.append('{},{} {},{} {},{}'.format(*args))
-        curve += ' ' .join(comps)
+        if not idxSpan:
+            sanitized = (
+                str(round(float(numStr), maxPrecision))
+                .rstrip('0')
+                .rstrip('.')
+            )
+            return 0 if sanitized == '-0' else sanitized
 
-    return curve
+        idx = idxSpan.span(2)[0]
+        preFractSpan = re.search('[\-\d]+?\.', numStr).span()
+        preFractLen = 0 if not preFractSpan else preFractSpan[1] - preFractSpan[0]
+        
+        sanitized = (
+            str(round(float(numStr[0:idx + 1]), min(maxPrecision, idx - preFractLen)))
+            .rstrip('0')
+            .rstrip('.')
+        )
+
+        return 0 if sanitized == '-0' else sanitized
+
+    def createAbsPath():
+        curve = ''
+        for i, part in enumerate(path):
+            comps = []
+            for j, segment in enumerate(part):
+                s = []
+                for k, v in enumerate(segment):
+                    s.append(segment[k].real)
+                    s.append(segment[k].imag)
+
+                for k, e in enumerate(s):
+                    s[k] = sanitizeFloat(s[k])
+
+                if(j == 0):
+                    comps.append(f'M{s[0]},{s[1]}C')
+                comps.append(f'{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]} ')
+            curve += f'{"".join(comps).strip()}{"z" if cyclicPathFlags[i] else ""}'
+        return curve
+
+    def createRelPath():
+        curve = ''
+        lastCoord = [0, 0]
+        for i, part in enumerate(path):
+            comps = []
+            for j, segment in enumerate(part):
+                s = []
+                for k, v in enumerate(segment):
+                    s.append(segment[k].real - lastCoord[0])
+                    s.append(segment[k].imag - lastCoord[1])
+                    if k == 0:
+                        lastCoord = [
+                            lastCoord[0] + s[0],
+                            lastCoord[1] + s[1]
+                        ]
+                lastCoord = [
+                    lastCoord[0] + s[6],
+                    lastCoord[1] + s[7]
+                ]
+
+                for k, e in enumerate(s):
+                    s[k] = sanitizeFloat(s[k])
+
+                comps.append(
+                    f'{"m" if curve != "" else "M"}{s[0]},{s[1]}c{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]} ' if j == 0 else
+                    f'{s[2]},{s[3]} {s[4]},{s[5]} {s[6]},{s[7]} '
+                )
+            curve += f'{"".join(comps).strip()}{"z" if cyclicPathFlags[i] else ""}'
+        return curve
+
+    return createRelPath() if relative else createAbsPath()
 
 def getPathBBox(path):
     minX, minY, maxX, maxY = [None, None, None, None]
@@ -1661,13 +1725,38 @@ def createClipElem(doc, svgElem, docW, docH, clipElemId):
     rectElem.setAttribute('height', str(docH))
     clipElem.appendChild(rectElem)
 
-def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
-    fillCol, fillAlpha, clipView, clipElemId):
-
+def getSVGPathElem(
+    name,
+    doc,
+    docW,
+    docH,
+    path,
+    idx,
+    cyclicPathFlags,
+    lineWidth,
+    lineCol,
+    lineAlpha,
+    fillCol,
+    fillAlpha,
+    clipView,
+    clipElemId,
+    idEnabled,
+    objNamesAsIds,
+    styleEnabled,
+    maxPrecision,
+    repeatThreshold,
+    useRelativeCoords
+):
     idPrefix = 'id'
-    style= {'opacity':'1', 'stroke':'#000000', 'stroke-width':'1', \
-        'fill':'none', 'stroke-linecap':'round', 'stroke-linejoin':'miter', \
-        'stroke-miterlimit':'4'}
+    style= {
+        'opacity': '1',
+        'stroke': '#000000',
+        'stroke-width': '1',
+        'fill': 'none',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'miter',
+        'stroke-miterlimit': '4'
+    }
 
     clipped = False
     if(clipView):
@@ -1679,8 +1768,13 @@ def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
             clipped = True
 
     elem = doc.createElement('path')
-    elem.setAttribute('id', idPrefix + str(idx).zfill(3))
-    elem.setAttribute('d', getPathD(path))
+
+    if (idEnabled):
+        elem.setAttribute(
+            'id',
+            name if objNamesAsIds else idPrefix + str(idx).zfill(3)
+        )
+    elem.setAttribute('d', getPathD(path, cyclicPathFlags, maxPrecision, repeatThreshold, useRelativeCoords))
     style['stroke-width'] =  str(lineWidth)
     style['stroke'] =  '#' + lineCol
     style['opacity'] =  lineAlpha
@@ -1688,15 +1782,33 @@ def getSVGPathElem(doc, docW, docH, path, idx, lineWidth, lineCol, lineAlpha, \
         style['fill'] =  '#' + fillCol
         style['opacity'] =  fillAlpha # Overwrite
     styleStr = ';'.join([k + ':' + style[k] for k in style])
-    elem.setAttribute('style', styleStr)
+
+    if (styleEnabled):
+        elem.setAttribute('style', styleStr)
 
     if(clipped):
         elem.setAttribute('clip-path', 'url(#' + clipElemId + ')')
 
     return elem
 
-def exportSVG(context, filepath, exportView, clipView, lineWidth, lineColorOpts, \
-    lineColor, fillColorOpts, fillColor):
+def exportSVG(
+    context,
+    filepath,
+    exportView,
+    clipView,
+    lineWidth,
+    lineColorOpts,
+    lineColor,
+    fillColorOpts,
+    fillColor,
+    viewAttr,
+    idAttr,
+    objNamesAsIds,
+    styleAttr,
+    maxPrecision,
+    repeatThreshold,
+    useRelativeCoords
+):
 
     svgXML = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
     clipElemId = 'BBoxClipElem'
@@ -1730,8 +1842,11 @@ def exportSVG(context, filepath, exportView, clipView, lineWidth, lineColorOpts,
     doc = minidom.parseString(svgXML)
     svgElem = doc.documentElement
 
-    svgElem.setAttribute('width', str(docW))
-    svgElem.setAttribute('height', str(docH))
+    if viewAttr == 'VIEWBOX':
+        svgElem.setAttribute('viewBox', '0 0 ' + str(docW) + ' ' + str(docH))
+    elif viewAttr == 'WH':
+        svgElem.setAttribute('width', str(docW))
+        svgElem.setAttribute('height', str(docH))
 
     if(clipView):
         createClipElem(doc, svgElem, docW, docH, clipElemId)
@@ -1739,30 +1854,41 @@ def exportSVG(context, filepath, exportView, clipView, lineWidth, lineColorOpts,
     idx = 0
     for o in bpy.context.scene.objects:
         mw = o.matrix_world
-        if(isBezier(o) and o.visible_get()):
+        if(isBezier(o) and o.visible_get() and not o.hide_render):
             path = []
-            filledPath = []
+            cyclicPathFlags = []
+
+            o.shape_key_add(from_mix=True)
+            active_idx = o.active_shape_key_index
+            mixed_idx = len(o.data.shape_keys.key_blocks) - 1
+            mixed = o.data.shape_keys.key_blocks[mixed_idx]
+            o.active_shape_key_index = mixed_idx
+            splineIdxOffset = 0
+
             for spline in o.data.splines:
+                count = len(spline.bezier_points)
                 part = []
-                bpts = spline.bezier_points
+                bpts = mixed.data[splineIdxOffset: splineIdxOffset + count]
+                cyclic = spline.use_cyclic_u
+
                 for i in range(1, len(bpts)):
                     prevBezierPt = bpts[i-1]
                     pt = bpts[i]
                     seg = [prevBezierPt.co, prevBezierPt.handle_right, pt.handle_left, pt.co]
                     part.append([getSVGPt(mw @ co, docW, docH, camera, region, rv3d) for co in seg])
 
-                if(spline.use_cyclic_u):
+                if(cyclic):
                     seg = [bpts[-1].co, bpts[-1].handle_right, bpts[0].handle_left, bpts[0].co]
                     part.append([getSVGPt(mw @ co, docW, docH, camera, region, rv3d) for co in seg])
 
                 if(len(part) > 0):
-                    if (spline.use_cyclic_u and o.data.dimensions == '2D' \
-                        and o.data.fill_mode != 'NONE'):
-                        filledPath.append(part)
-                    else:
-                        path.append(part)
+                    path.append(part)
+                    cyclicPathFlags.append(cyclic)
 
-            for p in [path, filledPath]:
+                splineIdxOffset += count
+
+            for ix, p in enumerate([path]):
+                cyclic = cyclicPathFlags[ix]
 
                 if(len(p) == 0): continue
 
@@ -1770,7 +1896,7 @@ def exportSVG(context, filepath, exportView, clipView, lineWidth, lineColorOpts,
                     lineColor = [random.random() for i in range(3)] + [1]
                     lineCol, lineAlpha = toHexStr(lineColor)
 
-                if(p == path):
+                if not cyclic:
                     fc, fa = None, None
                 elif(fillColorOpts == 'RANDOM'):
                     fillColor = [random.random() for i in range(3)] + [1]
@@ -1778,14 +1904,29 @@ def exportSVG(context, filepath, exportView, clipView, lineWidth, lineColorOpts,
                 else:
                     fc, fa = fillCol, fillAlpha
 
-                svgPathElem = getSVGPathElem(doc, docW, docH, p, idx, lineWidth, \
-                    lineCol, lineAlpha, fc, fa, clipView, clipElemId)
+                # TODO: weird spline iteration pattern (bad structure?)
+                # should have been just `cyclic` instead of the entire `cyclicPathFlags` being passed in
+                svgPathElem = getSVGPathElem(
+                    o.name,
+                    doc, docW, docH,
+                    p, idx, cyclicPathFlags,
+                    lineWidth, lineCol, lineAlpha,
+                    fc, fa,
+                    clipView, clipElemId,
+                    idAttr, objNamesAsIds, styleAttr,
+                    maxPrecision, repeatThreshold, useRelativeCoords
+                )
                 if(svgPathElem != None):
                     svgElem.appendChild(svgPathElem)
                     idx += 1
 
-    doc.writexml(open(filepath,"w"))
+            o.shape_key_remove(mixed)
+            o.active_shape_key_index = active_idx
 
+    if (filepath == ''):
+        context.window_manager.clipboard = doc.documentElement.toxml()
+    else:
+        doc.documentElement.writexml(open(filepath,"w"))
 
 ###################### Operators ######################
 
@@ -2221,38 +2362,33 @@ class IntersectCurvesOp(Operator):
 
         return {'FINISHED'}
 
-class ExportSVGOp(Operator):
-
-    bl_idname = "object.export_svg"
-    bl_label = "Export to SVG"
-    bl_options = {'REGISTER', 'UNDO'}
-
+class SVGProps:
     def getExportViewList(scene = None, context = None):
         cameras = [o for o in bpy.data.objects if o.type == 'CAMERA']
-        vlist = [('ACTIVE_VIEW', 'Viewport View', "Export Viewport View")]
+        vlist = []
         for c in cameras:
              vlist.append((c.name, c.name, 'Export view from ' + c.name))
+        vlist.append(('ACTIVE_VIEW', 'Viewport View', "Export Viewport View"))
         return vlist
 
-    filepath : StringProperty(subtype='FILE_PATH')
-
     #User input
-    clipView : BoolProperty(name="Clip View", \
+    clipView : BoolProperty(name="Clip", \
         description = "Clip objects to view boundary", \
-            default = True)
+            default = False)
 
     exportView: EnumProperty(name = 'Export View',
         items = getExportViewList,
         description='View to export')
 
     lineWidth: FloatProperty(name="Line Width", \
-        description='Line width in exported SVG', default = 3, min = 0)
+        description='Line width in exported SVG', default = 0, min = 0)
 
     lineColorOpts: EnumProperty(name = 'Line Color',
         items = (('RANDOM', 'Random', 'Use random color for curves'),
                  ('PICK', 'Pick', 'Pick color'),
         ),
-        description='Color to draw curve lines')
+        description='Color to draw curve lines',
+        default = 'PICK')
 
     lineColor: bpy.props.FloatVectorProperty(
         name="Line Color",
@@ -2260,14 +2396,15 @@ class ExportSVGOp(Operator):
         size=4,
         min=0.0,
         max=1.0,
-        default=(0.5, 0.5, 0.5, 1.0)
+        default=(0, 0, 0, 0)
     )
 
     fillColorOpts: EnumProperty(name = 'Fill Color',
         items = (('RANDOM', 'Random', 'Use random fill color'),
                  ('PICK', 'Pick', 'Pick color'),
         ),
-        description='Color to fill solid curves')
+        description='Color to fill solid curves',
+        default = 'PICK')
 
     fillColor: bpy.props.FloatVectorProperty(
         name="Fill Color",
@@ -2275,42 +2412,148 @@ class ExportSVGOp(Operator):
         size=4,
         min=0.0,
         max=1.0,
-        default=(0, 0.3, 0.5, 1.0)
+        default=(0, 0, 0, 1)
     )
 
-    def execute(self, context):
-        exportSVG(context, self.filepath, self.exportView, self.clipView, self.lineWidth, \
-            self.lineColorOpts, self.lineColor, self.fillColorOpts, self.fillColor)
-        return {'FINISHED'}
+    viewAttr: EnumProperty(name = 'View Attribute',
+        items = (
+            ('WH', 'Width / Height', 'e.g. width="100" height="100"'),
+            ('VIEWBOX', 'View Box', 'This option is recommended for web graphics.\ne.g. viewBox="0 0 100 100"'),
+        ),
+        description='Preferred attribute for <svg> bounding box',
+        default = 'VIEWBOX'
+    )
+
+    idAttr : BoolProperty(
+        name="ID Attribute",
+        description = "Add id attribute to the <svg> tags",
+        default = False
+    )
+
+    objNamesAsIds : BoolProperty(
+        name="Use Object Names as IDs",
+        description = "Use object names as values of the id attributes",
+        default = True
+    )
+
+    styleAttr : BoolProperty(
+        name="Style Attribute",
+        description = "Add style attribute to the <path> tags",
+        default = False
+    )
+
+    maxPrecision : IntProperty(
+        name="Max Path Value Precision", 
+        description = "Maximum number of digits after the decimal points in <path> tag's d attribute",
+        default = 2
+    )
+
+    repeatThreshold : IntProperty(
+        name="Path Value Repeating Number Threshold", 
+        description = "Minimum number of repeating 0s or 9s in a fractional value to determine rounding precision, for fixing floating point errors",
+        default = 3
+    )
+
+    useRelativeCoords : BoolProperty(
+        name="Use Relative Positions", 
+        description = "In <path>, use relative-position-based path commands instead of absolute counterparts",
+        default = True
+    )
 
     def draw(self, context):
         layout = self.layout
-        col = layout.column()
-        row = col.row()
-        row.prop(self, "exportView")
-        col = layout.column()
-        row = col.row()
-        row.prop(self, "clipView")
-        col = layout.column()
-        row = col.row()
-        row.prop(self, "lineWidth")
-        col = layout.column()
-        row = col.row()
-        row.prop(self, "lineColorOpts")
-        if(self.lineColorOpts == 'PICK'):
-            row = row.split()
-            row.prop(self, "lineColor", text = '')
-        col = layout.column()
-        row = col.row()
-        row.prop(self, "fillColorOpts")
-        if(self.fillColorOpts == 'PICK'):
-            row = row.split()
-            row.prop(self, "fillColor", text = '')
+        col = layout.box().column(heading="View Settings")
+        col.prop(self, "exportView")
+        col.prop(self, "clipView")
+        col.split()
+        col = layout.box().column(heading="Tag Settings")
+        col.prop(self, "viewAttr")
+        col.prop(self, "idAttr")
+        if (self.idAttr):
+            col.prop(self, "objNamesAsIds")
+        col.prop(self, "styleAttr")
+        if (self.styleAttr):
+            col.prop(self, "lineWidth")
+            row = col.row()
+            row.prop(self, "lineColorOpts")
+            if (self.lineColorOpts == 'PICK'):
+                row = row.split()
+                row.prop(self, "lineColor", text = '')
+            row = col.row()
+            row.prop(self, "fillColorOpts")
+            if (self.fillColorOpts == 'PICK'):
+                row = row.split()
+                row.prop(self, "fillColor", text = '')
+        col.prop(self, "maxPrecision")
+        col.prop(self, "repeatThreshold")
+        col.prop(self, "useRelativeCoords")
+
+class ExportSVGOp(Operator, SVGProps):
+
+    bl_idname = "object.export_svg"
+    bl_label = "Export to SVG"
+    bl_description = "Export all visible curve objects as an SVG file"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filepath : StringProperty(subtype='FILE_PATH')
+
+    def execute(self, context):
+        exportSVG(
+            context,
+            self.filepath,
+            self.exportView,
+            self.clipView,
+            self.lineWidth,
+            self.lineColorOpts,
+            self.lineColor,
+            self.fillColorOpts,
+            self.fillColor,
+            self.viewAttr,
+            self.idAttr,
+            self.objNamesAsIds,
+            self.styleAttr,
+            self.maxPrecision,
+            self.repeatThreshold,
+            self.useRelativeCoords,
+        )
+        return {'FINISHED'}
 
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
 
+class CopySVGOp(Operator, SVGProps):
+
+    bl_idname = "object.copy_svg"
+    bl_label = "Copy SVG to Clipboard"
+    bl_description = "Copy all visible curve objects to clipboard, as an SVG element"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        exportSVG(
+            context,
+            '',
+            self.exportView,
+            self.clipView,
+            self.lineWidth,
+            self.lineColorOpts,
+            self.lineColor,
+            self.fillColorOpts,
+            self.fillColor,
+            self.viewAttr,
+            self.idAttr,
+            self.objNamesAsIds,
+            self.styleAttr,
+            self.maxPrecision,
+            self.repeatThreshold,
+            self.useRelativeCoords,
+        )
+        self.report({'INFO'}, "Copied SVG to Clipboard")
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.invoke_props_dialog(self)
+        return {'RUNNING_MODAL'}
 
 def markVertHandler(self, context):
     if(self.markVertex):
@@ -10812,6 +11055,7 @@ classes = [
     CloseStraightOp,
     OpenSplinesOp,
     ExportSVGOp,
+    CopySVGOp,
     RemoveDupliVertCurveOp,
     IntersectCurvesOp,
     convertToMeshOp,

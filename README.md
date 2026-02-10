@@ -1,3 +1,42 @@
+# blenderbezierutils (Noisysundae Fork)
+
+**Disclaimer:** This is a quick and dirty edit of blenderbezierutils. I edited parts related to the curve-to-SVG exporter and added options that optimize the output SVG content for web graphics, especially icons. I have made a pull request with the hope that these changes get merged into the base repository, so I might not be actively maintaining this fork.
+
+## Changes
+
+* **NEW:** Copy SVG to Clipboard (curves only)
+	* Same options as "Export to SVG", except file path
+	* For seamless transfer with other softwares that support SVG data copy/paste
+* SVG export file view (curves only)
+	* Added the following options:
+		* **View Attribute:** Select attribute(s) to specify bounding box, "[width](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/width) / [height](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/height)" (legacy) or "[viewBox](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/viewBox)"
+		* **ID Attribute:** Toggle "id" attribute insertion (legacy: always)
+			* **Use Object Names as Ids:** If "ID Attribute" is enabled, switch between using sequence numbers and object names for id attributes
+				* Names are used AS IS, so make sure to use naming patterns suitable for the attribute values (e.g. not containing double quotes).
+		* **Style Attribute:** Toggle "style" attribute insertion (legacy: always)
+			* Enabling this reveals the legacy color pick options.
+		* **Max Path Value Precision:** Maximum precision of the coordinate values (legacy: infinite)
+			* Defaults to 2. Adjust it as needed for a trade-off between precision and output SVG file size.
+		* **Path Value Repeating Number Threshold:** Rounds a coordinate value to a precision where the first repeating group of 0s or 9s is found
+			* Defaults to 3.
+			* Without this, result of an integer coordinate value will sometime contain excess fractional values (e.g. 748.8 → 748.8000000000001, 323.41 → 323.40999999999997) due to floating point errors.
+			* Also optimizes output file size.
+		* **Use Relative Positions:** Makes use of relative path commands
+			* Enabled by default.
+			* In most cases, enabling this optimizes the output file size since relative position values occupy less digits than absolute ones, especially on large reference bounding boxes, or shapes with high amount of control points.
+	* If there is one, the **Export View** option now defaults to the main camera in the active scene.
+	* Changed default **Clip View** option value and style colors
+	* Now excludes curve objects disabled in renders
+* Removed XML tag in the output SVG file.
+* Added curve shape key mix support.
+	* This means shape keys can be used to manipulate output, useful for SVG animations.
+* Output SVG paths for splines with **Cyclic U** enabled (closed shapes) are now ended with "z" path commands.
+	* To eliminate duplicate first control points, as well as properly connect closed shapes.
+
+Below is the content from the original README.
+
+---
+
 # Blender Add-on with Bézier Utility Operations
 
 **Add-on Version: 1.1**
