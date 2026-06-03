@@ -306,7 +306,7 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         name = 'Transform Orientation',
         items = get_orientation_items,
         description='Transform orientation for Draw / Edit operations. Context-aware: unavailable options show ⚠ warning',
-        default='REFERENCE')
+        default=3)
 
     snapOrigin: EnumProperty(
         name = 'Pivot Point',
