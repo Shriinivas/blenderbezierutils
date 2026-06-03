@@ -156,38 +156,14 @@ class BezierUtilsPanel(Panel):
                 box = layout.box()
                 col = box.column().split()
                 col.prop(params, 'fillType')
-                if params.fillType == 'QUAD':
-                    col = box.column().split()
-                    row = col.row()
-                    row.prop(params, 'remeshDepth')
-                    row.prop(params, 'unsubdivide')
                 
-                elif params.fillType in {'GRID', 'OFFSET'}:
-                    col = box.column().split()
-                    row = col.row()
-                    row.prop(params, 'fillDetail')
-                    
-                    if params.fillType == 'OFFSET':
-                        row.prop(params, 'offsetSize')
-                        
-                elif params.fillType == 'QUADRIFLOW':
-                    col = box.column().split()
-                    row = col.row()
-                    row.prop(params, 'quadriflowFaces')
-                    row.prop(params, 'quadriflowSeed')
-
-                    col = box.column().split()
-                    row = col.row()
-                    row.prop(params, 'quadriflowPreserveSharp')
-                    row.prop(params, 'quadriflowPreserveBoundary')
-
-                elif params.fillType in {'SMART', 'MEDIAL'}:
+                if params.fillType in {'SMART', 'MEDIAL'}:
                     col = box.column().split()
                     row = col.row()
                     row.prop(params, 'fillDetail')
                     row.prop(params, 'offsetSize')
 
-                elif params.fillType in {'GRID_TFI', 'POLAR', 'RECT_GRID', 'POLYGON', 'QMORPH'}:
+                elif params.fillType in {'GRID_TFI', 'QMORPH'}:
                     col = box.column().split()
                     row = col.row()
                     row.prop(params, 'fillDetail')

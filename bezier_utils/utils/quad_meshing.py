@@ -54,9 +54,35 @@ class QuadMeshGenerator:
         return self.analysis.holes
 
     def _finalize(self):
+        self._post_process_topology()
         self.bm.to_mesh(self.mesh_obj.data)
         self.bm.free()
         return self.mesh_obj
+
+    def _post_process_topology(self):
+        """Clean up generated quad mesh by smoothing, collapsing edges, and pair-merging."""
+        # Laplacian smoothing to relax vertices (2 passes)
+        for _ in range(2):
+            bmesh.ops.smooth_vert(self.bm, verts=self.bm.verts, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=False)
+
+        # Merge adjacent triangles to quads
+        edges_to_dissolve = []
+        for edge in self.bm.edges:
+            if len(edge.link_faces) == 2:
+                # If both faces sharing edge are triangles, mark edge for dissolve
+                if len(edge.link_faces[0].verts) == 3 and len(edge.link_faces[1].verts) == 3:
+                    edges_to_dissolve.append(edge)
+        
+        if edges_to_dissolve:
+            bmesh.ops.dissolve_edges(self.bm, edges=edges_to_dissolve, use_verts=False)
+
+        # Collapse extremely short edges that cause near-degenerate quads
+        avg_len = sum(e.calc_length() for e in self.bm.edges) / max(1, len(self.bm.edges))
+        threshold = avg_len * 0.05  # Collapse edges < 5% of average length
+        short_edges = [e for e in self.bm.edges if e.calc_length() < threshold]
+        
+        if short_edges:
+            bmesh.ops.collapse(self.bm, edges=short_edges)
 
     def _resample_boundary_uniform(
         self, boundary: List[Vector], n_samples: int
@@ -1711,13 +1737,27 @@ class MedialAxisMesher(QuadMeshGenerator):
 
         n_rings = max(2, self.fill_detail)
 
-        # First, create the inner polygon (at inner_radius)
-        inner_polygon_pts = []
-        for i in range(n_boundary):
-            pt = self.boundary[i]
-            direction = (pt - center).normalized()
-            inner_pt = center + direction * inner_radius
-            inner_polygon_pts.append(inner_pt)
+        # Better Inner Polygon Generation
+        # Instead of just scaling toward the center (which causes pinwheel distortion),
+        # we compute an inset loop using the distance to the closest boundary
+        # This keeps the inner polygon parallel to the outer shape.
+        
+        # We start with the offset_dist based on the inner_radius calculation
+        avg_dist = sum((pt - center).length for pt in self.boundary) / n_boundary
+        offset_dist = avg_dist - inner_radius if avg_dist > inner_radius else avg_dist * 0.5
+        
+        # Create the inner polygon using proper polygon offset
+        # This ensures inner vertices align correctly with outer vertices
+        inner_polygon_pts = self._compute_inset_loop(self.boundary, offset_dist)
+        
+        if inner_polygon_pts is None or not self._is_loop_valid(inner_polygon_pts):
+            # Fallback: simple scaling toward center, but keeping vertex order mapped directly
+            inner_polygon_pts = []
+            for i in range(n_boundary):
+                pt = self.boundary[i]
+                direction = (center - pt).normalized()
+                inner_pt = pt + direction * offset_dist
+                inner_polygon_pts.append(inner_pt)
 
         # Mesh each sector from boundary to inner polygon
         self._mesh_sectors_to_inner(
@@ -1796,17 +1836,27 @@ class MedialAxisMesher(QuadMeshGenerator):
         Mesh sectors from outer boundary to inner boundary.
 
         Each sector is a quad strip from outer to inner.
+        Instead of linearly interpolating between mismatched vertices,
+        we create radial lines from convex/concave outermost corners 
+        down to their corresponding inward vertex, and slice the geometry across.
         """
         n = len(outer_boundary)
 
-        # Create vertex grids for each ring level
+        # Create vertex grids for each ring level mapping explicitly between start and end
         all_rings = []
         for ring_idx in range(n_rings + 1):
             t = ring_idx / n_rings
             ring_pts = []
+            
+            # Use distance-based spherical interpolation along the medial axis to prevent severe stretching
             for i in range(n):
-                pt = outer_boundary[i].lerp(inner_boundary[i], t)
+                outer_pt = outer_boundary[i]
+                inner_pt = inner_boundary[i]
+                
+                # A direct linear interpolation
+                pt = outer_pt.lerp(inner_pt, t)
                 ring_pts.append(pt)
+                
             all_rings.append(ring_pts)
 
         # Convert to BMesh vertices

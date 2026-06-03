@@ -13,10 +13,6 @@ from ..utils.curve_utils import (
     joinSegs,
     convertToFace,
     convertToMesh,
-    applyMeshModifiers,
-    applyQuadriflowRemesh,
-    applyGridRemesh,
-    applyOffsetRemesh,
     pasteLength,
     removeDupliVert,
     unsubdivideObj,
@@ -329,8 +325,7 @@ class convertToMeshOp(Operator):
         for curve in curves:
             center, normal = None, None
             advanced_fill_types = {
-                "QUAD", "QUADRIFLOW", "GRID", "OFFSET", "SMART", "MEDIAL",
-                "GRID_TFI", "POLAR", "RECT_GRID", "POLYGON", "QMORPH"
+                "SMART", "MEDIAL", "GRID_TFI", "QMORPH"
             }
             if fillType in advanced_fill_types:
                 for spline in curve.data.splines:
@@ -356,32 +351,9 @@ class convertToMeshOp(Operator):
                 elif fillType == "GRID_TFI":
                     from ..utils.quad_meshing import grid_tfi_quad_mesh
                     meshObj = grid_tfi_quad_mesh(meshObj, curve, mesh_params)
-                elif fillType == "POLAR":
-                    from ..utils.quad_meshing import polar_grid_quad_mesh
-                    meshObj = polar_grid_quad_mesh(meshObj, curve, mesh_params)
-                elif fillType == "RECT_GRID":
-                    from ..utils.quad_meshing import rectangle_grid_quad_mesh
-                    meshObj = rectangle_grid_quad_mesh(meshObj, curve, mesh_params)
-                elif fillType == "POLYGON":
-                    from ..utils.quad_meshing import polygon_radial_quad_mesh
-                    meshObj = polygon_radial_quad_mesh(meshObj, curve, mesh_params)
                 elif fillType == "QMORPH":
                     from ..utils.quad_meshing import qmorph_quad_mesh
                     meshObj = qmorph_quad_mesh(meshObj, curve, mesh_params)
-                elif fillType == "QUAD":
-                    applyMeshModifiers(meshObj, remeshDepth)
-                elif fillType == "QUADRIFLOW":
-                    applyQuadriflowRemesh(
-                        meshObj,
-                        params.quadriflowFaces,
-                        params.quadriflowPreserveSharp,
-                        params.quadriflowPreserveBoundary,
-                        params.quadriflowSeed
-                    )
-                elif fillType == "GRID":
-                    meshObj = applyGridRemesh(meshObj, params.fillDetail)
-                elif fillType == "OFFSET":
-                    applyOffsetRemesh(meshObj, params.fillDetail, params.offsetSize)
 
                 if unsubdivide:
                     unsubdivideObj(meshObj)
