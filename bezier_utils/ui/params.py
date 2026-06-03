@@ -33,7 +33,7 @@ def getConstrAxisTups(scene=None, context=None):
     try:
         transType = bpy.context.window_manager.bezierToolkitParams.snapOrient
     except Exception:
-        transType = "GLOBAL"  # Default if not yet initialized
+        transType = "REFERENCE"  # Default if not yet initialized
 
     # VIEW, REFERENCE, CURR_POS work with planes, not individual axes
     if transType in {"VIEW", "REFERENCE", "CURR_POS"}:
@@ -70,17 +70,9 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
             ('SMART', "Smart (Auto)", "Auto-detect shape and use optimal quad algorithm"),
             ('NGON', "N-gon", "Single face"),
             ('TRI', "Triangle", "Triangulated mesh"),
-            ('QUAD', "Quad (Grid)", "Simple Quad Grid"),
-            ('GRID', "Mesh Grid", "Overlay Grid (Straight)"),
-            ('OFFSET', "Offset Loops", "Contour-aligned Quads (Hybrid)"),
             ('MEDIAL', "Medial Axis", "Offset rings + Grid Fill TFI center"),
             ('GRID_TFI', "Grid Fill (TFI)", "Direct TFI grid without rings - preserves shape"),
-            ('POLAR', "Polar Grid", "Radial sectors for circles/ellipses"),
-            ('RECT_GRID', "Rectangle Grid", "Axis-aligned grid for rectangles"),
-            ('POLYGON', "Polygon Radial", "Radial sectors for regular polygons"),
-            ('QMORPH', "Q-Morph", "Advancing front quad generation"),
-            ('QUADRIFLOW', "Quadriflow", "Organic Quad Remesh"),
-            ('FAN', "Fan", "Triangle Fan (Central Vertex)")
+            ('QMORPH', "Q-Morph", "Advancing front quad generation")
         ],
         default='SMART'
     )
@@ -97,23 +89,6 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     offsetSize: FloatProperty(name="Offset Size", \
         description='Distance between loops (for Offset fill)', \
         default = 0.5, min = 0.001, max=100.0)
-
-    # Quadriflow Parameters
-    quadriflowFaces: IntProperty(name="Target Faces", \
-        description='Target number of faces for Quadriflow remesh', \
-        default = 1000, min = 10)
-
-    quadriflowPreserveSharp: BoolProperty(name="Preserve Sharp", \
-        description='Preserve sharp edges during remesh', \
-        default = True)
-
-    quadriflowPreserveBoundary: BoolProperty(name="Preserve Boundary", \
-        description='Preserve mesh boundary during remesh', \
-        default = True)
-
-    quadriflowSeed: IntProperty(name="Seed", \
-        description='Random seed for Quadriflow', \
-        default = 0, min = 0)
 
     remeshApplyTo: EnumProperty(name="Apply To", items = \
         [("PERSEG", 'Segment', "Apply resolution to segment separately"), \
@@ -330,7 +305,8 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
     snapOrient: EnumProperty(
         name = 'Transform Orientation',
         items = get_orientation_items,
-        description='Transform orientation for Draw / Edit operations. Context-aware: unavailable options show ⚠ warning')
+        description='Transform orientation for Draw / Edit operations. Context-aware: unavailable options show ⚠ warning',
+        default='REFERENCE')
 
     snapOrigin: EnumProperty(
         name = 'Pivot Point',

@@ -466,6 +466,7 @@ class BGLDrawMgr:
         self.lineInfoMap = {}
         self.ptInfoMap = {}
         self.shader = shader
+        self.shader_point = gpu.shader.from_builtin("POINT_FLAT_COLOR")
 
     def addLineInfo(
         self, infoId, size, color, pts, gradientStart=None, gradientEnd=None, mid=True
@@ -534,9 +535,11 @@ class BGLDrawMgr:
                     # bgl.glPointSize(ptInfos[i-1].size)
                     gpu.state.point_size_set(ptInfos[i - 1].size)
                     batch = batch_for_shader(
-                        self.shader, "POINTS", {"pos": pos, "color": col}
+                        self.shader_point, "POINTS", {"pos": pos, "color": col}
                     )
-                    batch.draw(self.shader)
+                    self.shader_point.bind()
+                    self.shader_point.uniform_float("size", float(ptInfos[i - 1].size))
+                    batch.draw(self.shader_point)
                 pos = []
                 col = []
 
@@ -557,8 +560,10 @@ class BGLDrawMgr:
         if len(pos) > 0:
             # bgl.glPointSize(ptInfos[-1].size)
             gpu.state.point_size_set(ptInfos[-1].size)
-            batch = batch_for_shader(self.shader, "POINTS", {"pos": pos, "color": col})
-            batch.draw(self.shader)
+            batch = batch_for_shader(self.shader_point, "POINTS", {"pos": pos, "color": col})
+            self.shader_point.bind()
+            self.shader_point.uniform_float("size", float(ptInfos[-1].size))
+            batch.draw(self.shader_point)
 
     def resetLineInfo(self, infoId):
         drawInfo = self.lineInfoMap.get(infoId)
@@ -725,6 +730,8 @@ class MarkerController:
     def drawHandler(self):
         # bgl.glPointSize(MarkerController.defPointSize)
         gpu.state.point_size_set(MarkerController.defPointSize)
+        self.shader.bind()
+        self.shader.uniform_float("size", float(MarkerController.defPointSize))
         self.batch.draw(self.shader)
 
     def removeMarkers(self, context):
@@ -741,7 +748,7 @@ class MarkerController:
 
     def __init__(self, context):
         self.smMap = self.createSMMap(context)
-        self.shader = gpu.shader.from_builtin("FLAT_COLOR")
+        self.shader = gpu.shader.from_builtin("POINT_FLAT_COLOR")
         # ~ self.shader.bind()
 
         try:

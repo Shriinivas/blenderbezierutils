@@ -3525,8 +3525,8 @@ def drawSettingsFT(self, context):
     row.scale_x = 0.9
     current = (params.snapOrient, params.snapOrigin)
     presets = [
-        ('GLOBAL', 'CURSOR', 'bezier.preset_free_draw', 'Free'),
         ('REFERENCE', 'CURSOR', 'bezier.preset_continue', 'Continue'),
+        ('GLOBAL', 'CURSOR', 'bezier.preset_free_draw', 'Free'),
         ('AXIS', 'AXIS', 'bezier.preset_custom_angle', 'Axis'),
         ('FACE', 'FACE', 'bezier.preset_surface_align', 'Surface'),
     ]
