@@ -322,6 +322,16 @@ class BezierToolkitParams(bpy.types.PropertyGroup):
         items = getConstrAxisTups,
         description='Constrain Draw / Edit Axes')
 
+    surfaceMode: EnumProperty(
+        name="Surface Mode",
+        description="Mode for curve surface following",
+        items=[
+            ('EXACT', "Exact (Crease)", "Curve segments hug the surface exactly, creating creases at mesh edges"),
+            ('SMOOTH', "Smooth (Transition)", "Curve transitions smoothly across edges (rounded look)")
+        ],
+        default='EXACT'
+    )
+
     snapToPlane: BoolProperty(name="Snap to Plane",
         description='During draw / edit snap the point to the selected plane', \
                     default = False)

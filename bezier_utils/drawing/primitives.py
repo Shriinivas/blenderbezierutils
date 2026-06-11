@@ -24,8 +24,8 @@ class BaseDraw:
     def initialize(self):
         self.curvePts = []
 
-    def newPoint(self, loc, ltype, rtype):
-        self.curvePts.append([loc, loc, loc, ltype, rtype])
+    def newPoint(self, loc, ltype, rtype, faceIdx=None):
+        self.curvePts.append([loc, loc, loc, ltype, rtype, faceIdx])
 
     def setCurvePt(self, idx, pt):
         self.curvePts[idx] = pt
@@ -581,10 +581,18 @@ class BezierDraw(BaseDraw):
         self.grabRepos = False
         self.dissociateHdl = False
 
-    def moveBezierPt(self, loc):
+    def moveBezierPt(self, loc, faceIdx=None):
         if len(self.curvePts) > 0:
             pt = self.curvePts[-1][:]
-            self.setCurvePt(-1, [loc, loc, loc, pt[3], pt[4]])
+            # Make sure list is long enough for faceIdx
+            if len(pt) < 6:
+                pt.append(faceIdx)
+            else:
+                pt[5] = faceIdx
+            pt[0] = loc
+            pt[1] = loc
+            pt[2] = loc
+            self.setCurvePt(-1, pt)
 
     def movePointByDelta(self, delta):
         if len(self.curvePts) > 0:
@@ -705,7 +713,7 @@ class BezierDraw(BaseDraw):
                     self.reset()
                 else:
                     loc = snapper.get3dLocSnap(rmInfo)
-                    self.moveBezierPt(loc)
+                    self.moveBezierPt(loc, snapper.lastFaceIdx)
                 self.capture = False
                 self.parent.redrawBezier(rmInfo)
             return {"RUNNING_MODAL"}
@@ -716,7 +724,7 @@ class BezierDraw(BaseDraw):
                     self.reset()
                     snapper.digitsConfirmed = False
                     loc = snapper.get3dLocSnap(rmInfo)
-                    self.newPoint(loc, "ALIGNED", "ALIGNED")
+                    self.newPoint(loc, "ALIGNED", "ALIGNED", snapper.lastFaceIdx)
                     self.parent.redrawBezier(rmInfo)
                 else:
                     if len(self.curvePts) > 0:
@@ -729,7 +737,7 @@ class BezierDraw(BaseDraw):
         if not snapProc and event.type == "LEFTMOUSE" and event.value == "PRESS":
             if len(self.curvePts) == 0:
                 loc = snapper.get3dLocSnap(rmInfo)
-                self.newPoint(loc, "ALIGNED", "ALIGNED")
+                self.newPoint(loc, "ALIGNED", "ALIGNED", snapper.lastFaceIdx)
 
             # Special condition for hot-key single axis lock (useful)
             if len(snapper.freeAxes) == 1 and len(self.curvePts) > 1:
@@ -776,7 +784,7 @@ class BezierDraw(BaseDraw):
                 # ~ if(len(self.curvePts) == 1):
                 # ~ self.moveBptElem('right', loc)# changes only rt handle
 
-                self.newPoint(loc, "ALIGNED", "ALIGNED")
+                self.newPoint(loc, "ALIGNED", "ALIGNED", snapper.lastFaceIdx)
                 self.parent.redrawBezier(rmInfo)
 
             return {"RUNNING_MODAL"}
@@ -804,6 +812,8 @@ class BezierDraw(BaseDraw):
                         self.moveBptElemByDelta("pt", delta)
                         self.moveBptElemByDelta("left", delta)
                         self.moveBptElemByDelta("right", delta)
+                        if len(self.curvePts[-1]) > 5:
+                            self.curvePts[-1][5] = snapper.lastFaceIdx
                     else:
                         loc = snapper.get3dLocSnap(rmInfo)
                         delta = loc - lastPt[1]
@@ -819,7 +829,7 @@ class BezierDraw(BaseDraw):
                     hdlPtIdxs = {len(self.curvePts) - 1}
                 else:
                     loc = snapper.get3dLocSnap(rmInfo)
-                    self.moveBezierPt(loc)
+                    self.moveBezierPt(loc, snapper.lastFaceIdx)
                     hdlPtIdxs = {len(self.curvePts) - 2}
 
             self.parent.redrawBezier(rmInfo, hdlPtIdxs=hdlPtIdxs)
@@ -847,3 +857,254 @@ class BezierDraw(BaseDraw):
     def getRefLineOrig(self):
         refLine = self.getRefLine()
         return refLine[-1] if len(refLine) > 0 else None
+
+
+def get_bezier_sub_segment(p0, p1, p2, p3, t1, t2):
+    def split_at(points, t):
+        p0, p1, p2, p3 = points
+        p01 = p0 + (p1 - p0) * t
+        p12 = p1 + (p2 - p1) * t
+        p23 = p2 + (p3 - p2) * t
+        p012 = p01 + (p12 - p01) * t
+        p123 = p12 + (p23 - p12) * t
+        p0123 = p012 + (p123 - p012) * t
+        return (p0, p01, p012, p0123), (p0123, p123, p23, p3)
+        
+    if t2 < 1.0:
+        left, _ = split_at((p0, p1, p2, p3), t2)
+    else:
+        left = (p0, p1, p2, p3)
+        
+    if t1 > 0.0:
+        t_scaled = t1 / t2 if t2 > 0.0 else 0.0
+        _, right = split_at(left, t_scaled)
+        return right
+    else:
+        return left
+
+
+def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_start, face_end, region, rv3d, bm):
+    from mathutils import Vector
+    from mathutils.geometry import intersect_line_line_2d, intersect_line_line
+    from bpy_extras.view3d_utils import region_2d_to_origin_3d, region_2d_to_vector_3d
+    
+    if face_start is None or face_end is None:
+        return []
+        
+    M = 100
+    pts_3d = []
+    pts_2d = []
+    for i in range(M + 1):
+        t = i / M
+        p_t = (1-t)**3 * p_start + 3*(1-t)**2 * t * h_start + 3*(1-t)*t**2 * h_end + t**3 * p_end
+        pts_3d.append(p_t)
+        xy_t = getCoordFromLoc(region, rv3d, p_t)
+        pts_2d.append(xy_t)
+        
+    curr_face_idx = face_start
+    t_min = 0.0
+    intersections = []
+    visited = {curr_face_idx}
+    
+    max_steps = 150
+    for _ in range(max_steps):
+        if curr_face_idx == face_end or curr_face_idx is None:
+            break
+            
+        bm_face = bm.faces[curr_face_idx]
+        candidates = []
+        
+        for bm_edge in bm_face.edges:
+            v1 = obj.matrix_world @ bm_edge.verts[0].co
+            v2 = obj.matrix_world @ bm_edge.verts[1].co
+            xy1 = getCoordFromLoc(region, rv3d, v1)
+            xy2 = getCoordFromLoc(region, rv3d, v2)
+            
+            for j in range(M):
+                t_A = j / M
+                t_B = (j + 1) / M
+                if t_B <= t_min:
+                    continue
+                
+                res_2d = intersect_line_line_2d(pts_2d[j], pts_2d[j+1], xy1, xy2)
+                if res_2d is not None:
+                    eps = 1e-3
+                    x_min1, x_max1 = min(pts_2d[j].x, pts_2d[j+1].x) - eps, max(pts_2d[j].x, pts_2d[j+1].x) + eps
+                    y_min1, y_max1 = min(pts_2d[j].y, pts_2d[j+1].y) - eps, max(pts_2d[j].y, pts_2d[j+1].y) + eps
+                    x_min2, x_max2 = min(xy1.x, xy2.x) - eps, max(xy1.x, xy2.x) + eps
+                    y_min2, y_max2 = min(xy1.y, xy2.y) - eps, max(xy1.y, xy2.y) + eps
+                    
+                    if (x_min1 <= res_2d.x <= x_max1 and y_min1 <= res_2d.y <= y_max1 and
+                        x_min2 <= res_2d.x <= x_max2 and y_min2 <= res_2d.y <= y_max2):
+                        
+                        seg_len = (pts_2d[j+1] - pts_2d[j]).length
+                        if seg_len > 1e-6:
+                            t_seg = (res_2d - pts_2d[j]).length / seg_len
+                        else:
+                            t_seg = 0.0
+                        t_val = t_A + (t_B - t_A) * t_seg
+                        
+                        ray_origin = region_2d_to_origin_3d(region, rv3d, res_2d)
+                        ray_dir = region_2d_to_vector_3d(region, rv3d, res_2d)
+                        
+                        res_3d = intersect_line_line(ray_origin, ray_origin + ray_dir, v1, v2)
+                        if res_3d is not None:
+                            p_ray, p_edge = res_3d
+                            edge_vec = v2 - v1
+                            edge_len = edge_vec.length
+                            if edge_len > 1e-6:
+                                factor = edge_vec.dot(p_edge - v1) / (edge_len * edge_len)
+                                factor = max(0.0, min(1.0, factor))
+                                p_edge = v1 + edge_vec * factor
+                            
+                            neighbor_face = None
+                            for f in bm_edge.link_faces:
+                                if f.index != curr_face_idx:
+                                    neighbor_face = f.index
+                                    break
+                            candidates.append((t_val, p_edge, curr_face_idx, neighbor_face))
+                            
+        if len(candidates) > 0:
+            valid_candidates = [c for c in candidates if c[0] > t_min + 1e-5]
+            if not valid_candidates:
+                break
+            best = min(valid_candidates, key=lambda x: x[0])
+            t_int, p_int, f_from, f_to = best
+            intersections.append((p_int, f_from, f_to, t_int))
+            t_min = t_int
+            
+            if f_to is None or f_to in visited:
+                break
+            curr_face_idx = f_to
+            visited.add(f_to)
+        else:
+            break
+            
+    return intersections
+
+
+def project_handle_to_face_plane(p_co, h_co, normal_world, region, rv3d):
+    from bpy_extras.view3d_utils import region_2d_to_origin_3d, region_2d_to_vector_3d
+    xy_h = getCoordFromLoc(region, rv3d, h_co)
+    ray_org = region_2d_to_origin_3d(region, rv3d, xy_h)
+    ray_dir = region_2d_to_vector_3d(region, rv3d, xy_h)
+    denom = ray_dir.dot(normal_world)
+    if abs(denom) > 1e-6:
+        u = (p_co - ray_org).dot(normal_world) / denom
+        return ray_org + ray_dir * u
+    else:
+        # Fallback to orthogonal projection
+        v = h_co - p_co
+        proj = normal_world.dot(v) * normal_world
+        return p_co + (v - proj)
+
+
+def resolve_surface_crossovers(curvePts, obj, region, rv3d, surfaceMode, cached_bm=None):
+    if len(curvePts) < 2:
+        return curvePts
+
+    is_cyclic = False
+    if vectCmpWithMargin(curvePts[0][1], curvePts[-1][1]):
+        is_cyclic = True
+
+    import bmesh
+    if cached_bm is not None:
+        bm = cached_bm
+    else:
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bm.faces.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+
+    pts = [pt[:] for pt in curvePts]
+    for pt in pts:
+        if len(pt) > 4:
+            pt[3] = 'FREE'
+            pt[4] = 'FREE'
+
+    if is_cyclic and not vectCmpWithMargin(pts[0][1], pts[-1][1]):
+        pts.append(pts[0][:])
+
+    new_pts = []
+    num_segs = len(pts) - 1
+    for i in range(num_segs):
+        pt_curr = pts[i]
+        pt_next = pts[i+1]
+        
+        p_start = pt_curr[1]
+        h_start = pt_curr[2]
+        h_end = pt_next[0]
+        p_end = pt_next[1]
+        
+        face_start = pt_curr[5] if len(pt_curr) > 5 else None
+        face_end = pt_next[5] if len(pt_next) > 5 else None
+        
+        intersections = get_surface_intersection_points(
+            obj, p_start, h_start, h_end, p_end, face_start, face_end,
+            region, rv3d, bm
+        )
+        
+        start_idx = len(new_pts)
+        new_pts.append(pt_curr)
+        
+        if len(intersections) > 0:
+            for p_int, face_prev, face_next, t_val in intersections:
+                new_pts.append([p_int, p_int, p_int, 'FREE', 'FREE', face_next])
+                
+            t_vals = [0.0] + [item[3] for item in intersections] + [1.0]
+            
+            for sub_idx in range(len(intersections) + 1):
+                idx_curr = start_idx + sub_idx
+                pt_a = new_pts[idx_curr]
+                pt_b = pt_next if sub_idx == len(intersections) else new_pts[idx_curr + 1]
+                
+                r0, r1, r2, r3 = get_bezier_sub_segment(
+                    p_start, h_start, h_end, p_end,
+                    t_vals[sub_idx], t_vals[sub_idx+1]
+                )
+                
+                face_idx = pt_a[5]
+                if face_idx is not None:
+                    poly = obj.data.polygons[face_idx]
+                    normal_world = obj.matrix_world.to_3x3() @ poly.normal
+                    normal_world.normalize()
+                    pt_a[2] = project_handle_to_face_plane(pt_a[1], r1, normal_world, region, rv3d)
+                    pt_b[0] = project_handle_to_face_plane(pt_b[1], r2, normal_world, region, rv3d)
+            
+            if surfaceMode == 'SMOOTH':
+                for idx in range(start_idx + 1, start_idx + len(intersections) + 1):
+                    pt = new_pts[idx]
+                    v_left = (pt[0] - pt[1]).normalized()
+                    v_right = (pt[2] - pt[1]).normalized()
+                    t_avg = (v_right - v_left).normalized()
+                    l_left = (pt[0] - pt[1]).length
+                    l_right = (pt[2] - pt[1]).length
+                    pt[2] = pt[1] + t_avg * l_right
+                    pt[0] = pt[1] - t_avg * l_left
+        else:
+            face_idx = pt_curr[5]
+            if face_idx is not None:
+                poly = obj.data.polygons[face_idx]
+                normal_world = obj.matrix_world.to_3x3() @ poly.normal
+                normal_world.normalize()
+                pt_curr[2] = project_handle_to_face_plane(pt_curr[1], pt_curr[2], normal_world, region, rv3d)
+                
+            face_next_idx = pt_next[5]
+            if face_next_idx is not None:
+                poly = obj.data.polygons[face_next_idx]
+                normal_world = obj.matrix_world.to_3x3() @ poly.normal
+                normal_world.normalize()
+                pt_next[0] = project_handle_to_face_plane(pt_next[1], pt_next[0], normal_world, region, rv3d)
+                
+    new_pts.append(pts[-1])
+    
+    if is_cyclic:
+        new_pts[0][0] = new_pts[-1][0]
+        new_pts[0][3] = new_pts[-1][3]
+        new_pts[0][4] = new_pts[-1][4]
+        new_pts.pop()
+        
+    if cached_bm is None:
+        bm.free()
+        
+    return new_pts

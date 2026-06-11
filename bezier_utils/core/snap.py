@@ -576,10 +576,17 @@ class Snapper:
         self.orig = None
         self.snapCo = None
         self.freezeOrient = False
+        self.lastFaceIdx = None
 
         self.lastSnapTypes = set()
 
         self.resetSnap()
+
+    def unfreezeOrient(self):
+        self.freezeOrient = False
+        self.tm = None
+        self.orig = None
+        self.lastFaceIdx = None
 
     def updateSnapKeyMap(self):
         self.snapKeyMap = {}
@@ -598,6 +605,7 @@ class Snapper:
         self.freeAxes = []  # All axes free
         self.snapDigits.initialize()
         self.rmInfo = None
+        self.lastFaceIdx = None
         self.snapParams = None
 
         # This variable lets caller know that return was pressed after digits were entered
@@ -654,11 +662,12 @@ class Snapper:
                 return self.customAxis.axisPts[0]
         elif origType == "OBJECT" and obj is not None:
             return obj.location
-        elif origType == "FACE" and rmInfo is not None:
+        elif origType in {"FACE", "SURFACE"} and rmInfo is not None:
             selObj, location, normal, faceIdx = getSelFaceLoc(
                 rmInfo.region, rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT
             )
             if faceIdx is not None:
+                self.lastFaceIdx = faceIdx
                 return selObj.matrix_world @ selObj.data.polygons[faceIdx].center
         elif origType == "CURSOR":
             return bpy.context.scene.cursor.location
@@ -719,11 +728,12 @@ class Snapper:
         elif obj is not None and transType == "OBJECT":
             tm = (obj.matrix_world).inverted_safe()
 
-        elif transType == "FACE":
+        elif transType in {"FACE", "SURFACE"}:
             selObj, location, normal, faceIdx = getSelFaceLoc(
                 rmInfo.region, rmInfo.rv3d, rmInfo.xy, self.MAX_SNAP_FACE_CNT
             )
             if faceIdx is not None:
+                self.lastFaceIdx = faceIdx
                 normal = selObj.data.polygons[faceIdx].normal
                 quat = normal.to_track_quat("Z", "X").to_matrix().to_4x4()
                 tm = (selObj.matrix_world @ quat).inverted_safe()
@@ -887,12 +897,12 @@ class Snapper:
     ):
         obj = bpy.context.object
 
-        if self.tm is not None and self.freezeOrient and transType == "FACE":
+        if self.tm is not None and self.freezeOrient and transType in {"FACE", "SURFACE"}:
             tm, invTm = self.tm, self.tm.inverted_safe()
         else:
             tm, invTm = self.getTransMatsForOrient(rmInfo, obj, transType, axisScale)
 
-        if self.orig is not None and freezeOrient and origType == "FACE":
+        if self.orig is not None and freezeOrient and origType in {"FACE", "SURFACE"}:
             orig = self.orig
         else:
             orig = self.getCurrOrig(rmInfo, obj, origType, refLineOrig, selCo)
@@ -993,13 +1003,25 @@ class Snapper:
                 selObj, loc, normal, faceIdx = getSelFaceLoc(
                     region, rv3d, xy, self.MAX_SNAP_FACE_CNT, checkEdge=True
                 )
+                if faceIdx is not None:
+                    self.lastFaceIdx = faceIdx
 
         if loc is not None:
             loc = tm @ loc
             self.lastSnapTypes.add("loc")
         else:
-            loc = region_2d_to_location_3d(region, rv3d, xy, vec)
-            loc = tm @ loc
+            if transType == "SURFACE":
+                selObj, hit_loc, normal, faceIdx = getSelFaceLoc(
+                    region, rv3d, xy, self.MAX_SNAP_FACE_CNT
+                )
+                if faceIdx is not None:
+                    self.lastFaceIdx = faceIdx
+                    loc = tm @ hit_loc
+                    self.lastSnapTypes.add("loc")
+
+            if loc is None:
+                loc = region_2d_to_location_3d(region, rv3d, xy, vec)
+                loc = tm @ loc
 
             # TODO: Get gridSnap and angleSnap out of this if
             # Apply constraint when: axis constraints active (freeAxesN < 3),

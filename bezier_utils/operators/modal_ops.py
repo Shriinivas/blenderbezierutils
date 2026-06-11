@@ -522,7 +522,29 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
         self.updateDrawSides(context)
         return {"RUNNING_MODAL"}
 
+    def get_cached_bmesh(self, obj):
+        if not hasattr(self, "cached_bm_obj") or self.cached_bm_obj != obj or not hasattr(self, "cached_bm") or self.cached_bm is None:
+            self.free_cached_bmesh()
+            if obj is not None and obj.type == 'MESH':
+                import bmesh
+                self.cached_bm = bmesh.new()
+                self.cached_bm.from_mesh(obj.data)
+                self.cached_bm.faces.ensure_lookup_table()
+                self.cached_bm.edges.ensure_lookup_table()
+                self.cached_bm_obj = obj
+            else:
+                self.cached_bm = None
+                self.cached_bm_obj = None
+        return self.cached_bm
+
+    def free_cached_bmesh(self):
+        if hasattr(self, "cached_bm") and self.cached_bm is not None:
+            self.cached_bm.free()
+            self.cached_bm = None
+            self.cached_bm_obj = None
+
     def cancelOp(self, context):
+        self.free_cached_bmesh()
         self.resetDisplay()
         bpy.app.handlers.undo_post.remove(self.postUndoRedo)
         bpy.app.handlers.redo_post.remove(self.postUndoRedo)
@@ -540,6 +562,7 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
             and (event.type == "SPACE" or event.type == "RET")
         )
         self.save(context, event, autoclose, location)
+        self.free_cached_bmesh()
         self.resetDisplay()
         self.initialize()
 
@@ -721,11 +744,36 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         endSplineIdx=None,
         autoclose=False,
     ):
-        # First create the new curve
         collection = context.collection
         if collection is None:
             collection = context.scene.collection
-        obj = createObjFromPts(self.drawObj.curvePts, "3D", collection, autoclose)
+
+        params = context.window_manager.bezierToolkitParams
+        calcHdlTypes = (params.snapOrient != 'SURFACE')
+        
+        curvePts = self.drawObj.curvePts
+        print("\n--- BEZIERUTILS DEBUG ---")
+        print("Original self.drawObj.curvePts:")
+        for idx, pt in enumerate(curvePts):
+            print(f"  pt {idx}: L={pt[0]}, Co={pt[1]}, R={pt[2]}, Face={pt[5] if len(pt)>5 else None}")
+
+        if params.snapOrient == 'SURFACE':
+            cached_bm = self.get_cached_bmesh(context.active_object)
+            curvePts = resolve_surface_crossovers(
+                curvePts, context.active_object, self.rmInfo.region, self.rmInfo.rv3d, params.surfaceMode, cached_bm
+            )
+            print("After resolve_surface_crossovers:")
+            for idx, pt in enumerate(curvePts):
+                print(f"  pt {idx}: L={pt[0]}, Co={pt[1]}, R={pt[2]}, Face={pt[5] if len(pt)>5 else None}")
+            
+        obj = createObjFromPts(curvePts, "3D", collection, autoclose, calcHdlTypes=calcHdlTypes)
+
+        print("After createObjFromPts (local):")
+        for idx, bpt in enumerate(obj.data.splines[0].bezier_points):
+            print(f"  bpt {idx}: L={bpt.handle_left}, Co={bpt.co}, R={bpt.handle_right}")
+        print("After createObjFromPts (world):")
+        for idx, bpt in enumerate(obj.data.splines[0].bezier_points):
+            print(f"  bpt {idx}: L={obj.matrix_world @ bpt.handle_left}, Co={obj.matrix_world @ bpt.co}, R={obj.matrix_world @ bpt.handle_right}")
 
         # Undo stack in case the user does not want to join
         if endObj is not None or startObj is not None:
@@ -851,6 +899,9 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
             if align and startObj is None and endObj is None:
                 alignToNormal(obj)
                 bpy.context.evaluated_depsgraph_get().update()
+                print("After alignToNormal (world):")
+                for idx, bpt in enumerate(obj.data.splines[0].bezier_points):
+                    print(f"  bpt {idx}: L={obj.matrix_world @ bpt.handle_left}, Co={obj.matrix_world @ bpt.co}, R={obj.matrix_world @ bpt.handle_right}")
                 if location is None:
                     location = getObjBBoxCenter(obj)
 
@@ -858,6 +909,9 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 shiftOrigin(obj, location)
                 obj.location = location
                 bpy.context.evaluated_depsgraph_get().update()
+                print("After shiftOrigin (world):")
+                for idx, bpt in enumerate(obj.data.splines[0].bezier_points):
+                    print(f"  bpt {idx}: L={obj.matrix_world @ bpt.handle_left}, Co={obj.matrix_world @ bpt.co}, R={obj.matrix_world @ bpt.handle_right}")
 
             params = bpy.context.window_manager.bezierToolkitParams
             copyProperties(params.copyPropsObj, obj)
@@ -1606,8 +1660,8 @@ class SelectCurveInfo:
 
         invMw = self.obj.matrix_world.inverted_safe()
         for i, pt in enumerate(spline.bezier_points):
-            pt.handle_left = invMw @ pts[i][0]
             pt.co = invMw @ pts[i][1]
+            pt.handle_left = invMw @ pts[i][0]
             pt.handle_right = invMw @ pts[i][2]
             pt.handle_left_type = pts[i][3]
             pt.handle_right_type = pts[i][4]
@@ -2224,8 +2278,8 @@ class EditCurveInfo(SelectCurveInfo):
         if self.hasShapeKey:
             for i, ptIdx in enumerate(ptIdxs):
                 keydata = self.getShapeKeyData(ptIdx)
-                keydata.handle_left = invMw @ pts[i][0]
                 keydata.co = invMw @ pts[i][1]
+                keydata.handle_left = invMw @ pts[i][0]
                 keydata.handle_right = invMw @ pts[i][2]
                 if pts[i][3] == "AUTO":
                     pts[i][3] = "ALIGNED"
@@ -2241,8 +2295,8 @@ class EditCurveInfo(SelectCurveInfo):
                         spline.bezier_points[idx].handle_right_type = "ALIGNED"
         else:
             for i, bpt in enumerate(bpts):
-                bpt.handle_left = invMw @ pts[i][0]
                 bpt.co = invMw @ pts[i][1]
+                bpt.handle_left = invMw @ pts[i][0]
                 bpt.handle_right = invMw @ pts[i][2]
 
         for i, bpt in enumerate(bpts):
@@ -3546,6 +3600,8 @@ def drawSettingsFT(self, context):
     row.scale_x = 0.85
     row.prop(params, "constrAxes", text="")
     row.prop(params, "axisScale", text="")
+    if params.snapOrient == 'SURFACE':
+        row.prop(params, "surfaceMode", text="")
     # Only available for planes not axis
     if showSnapToPlane(params):
         row.prop(params, "snapToPlane", text="Plane")

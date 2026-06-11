@@ -70,9 +70,12 @@ def shiftOrigin(obj, origin):
                 bpt.handle_left_type = 'FREE'
                 bpt.handle_right_type = 'FREE'
 
-                bpt.co += invMw @ oLoc - invMw @ origin
-                bpt.handle_left += invMw @ oLoc - invMw @ origin
-                bpt.handle_right += invMw @ oLoc - invMw @ origin
+                delta = invMw @ oLoc - invMw @ origin
+                hl_old = bpt.handle_left.copy()
+                hr_old = bpt.handle_right.copy()
+                bpt.co += delta
+                bpt.handle_left = hl_old + delta
+                bpt.handle_right = hr_old + delta
 
                 bpt.handle_left_type = lht
                 bpt.handle_right_type = rht
@@ -95,9 +98,11 @@ def shiftMatrixWorld(obj, mw):
                 rht = bpt.handle_right_type
                 bpt.handle_left_type = 'FREE'
                 bpt.handle_right_type = 'FREE'
+                hl_old = bpt.handle_left.copy()
+                hr_old = bpt.handle_right.copy()
                 bpt.co = invMw @ (omw @ bpt.co)
-                bpt.handle_left = invMw @ (omw @ bpt.handle_left)
-                bpt.handle_right = invMw @ (omw @ bpt.handle_right)
+                bpt.handle_left = invMw @ (omw @ hl_old)
+                bpt.handle_right = invMw @ (omw @ hr_old)
 
                 bpt.handle_left_type = lht
                 bpt.handle_right_type = rht

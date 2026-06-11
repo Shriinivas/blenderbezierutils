@@ -118,11 +118,20 @@ def createObjFromPts(
     prevPt = None
     for i, pt in enumerate(curvePts):
         currPt = spline.bezier_points[i]
+        
+        # Set to FREE first to disable Blender constraints
+        currPt.handle_left_type = 'FREE'
+        currPt.handle_right_type = 'FREE'
+        
         currPt.co = pt[1]
+        currPt.handle_left = pt[0]
         currPt.handle_right = pt[2]
+        
         if not calcHdlTypes and len(pt) > 3:
-            currPt.handle_right_type = pt[3]
-            currPt.handle_left_type = pt[4]
+            currPt.handle_left_type = pt[3]
+            currPt.handle_right_type = pt[4]
+            currPt.handle_left = pt[0]
+            currPt.handle_right = pt[2]
         elif (
             prevPt is not None
             and prevPt.handle_right == prevPt.co
@@ -430,9 +439,11 @@ def changeMW(obj, newMW):
     invMW = newMW.inverted_safe()
     for spline in obj.data.splines:
         for pt in spline.bezier_points:
+            hl_old = pt.handle_left.copy()
+            hr_old = pt.handle_right.copy()
             pt.co = invMW @ (obj.mw @ pt.co)
-            pt.handle_left = invMW @ (obj.mw @ pt.handle_left)
-            pt.handle_right = invMW @ (obj.mw @ pt.handle_right)
+            pt.handle_left = invMW @ (obj.mw @ hl_old)
+            pt.handle_right = invMW @ (obj.mw @ hr_old)
     obj.matrix_world = newMW
 
 

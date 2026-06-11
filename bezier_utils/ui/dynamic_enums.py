@@ -80,6 +80,19 @@ def get_orientation_items(self, context):
                   "Orient to normal of face under cursor. Requires mesh surface under mouse pointer. "
                   "Perfect for surface detailing and adding curves to mesh geometry"))
 
+    # Only show Surface (Follow Mesh) when the Draw tool is active
+    try:
+        from ..tools.workspace_tools import FlexiDrawBezierTool
+        tool = context.workspace.tools.from_space_view3d_mode("OBJECT", create=False)
+        is_draw = tool is not None and tool.idname == FlexiDrawBezierTool.bl_idname
+    except Exception:
+        is_draw = False
+
+    if is_draw:
+        items.append(('SURFACE', 'Surface (Follow Mesh)',
+                      "Project and walk the curve along the faces of the mesh. "
+                      "Points follow the surface, and segments are split at crossed edges to hug the mesh geometry"))
+
     return items
 
 

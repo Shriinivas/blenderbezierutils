@@ -60,6 +60,11 @@ jobs:
 
             ## What's New in v1.1.2
 
+            ### New Features
+            - **Surface-Following (Curve on Mesh)** - Added a new **'Surface (Follow Mesh)'** transform orientation option. While drawing, control points snap to the mesh surface. Upon finalization, the segment paths are calculated, and crossover points are automatically inserted at mesh edges with projection-correct handle alignments.
+            - **Surface Modes (Exact vs. Smooth)** - Added a new `surfaceMode` dropdown with **Exact (Crease)** and **Smooth (Transition)** modes to toggle whether segment boundaries form creases or smooth transitions.
+            - **Dynamic Filtering** - The **'Surface (Follow Mesh)'** option is context-aware and automatically filtered out when editing curves, showing up only during active drawing.
+
             ### UI & Workflow Improvements
             - **Surface (Normal) Drawing Plane** - Fixed drawing with the **Surface (Normal)** preset, where subsequent points and handles were projected onto the view plane instead of the locked face plane. The drawing canvas now correctly defaults to the local face plane (XY plane) under `'FACE'` orientation.
 
