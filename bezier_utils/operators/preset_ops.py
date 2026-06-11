@@ -114,6 +114,7 @@ class ApplyPresetSurfaceAlign(Operator):
         params.snapOrigin = 'FACE'
         params.offsetRef = 'PIVOT'
         params.axisScale = 'DEFAULT'
+        params.constrAxes = 'shift-Z'
         return {'FINISHED'}
 
 

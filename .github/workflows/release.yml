@@ -58,38 +58,10 @@ jobs:
             4. Select the downloaded `bezier_utils.zip` file
             5. Check the 'Bézier Utilities' option in the add-ons dialog
 
-            ## What's New in v1.1.1
-
-            ### Vulkan & Graphics Compatibility
-            - **Vulkan Shader Support** - Upgraded point-drawing shaders to `POINT_FLAT_COLOR` with dynamic size scaling. Viewport markers (control points, handle points, and snap guides) are now fully visible and correctly scaled when Blender is configured to use the Vulkan graphics backend.
+            ## What's New in v1.1.2
 
             ### UI & Workflow Improvements
-            - **'Continue' Preset Default** - Made the **'Continue'** preset (Previous Segment orientation with 3D Cursor pivot) the default preset for new drawing/editing operations, placing the most common drawing mode first.
-
-            ### Quad Meshing & Cleanup
-            - **Topology Optimization** - Added a post-process topological clean step (Laplacian smoothing, adjacent triangle-pair merge to quads, and collapsing of degenerate short edges) to `MedialAxisMesher` for clean quad outputs.
-            - **Mesh Fill Cleanups** - Removed deprecated or unstable experimental mesh filling methods (like `QUAD`, `QUADRIFLOW`, `GRID`, and `OFFSET`) to ensure a robust, stable set of tools.
-
-            ## What's New in v1.1 (Previous Release)
-
-            ### New Features
-            - **Smart 2D Project** - Flatten 3D curves onto a best-fit plane using SVD
-            - **Grid Overlay** - Visual grid on constraint planes with 1.0 unit spacing
-            - **Grid Snapping** - Ctrl-snap now aligns to integer world coordinates
-
-            ### Enhanced Convert to Mesh (Experimental)
-            - **Smart Mesher** - Automatic shape detection with optimized algorithm selection
-            - **Medial Axis** - Medial axis-based meshing with Grid Fill TFI
-            - **Grid TFI** - Direct Transfinite Interpolation grid
-            - **Polar** - O-Grid topology for circles/ellipses (pole-free)
-            - **Rectangle** - Pure quad grid for rectangular shapes
-            - **Polygon** - Radial meshing for regular polygons
-            - **QMorph** - Q-Morph algorithm for convex freeform shapes
-
-            ### Improvements
-            - Toggle guides hotkey changed to **Ctrl+Alt+H** (avoids conflict with Blender's add to collection)
-            - Improved SVG export with adaptive recursive subdivision
-            - Fixed Grease Pencil autoclose and hotkey errors
+            - **Surface (Normal) Drawing Plane** - Fixed drawing with the **Surface (Normal)** preset, where subsequent points and handles were projected onto the view plane instead of the locked face plane. The drawing canvas now correctly defaults to the local face plane (XY plane) under `'FACE'` orientation.
 
             ## Video Tutorials
 

@@ -3,7 +3,7 @@
 bl_info = {
     "name": "Bezier Utilities",
     "author": "Shrinivas Kulkarni",
-    "version": (1, 1, 1),
+    "version": (1, 1, 2),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Bezier Utilities",
     "description": "Utilities for Bezier curves",
