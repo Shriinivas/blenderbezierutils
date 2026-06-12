@@ -24,8 +24,8 @@ class BaseDraw:
     def initialize(self):
         self.curvePts = []
 
-    def newPoint(self, loc, ltype, rtype, faceIdx=None):
-        self.curvePts.append([loc, loc, loc, ltype, rtype, faceIdx])
+    def newPoint(self, loc, ltype, rtype, faceIdx=None, is_intersection=False):
+        self.curvePts.append([loc, loc, loc, ltype, rtype, faceIdx, is_intersection])
 
     def setCurvePt(self, idx, pt):
         self.curvePts[idx] = pt
@@ -705,7 +705,7 @@ class BezierDraw(BaseDraw):
                 snapper.resetSnap()
                 if not self.capture:
                     if len(self.curvePts) > 0:
-                        self.popCurvePt()
+                        self.popLastSegment()
 
                 # Because there is an extra point (the current one)
                 if len(self.curvePts) <= 1:
@@ -725,6 +725,7 @@ class BezierDraw(BaseDraw):
                     snapper.digitsConfirmed = False
                     loc = snapper.get3dLocSnap(rmInfo)
                     self.newPoint(loc, "ALIGNED", "ALIGNED", snapper.lastFaceIdx)
+                    self.resolve_segment_on_click(context)
                     self.parent.redrawBezier(rmInfo)
                 else:
                     if len(self.curvePts) > 0:
@@ -785,6 +786,7 @@ class BezierDraw(BaseDraw):
                 # ~ self.moveBptElem('right', loc)# changes only rt handle
 
                 self.newPoint(loc, "ALIGNED", "ALIGNED", snapper.lastFaceIdx)
+                self.resolve_segment_on_click(context)
                 self.parent.redrawBezier(rmInfo)
 
             return {"RUNNING_MODAL"}
@@ -837,6 +839,122 @@ class BezierDraw(BaseDraw):
 
         return {"PASS_THROUGH"} if not snapProc else {"RUNNING_MODAL"}
 
+    def popLastSegment(self):
+        if len(self.curvePts) == 0:
+            return
+        self.curvePts.pop()
+        while len(self.curvePts) > 0 and len(self.curvePts[-1]) > 6 and self.curvePts[-1][6]:
+            self.curvePts.pop()
+
+    def resolve_segment_on_click(self, context):
+        params = bpy.context.window_manager.bezierToolkitParams
+        if params.snapOrient != 'SURFACE' or len(self.curvePts) < 3:
+            return
+            
+        obj = context.active_object
+        if obj is None or obj.type != 'MESH':
+            return
+            
+        rmInfo = self.parent.rmInfo
+        cached_bm = self.parent.get_cached_bmesh(obj)
+        
+        pt_active = self.curvePts.pop()
+        
+        end_idx = len(self.curvePts) - 1
+        start_idx = end_idx - 1
+        while start_idx > 0 and len(self.curvePts[start_idx]) > 6 and self.curvePts[start_idx][6]:
+            start_idx -= 1
+            
+        pt_start = self.curvePts[start_idx]
+        pt_end = self.curvePts[end_idx]
+        
+        # Resolve face indices to the current view only if not already set (keep mesh-relative face indices stable during view rotation)
+        if len(pt_start) <= 5:
+            pt_start.append(find_visible_face_at_loc(obj, rmInfo.region, rmInfo.rv3d, pt_start[1], None))
+        elif pt_start[5] is None:
+            pt_start[5] = find_visible_face_at_loc(obj, rmInfo.region, rmInfo.rv3d, pt_start[1], None)
+
+        if len(pt_end) <= 5:
+            pt_end.append(find_visible_face_at_loc(obj, rmInfo.region, rmInfo.rv3d, pt_end[1], None))
+        elif pt_end[5] is None:
+            pt_end[5] = find_visible_face_at_loc(obj, rmInfo.region, rmInfo.rv3d, pt_end[1], None)
+        
+        pt_start[3] = 'FREE'
+        pt_start[4] = 'FREE'
+        pt_end[3] = 'FREE'
+        pt_end[4] = 'FREE'
+        
+        p_start = pt_start[1]
+        h_start = pt_start[2]
+        h_end = pt_end[0]
+        p_end = pt_end[1]
+        
+        face_start = pt_start[5]
+        face_end = pt_end[5]
+        
+        intersections, face_start, face_end = get_surface_intersection_points(
+            obj, p_start, h_start, h_end, p_end, face_start, face_end,
+            rmInfo.region, rmInfo.rv3d, cached_bm
+        )
+        
+        if len(intersections) > 0:
+            self.curvePts.pop()
+            for p_int, face_prev, face_next, t_val in intersections:
+                self.curvePts.append([p_int, p_int, p_int, 'FREE', 'FREE', face_next, True])
+            if len(pt_end) > 5:
+                pt_end[5] = intersections[-1][2]
+            else:
+                pt_end.append(intersections[-1][2])
+            self.curvePts.append(pt_end)
+            
+            new_end_idx = len(self.curvePts) - 1
+            t_vals = [0.0] + [item[3] for item in intersections] + [1.0]
+            
+            for sub_idx in range(len(intersections) + 1):
+                idx_curr = start_idx + sub_idx
+                pt_a = self.curvePts[idx_curr]
+                pt_b = self.curvePts[idx_curr + 1]
+                
+                r0, r1, r2, r3 = get_bezier_sub_segment(
+                    p_start, h_start, h_end, p_end,
+                    t_vals[sub_idx], t_vals[sub_idx+1]
+                )
+                
+                face_idx = face_start if sub_idx == 0 else pt_a[5]
+                if face_idx is not None:
+                    poly = obj.data.polygons[face_idx]
+                    normal_world = obj.matrix_world.to_3x3() @ poly.normal
+                    normal_world.normalize()
+                    pt_a[2] = project_handle_to_face_plane(pt_a[1], r1, normal_world, rmInfo.region, rmInfo.rv3d)
+                    pt_b[0] = project_handle_to_face_plane(pt_b[1], r2, normal_world, rmInfo.region, rmInfo.rv3d)
+            
+            if params.surfaceMode == 'SMOOTH':
+                for idx in range(start_idx + 1, new_end_idx):
+                    pt = self.curvePts[idx]
+                    v_left = (pt[0] - pt[1]).normalized()
+                    v_right = (pt[2] - pt[1]).normalized()
+                    t_avg = (v_right - v_left).normalized()
+                    l_left = (pt[0] - pt[1]).length
+                    l_right = (pt[2] - pt[1]).length
+                    pt[2] = pt[1] + t_avg * l_right
+                    pt[0] = pt[1] - t_avg * l_left
+        else:
+            face_idx = pt_start[5]
+            if face_idx is not None:
+                poly = obj.data.polygons[face_idx]
+                normal_world = obj.matrix_world.to_3x3() @ poly.normal
+                normal_world.normalize()
+                pt_start[2] = project_handle_to_face_plane(pt_start[1], pt_start[2], normal_world, rmInfo.region, rmInfo.rv3d)
+                
+            face_next_idx = pt_end[5]
+            if face_next_idx is not None:
+                poly = obj.data.polygons[face_next_idx]
+                normal_world = obj.matrix_world.to_3x3() @ poly.normal
+                normal_world.normalize()
+                pt_end[0] = project_handle_to_face_plane(pt_end[1], pt_end[0], normal_world, rmInfo.region, rmInfo.rv3d)
+                
+        self.curvePts.append(pt_active)
+
     def getRefLine(self):
         if len(self.curvePts) > 0:
             idx = 0
@@ -883,14 +1001,90 @@ def get_bezier_sub_segment(p0, p1, p2, p3, t1, t2):
         return left
 
 
-def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_start, face_end, region, rv3d, bm):
+def find_visible_face_at_loc(obj, region, rv3d, p_co, fallback_face_idx):
+    from bpy_extras.view3d_utils import location_3d_to_region_2d
+    from ..utils.view_utils import getFaceUnderMouse
     from mathutils import Vector
+    
+    xy = location_3d_to_region_2d(region, rv3d, p_co)
+    if xy is None:
+        return fallback_face_idx
+    _, _, face_idx = getFaceUnderMouse(obj, region, rv3d, xy, 1000000)
+    if face_idx is not None:
+        return face_idx
+    # Try offsets in pixels
+    offsets = [
+        (1, 0), (-1, 0), (0, 1), (0, -1),
+        (2, 0), (-2, 0), (0, 2), (0, -2),
+        (4, 0), (-4, 0), (0, 4), (0, -4),
+        (8, 0), (-8, 0), (0, 8), (0, -8)
+    ]
+    for dx, dy in offsets:
+        xy_off = xy + Vector((dx, dy))
+        _, _, face_idx = getFaceUnderMouse(obj, region, rv3d, xy_off, 1000000)
+        if face_idx is not None:
+            return face_idx
+    return fallback_face_idx
+
+
+def find_closest_face_locally(obj, bm, p_co, start_face_idx):
+    if start_face_idx is None:
+        return None
+    try:
+        bm.faces.ensure_lookup_table()
+    except Exception:
+        pass
+    candidate_faces = {start_face_idx}
+    try:
+        face = bm.faces[start_face_idx]
+        for edge in face.edges:
+            for lf in edge.link_faces:
+                candidate_faces.add(lf.index)
+    except Exception:
+        pass
+    
+    try:
+        extended = list(candidate_faces)
+        for f_idx in extended:
+            face = bm.faces[f_idx]
+            for edge in face.edges:
+                for lf in edge.link_faces:
+                    candidate_faces.add(lf.index)
+    except Exception:
+        pass
+                
+    best_face_idx = start_face_idx
+    min_dist = 1e9
+    import mathutils
+    try:
+        inv_mw = obj.matrix_world.inverted_safe()
+        p_local = inv_mw @ p_co
+        for f_idx in candidate_faces:
+            face = bm.faces[f_idx]
+            verts = [v.co for v in face.verts]
+            face_dist = 1e9
+            for idx in range(1, len(verts) - 1):
+                v0, v1, v2 = verts[0], verts[idx], verts[idx+1]
+                closest = mathutils.geometry.closest_point_on_tri(p_local, v0, v1, v2)
+                dist = (p_local - closest).length
+                if dist < face_dist:
+                    face_dist = dist
+            if face_dist < min_dist:
+                min_dist = face_dist
+                best_face_idx = f_idx
+    except Exception:
+        pass
+    return best_face_idx
+
+
+def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_start, face_end, region, rv3d, bm):
     from mathutils.geometry import intersect_line_line_2d, intersect_line_line
     from bpy_extras.view3d_utils import region_2d_to_origin_3d, region_2d_to_vector_3d
     
-    if face_start is None or face_end is None:
-        return []
-        
+    print("\n--- INTERSECTION DEBUG ---")
+    print(f"p_start: {p_start}, p_end: {p_end}")
+    print(f"Original face_start: {face_start}, face_end: {face_end}")
+    
     M = 100
     pts_3d = []
     pts_2d = []
@@ -901,24 +1095,49 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
         xy_t = getCoordFromLoc(region, rv3d, p_t)
         pts_2d.append(xy_t)
         
+    print(f"Projected {len(pts_2d)} points. Start 2D: {pts_2d[0]}, End 2D: {pts_2d[-1]}")
+    if any(pt.x == 9000 for pt in pts_2d):
+        print("WARNING: Some projected curve points failed (returned 9000)!")
+        
+    # Resolve face_start/face_end locally to find the correct entry/exit faces
+    if face_start is not None:
+        face_start = find_closest_face_locally(obj, bm, pts_3d[1], face_start)
+    if face_start is None:
+        face_start = find_visible_face_at_loc(obj, region, rv3d, p_start, face_start)
+        
+    if face_end is not None:
+        face_end = find_closest_face_locally(obj, bm, pts_3d[-2], face_end)
+    if face_end is None:
+        face_end = find_visible_face_at_loc(obj, region, rv3d, p_end, face_end)
+        
+    print(f"Resolved face_start: {face_start}, face_end: {face_end}")
+    
+    if face_start is None or face_end is None:
+        print("Returning [] because face_start or face_end is None")
+        return [], face_start, face_end
+        
     curr_face_idx = face_start
-    t_min = 0.0
+    t_min = 0.005
     intersections = []
     visited = {curr_face_idx}
     
     max_steps = 150
-    for _ in range(max_steps):
+    for step in range(max_steps):
         if curr_face_idx == face_end or curr_face_idx is None:
+            print(f"Ending trace loop: curr_face_idx={curr_face_idx}, face_end={face_end}")
             break
             
         bm_face = bm.faces[curr_face_idx]
         candidates = []
+        
+        print(f"Step {step}: curr_face_idx={curr_face_idx}")
         
         for bm_edge in bm_face.edges:
             v1 = obj.matrix_world @ bm_edge.verts[0].co
             v2 = obj.matrix_world @ bm_edge.verts[1].co
             xy1 = getCoordFromLoc(region, rv3d, v1)
             xy2 = getCoordFromLoc(region, rv3d, v2)
+            print(f"  Edge {bm_edge.index} (verts {bm_edge.verts[0].index}-{bm_edge.verts[1].index}): 2D {xy1} to {xy2}")
             
             for j in range(M):
                 t_A = j / M
@@ -966,35 +1185,51 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
                             
         if len(candidates) > 0:
             valid_candidates = [c for c in candidates if c[0] > t_min + 1e-5]
+            print(f"  Step {step}: Found {len(candidates)} total candidates, {len(valid_candidates)} valid candidates > t_min={t_min:.5f}")
             if not valid_candidates:
+                print("  No valid candidates, breaking!")
                 break
             best = min(valid_candidates, key=lambda x: x[0])
             t_int, p_int, f_from, f_to = best
             intersections.append((p_int, f_from, f_to, t_int))
             t_min = t_int
+            print(f"  -> Moving to face {f_to} (t_min={t_min:.5f})")
             
             if f_to is None or f_to in visited:
+                print(f"  -> Loop or boundary detected! f_to={f_to}, visited={visited}")
                 break
             curr_face_idx = f_to
             visited.add(f_to)
         else:
+            print("  No candidates found on this face, breaking!")
             break
             
-    return intersections
+    return intersections, face_start, face_end
 
 
 def project_handle_to_face_plane(p_co, h_co, normal_world, region, rv3d):
     from bpy_extras.view3d_utils import region_2d_to_origin_3d, region_2d_to_vector_3d
+    v = h_co - p_co
+    v_len = v.length
+    if v_len < 1e-4:
+        # For zero or tiny handles, orthogonal projection is perfectly stable and correct
+        proj = normal_world.dot(v) * normal_world
+        return p_co + (v - proj)
+
     xy_h = getCoordFromLoc(region, rv3d, h_co)
     ray_org = region_2d_to_origin_3d(region, rv3d, xy_h)
     ray_dir = region_2d_to_vector_3d(region, rv3d, xy_h)
     denom = ray_dir.dot(normal_world)
-    if abs(denom) > 1e-6:
+    if abs(denom) > 0.2:
         u = (p_co - ray_org).dot(normal_world) / denom
-        return ray_org + ray_dir * u
+        projected = ray_org + ray_dir * u
+        if (projected - p_co).length > 3.0 * v_len:
+            # Fallback if the view projection stretches the handle too much
+            proj = normal_world.dot(v) * normal_world
+            return p_co + (v - proj)
+        return projected
     else:
         # Fallback to orthogonal projection
-        v = h_co - p_co
         proj = normal_world.dot(v) * normal_world
         return p_co + (v - proj)
 
@@ -1039,7 +1274,7 @@ def resolve_surface_crossovers(curvePts, obj, region, rv3d, surfaceMode, cached_
         face_start = pt_curr[5] if len(pt_curr) > 5 else None
         face_end = pt_next[5] if len(pt_next) > 5 else None
         
-        intersections = get_surface_intersection_points(
+        intersections, face_start, face_end = get_surface_intersection_points(
             obj, p_start, h_start, h_end, p_end, face_start, face_end,
             region, rv3d, bm
         )
@@ -1050,6 +1285,11 @@ def resolve_surface_crossovers(curvePts, obj, region, rv3d, surfaceMode, cached_
         if len(intersections) > 0:
             for p_int, face_prev, face_next, t_val in intersections:
                 new_pts.append([p_int, p_int, p_int, 'FREE', 'FREE', face_next])
+            
+            if len(pt_next) > 5:
+                pt_next[5] = intersections[-1][2]
+            else:
+                pt_next.append(intersections[-1][2])
                 
             t_vals = [0.0] + [item[3] for item in intersections] + [1.0]
             
@@ -1063,7 +1303,7 @@ def resolve_surface_crossovers(curvePts, obj, region, rv3d, surfaceMode, cached_
                     t_vals[sub_idx], t_vals[sub_idx+1]
                 )
                 
-                face_idx = pt_a[5]
+                face_idx = face_start if sub_idx == 0 else pt_a[5]
                 if face_idx is not None:
                     poly = obj.data.polygons[face_idx]
                     normal_world = obj.matrix_world.to_3x3() @ poly.normal

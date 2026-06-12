@@ -845,6 +845,14 @@ def getFaceUnderMouse(obj, region, rv3d, xy, maxFaceCnt):
         return None, None, None
     viewVect = region_2d_to_vector_3d(region, rv3d, xy)
     rayOrig = region_2d_to_origin_3d(region, rv3d, xy)
+
+    # In orthographic view, region_2d_to_origin_3d can return a point on the near plane
+    # that lies inside or behind the object when zoomed in close. We pull back the ray origin
+    # along the negative view direction to ensure the raycast starts outside/in-front of the object.
+    if not rv3d.is_perspective:
+        pullback_dist = max(1000.0, obj.dimensions.length * 100.0)
+        rayOrig = rayOrig - viewVect * pullback_dist
+
     mw = obj.matrix_world
     invMw = mw.inverted_safe()
 
