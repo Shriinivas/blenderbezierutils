@@ -927,6 +927,9 @@ class BezierDraw(BaseDraw):
                     normal_world.normalize()
                     pt_a[2] = project_handle_to_face_plane(pt_a[1], r1, normal_world, rmInfo.region, rmInfo.rv3d)
                     pt_b[0] = project_handle_to_face_plane(pt_b[1], r2, normal_world, rmInfo.region, rmInfo.rv3d)
+                else:
+                    pt_a[2] = r1
+                    pt_b[0] = r2
             
             if params.surfaceMode == 'SMOOTH':
                 for idx in range(start_idx + 1, new_end_idx):
@@ -1112,9 +1115,20 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
         
     print(f"Resolved face_start: {face_start}, face_end: {face_end}")
     
-    if face_start is None or face_end is None:
-        print("Returning [] because face_start or face_end is None")
-        return [], face_start, face_end
+    if face_start is None:
+        if face_end is not None:
+            # Start is outside, end is inside - trace backwards by reversing arguments recursively
+            print("Reversing intersection trace because face_start is None and face_end is not None")
+            rev_intersections, resolved_face_end, resolved_face_start = get_surface_intersection_points(
+                obj, p_end, h_end, h_start, p_start, face_end, face_start, region, rv3d, bm
+            )
+            intersections = []
+            for p_int, f_from, f_to, t_rev in reversed(rev_intersections):
+                intersections.append((p_int, f_to, f_from, 1.0 - t_rev))
+            return intersections, resolved_face_start, resolved_face_end
+        else:
+            print("Returning [] because both face_start and face_end are None")
+            return [], face_start, face_end
         
     curr_face_idx = face_start
     t_min = 0.005
@@ -1181,6 +1195,13 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
                                 if f.index != curr_face_idx:
                                     neighbor_face = f.index
                                     break
+                            if neighbor_face is not None:
+                                poly_to = obj.data.polygons[neighbor_face]
+                                normal_to_world = obj.matrix_world.to_3x3() @ poly_to.normal
+                                normal_to_world.normalize()
+                                if normal_to_world.dot(ray_dir) >= 0.0:
+                                    # Neighbor face is back-facing (occluded), so we treat this edge as a silhouette boundary
+                                    neighbor_face = None
                             candidates.append((t_val, p_edge, curr_face_idx, neighbor_face))
                             
         if len(candidates) > 0:
@@ -1204,6 +1225,8 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
             print("  No candidates found on this face, breaking!")
             break
             
+    if curr_face_idx != face_end:
+        face_end = None
     return intersections, face_start, face_end
 
 
@@ -1310,6 +1333,9 @@ def resolve_surface_crossovers(curvePts, obj, region, rv3d, surfaceMode, cached_
                     normal_world.normalize()
                     pt_a[2] = project_handle_to_face_plane(pt_a[1], r1, normal_world, region, rv3d)
                     pt_b[0] = project_handle_to_face_plane(pt_b[1], r2, normal_world, region, rv3d)
+                else:
+                    pt_a[2] = r1
+                    pt_b[0] = r2
             
             if surfaceMode == 'SMOOTH':
                 for idx in range(start_idx + 1, start_idx + len(intersections) + 1):

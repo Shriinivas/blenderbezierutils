@@ -845,6 +845,9 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                             normal_world.normalize()
                             pt_a[2] = project_handle_to_face_plane(pt_a[1], r1, normal_world, self.rmInfo.region, self.rmInfo.rv3d)
                             pt_b[0] = project_handle_to_face_plane(pt_b[1], r2, normal_world, self.rmInfo.region, self.rmInfo.rv3d)
+                        else:
+                            pt_a[2] = r1
+                            pt_b[0] = r2
                     
                     if params.surfaceMode == 'SMOOTH':
                         for idx in range(start_idx + 1, new_end_idx):
@@ -944,6 +947,9 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                             normal_world.normalize()
                             pt_a[2] = project_handle_to_face_plane(pt_a[1], r1, normal_world, self.rmInfo.region, self.rmInfo.rv3d)
                             pt_b[0] = project_handle_to_face_plane(pt_b[1], r2, normal_world, self.rmInfo.region, self.rmInfo.rv3d)
+                        else:
+                            pt_a[2] = r1
+                            pt_b[0] = r2
                     
                     if params.surfaceMode == 'SMOOTH':
                         for idx in range(start_idx + 1, new_end_idx):
