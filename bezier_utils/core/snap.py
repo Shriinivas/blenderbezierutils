@@ -941,6 +941,7 @@ class Snapper:
         snapToPlane = snapParams.snapToPlane
 
         self.snapCo = None
+        self.lastFaceIdx = None
         region = rmInfo.region
         rv3d = rmInfo.rv3d
 

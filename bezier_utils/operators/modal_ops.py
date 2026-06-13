@@ -860,15 +860,14 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                             pt[2] = pt[1] + t_avg * l_right
                             pt[0] = pt[1] - t_avg * l_left
                 else:
-                    face_idx = pt_start[5]
-                    if face_idx is not None:
+                    if pt_start[5] is not None and pt_end[5] is not None:
+                        face_idx = pt_start[5]
                         poly = context.active_object.data.polygons[face_idx]
                         normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
                         normal_world.normalize()
                         pt_start[2] = project_handle_to_face_plane(pt_start[1], pt_start[2], normal_world, self.rmInfo.region, self.rmInfo.rv3d)
                         
-                    face_next_idx = pt_end[5]
-                    if face_next_idx is not None:
+                        face_next_idx = pt_end[5]
                         poly = context.active_object.data.polygons[face_next_idx]
                         normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
                         normal_world.normalize()
@@ -962,15 +961,14 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                             pt[2] = pt[1] + t_avg * l_right
                             pt[0] = pt[1] - t_avg * l_left
                 else:
-                    face_idx = pt_start[5]
-                    if face_idx is not None:
+                    if pt_start[5] is not None and pt_end[5] is not None:
+                        face_idx = pt_start[5]
                         poly = context.active_object.data.polygons[face_idx]
                         normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
                         normal_world.normalize()
                         pt_start[2] = project_handle_to_face_plane(pt_start[1], pt_start[2], normal_world, self.rmInfo.region, self.rmInfo.rv3d)
                         
-                    face_next_idx = pt_end[5]
-                    if face_next_idx is not None:
+                        face_next_idx = pt_end[5]
                         poly = context.active_object.data.polygons[face_next_idx]
                         normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
                         normal_world.normalize()

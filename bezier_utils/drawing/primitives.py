@@ -840,11 +840,13 @@ class BezierDraw(BaseDraw):
         return {"PASS_THROUGH"} if not snapProc else {"RUNNING_MODAL"}
 
     def popLastSegment(self):
-        if len(self.curvePts) == 0:
+        if len(self.curvePts) <= 1:
             return
+        active_pt = self.curvePts.pop()
         self.curvePts.pop()
         while len(self.curvePts) > 0 and len(self.curvePts[-1]) > 6 and self.curvePts[-1][6]:
             self.curvePts.pop()
+        self.curvePts.append(active_pt)
 
     def resolve_segment_on_click(self, context):
         params = bpy.context.window_manager.bezierToolkitParams
@@ -942,15 +944,14 @@ class BezierDraw(BaseDraw):
                     pt[2] = pt[1] + t_avg * l_right
                     pt[0] = pt[1] - t_avg * l_left
         else:
-            face_idx = pt_start[5]
-            if face_idx is not None:
+            if pt_start[5] is not None and pt_end[5] is not None:
+                face_idx = pt_start[5]
                 poly = obj.data.polygons[face_idx]
                 normal_world = obj.matrix_world.to_3x3() @ poly.normal
                 normal_world.normalize()
                 pt_start[2] = project_handle_to_face_plane(pt_start[1], pt_start[2], normal_world, rmInfo.region, rmInfo.rv3d)
                 
-            face_next_idx = pt_end[5]
-            if face_next_idx is not None:
+                face_next_idx = pt_end[5]
                 poly = obj.data.polygons[face_next_idx]
                 normal_world = obj.matrix_world.to_3x3() @ poly.normal
                 normal_world.normalize()
@@ -1015,12 +1016,9 @@ def find_visible_face_at_loc(obj, region, rv3d, p_co, fallback_face_idx):
     _, _, face_idx = getFaceUnderMouse(obj, region, rv3d, xy, 1000000)
     if face_idx is not None:
         return face_idx
-    # Try offsets in pixels
+    # Try tiny offsets in pixels for floating-point tolerance on edges
     offsets = [
-        (1, 0), (-1, 0), (0, 1), (0, -1),
-        (2, 0), (-2, 0), (0, 2), (0, -2),
-        (4, 0), (-4, 0), (0, 4), (0, -4),
-        (8, 0), (-8, 0), (0, 8), (0, -8)
+        (1, 0), (-1, 0), (0, 1), (0, -1)
     ]
     for dx, dy in offsets:
         xy_off = xy + Vector((dx, dy))
@@ -1115,6 +1113,66 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
         
     print(f"Resolved face_start: {face_start}, face_end: {face_end}")
     
+    if face_start is not None:
+        # Check if the curve immediately leaves the mesh surface / goes outside the silhouette
+        def is_point_in_polygon_2d(x, y, poly):
+            n = len(poly)
+            inside = False
+            p1x, p1y = poly[0].x, poly[0].y
+            for i in range(n + 1):
+                p2x, p2y = poly[i % n].x, poly[i % n].y
+                if y > min(p1y, p2y):
+                    if y <= max(p1y, p2y):
+                        if x <= max(p1x, p2x):
+                            if p1y != p2y:
+                                xints = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                            if p1x == p2x or x <= xints:
+                                inside = not inside
+                p1x, p1y = p2x, p2y
+            return inside
+
+        # Find the first point along the curve that is at least 1 pixel away in screen space
+        p_check = None
+        for k in range(1, len(pts_2d)):
+            if (pts_2d[k] - pts_2d[0]).length > 1.0:
+                p_check = pts_2d[k]
+                break
+        if p_check is None:
+            p_check = pts_2d[1]
+
+        # Get local neighborhood of faces
+        candidate_faces = {face_start}
+        try:
+            for edge in bm.faces[face_start].edges:
+                for lf in edge.link_faces:
+                    candidate_faces.add(lf.index)
+            extended = list(candidate_faces)
+            for f_idx in extended:
+                for edge in bm.faces[f_idx].edges:
+                    for lf in edge.link_faces:
+                        candidate_faces.add(lf.index)
+        except Exception:
+            pass
+
+        ray_dir = region_2d_to_vector_3d(region, rv3d, p_check)
+        found_face = None
+        for f_idx in candidate_faces:
+            poly = obj.data.polygons[f_idx]
+            normal_world = obj.matrix_world.to_3x3() @ poly.normal
+            normal_world.normalize()
+            if normal_world.dot(ray_dir) < 0.0: # Front-facing
+                f = bm.faces[f_idx]
+                face_poly_2d = [getCoordFromLoc(region, rv3d, obj.matrix_world @ v.co) for v in f.verts]
+                if is_point_in_polygon_2d(p_check.x, p_check.y, face_poly_2d):
+                    found_face = f_idx
+                    break
+
+        if found_face is not None:
+            face_start = found_face
+        else:
+            print("Start of segment immediately went outside the silhouette boundary!")
+            face_start = None
+            
     if face_start is None:
         if face_end is not None:
             # Start is outside, end is inside - trace backwards by reversing arguments recursively
@@ -1348,15 +1406,14 @@ def resolve_surface_crossovers(curvePts, obj, region, rv3d, surfaceMode, cached_
                     pt[2] = pt[1] + t_avg * l_right
                     pt[0] = pt[1] - t_avg * l_left
         else:
-            face_idx = pt_curr[5]
-            if face_idx is not None:
+            if pt_curr[5] is not None and pt_next[5] is not None:
+                face_idx = pt_curr[5]
                 poly = obj.data.polygons[face_idx]
                 normal_world = obj.matrix_world.to_3x3() @ poly.normal
                 normal_world.normalize()
                 pt_curr[2] = project_handle_to_face_plane(pt_curr[1], pt_curr[2], normal_world, region, rv3d)
                 
-            face_next_idx = pt_next[5]
-            if face_next_idx is not None:
+                face_next_idx = pt_next[5]
                 poly = obj.data.polygons[face_next_idx]
                 normal_world = obj.matrix_world.to_3x3() @ poly.normal
                 normal_world.normalize()
