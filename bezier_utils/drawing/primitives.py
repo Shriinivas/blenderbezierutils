@@ -94,7 +94,6 @@ class Primitive2DDraw(BaseDraw):
         Returns a list of tuples defining dynamic properties.
         Each tuple: (prop_name, prop_type_class, keywords_dict)
         """
-        import bpy
         from bpy.props import FloatProperty # Ensure we have FloatProperty available or import it here
         from .math_fn import MathFnDraw # Import locally if needed or assume available
         
@@ -106,7 +105,6 @@ class Primitive2DDraw(BaseDraw):
         # The original code in params.py used MathFnDraw.startPrefix etc.
         # So we should put this logic in params.py or import MathFnDraw here.
         # Let's import it here.
-        from .math_fn import MathFnDraw
 
         defs = []
         hks = Primitive2DDraw.getParamHotKeyDescriptions()
@@ -176,7 +174,6 @@ class Primitive2DDraw(BaseDraw):
             z = bbStart[idx2]
         center2d = complex(cX, cY)
 
-        snapOrigin = bpy.context.window_manager.bezierToolkitParams.snapOrigin
         orig = complex(bbStart[idx0], bbStart[idx1])
         self.curveObjOrigin = tm.inverted_safe() @ get3DVector(
             orig + center2d, axisIdxs, z
@@ -245,7 +242,7 @@ class Primitive2DDraw(BaseDraw):
     def procDrawEvent(self, context, event, snapProc):
         parent = self.parent
         rmInfo = parent.rmInfo
-        metakeys = parent.snapper.getMetakeys()
+        parent.snapper.getMetakeys()
 
         # Local import to avoid circular dependency
         from ..operators.modal_ops import ModalDrawBezierOp
@@ -404,7 +401,6 @@ class RectangleDraw(ClosedShapeDraw):
 class PolygonDraw(ClosedShapeDraw):
     def updateParam0(self, event, rmInfo, isIncr):
         params = bpy.context.window_manager.bezierToolkitParams
-        offset = params.drawStarOffset
 
         params.drawStarOffset += 0.1 if (isIncr) else -0.1
 
@@ -505,8 +501,6 @@ class EllipseDraw(ClosedShapeDraw):
         radius = complex(cX, cY)  # Actually same as center2d
         orig = complex(bbStart[idx0], bbStart[idx1])
 
-        large_arc = 0
-        rotation = 0
 
         sweep = 1
         startIdx = 0
@@ -1376,7 +1370,16 @@ def resolve_surface_crossovers(curvePts, obj, region, rv3d, surfaceMode, cached_
                     pt.append(face_idx)
                     
     if is_cyclic:
-        pts[-1] = pts[0][:]
+        # Keep the left handle of pts[-1] (which is the left handle of the closing segment),
+        # but synchronize the center, right handle, right handle type, and face index with pts[0].
+        pts[-1][1] = pts[0][1]
+        pts[-1][2] = pts[0][2]
+        pts[-1][4] = pts[0][4]
+        if len(pts[0]) > 5:
+            if len(pts[-1]) > 5:
+                pts[-1][5] = pts[0][5]
+            else:
+                pts[-1].append(pts[0][5])
 
     for pt in pts:
         if len(pt) > 4:
