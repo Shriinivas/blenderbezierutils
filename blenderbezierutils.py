@@ -5997,6 +5997,21 @@ class Primitive2DDraw(BaseDraw):
         if(self.freeAxesN == None):
             self.set2DAxes()
 
+        params = bpy.context.window_manager.bezierToolkitParams
+        if params.snapOrient == 'SURFACE' and self.bbStart is not None:
+            return self.parent.snapper.get3dLocSnap(
+                rmInfo,
+                SnapParams(
+                    parent.snapper,
+                    transType='VIEW',
+                    origType='REFERENCE',
+                    refLineOrig=self.bbStart,
+                    lastCo1Axis=True,
+                    freeAxesN=[0, 1],
+                    snapToPlane=True,
+                ),
+            )
+
         return self.parent.snapper.get3dLocSnap(rmInfo, \
             SnapParams(parent.snapper, lastCo1Axis = True, freeAxesN = self.freeAxesN, \
                 snapToPlane = (len(self.freeAxesN) == 2)))
@@ -7419,17 +7434,17 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 obj = self.createCurveObj(context, startObj, startSplineIdx, endObj, \
                     endSplineIdx, autoclose)
 
+            params = bpy.context.window_manager.bezierToolkitParams
             if(align and startObj == None and endObj == None):
-                alignToNormal(obj)
-                bpy.context.evaluated_depsgraph_get().update()
-                if(location == None): location = getObjBBoxCenter(obj)
+                if(params.snapOrient != 'SURFACE'):
+                    alignToNormal(obj)
+                    bpy.context.evaluated_depsgraph_get().update()
+                if(location == None and params.snapOrient != 'SURFACE'): location = getObjBBoxCenter(obj)
 
-            if(location != None):
+            if(location != None and params.snapOrient != 'SURFACE'):
                 shiftOrigin(obj, location)
                 obj.location = location
                 bpy.context.evaluated_depsgraph_get().update()
-
-            params = bpy.context.window_manager.bezierToolkitParams
             copyProperties(params.copyPropsObj, obj)
 
             #TODO: Why try?

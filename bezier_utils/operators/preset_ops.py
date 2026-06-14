@@ -11,8 +11,17 @@ from ..constants import TRANSFORM_PRESETS
 
 def get_preset_items(self, context):
     """Generate enum items from TRANSFORM_PRESETS"""
+    try:
+        from ..tools.workspace_tools import FlexiDrawBezierTool
+        tool = context.workspace.tools.from_space_view3d_mode("OBJECT", create=False)
+        is_draw = tool is not None and tool.idname == FlexiDrawBezierTool.bl_idname
+    except Exception:
+        is_draw = False
+
     items = []
     for i, (orient, origin, name, desc) in enumerate(TRANSFORM_PRESETS):
+        if orient == 'SURFACE' and not is_draw:
+            continue
         items.append((str(i), name, desc))
     return items
 
@@ -69,6 +78,8 @@ class ApplyPresetFreeDraw(Operator):
         params.snapOrigin = 'CURSOR'
         params.offsetRef = 'PIVOT'
         params.axisScale = 'DEFAULT'
+        params.constrAxes = 'NONE'
+        params.snapToPlane = False
         return {'FINISHED'}
 
 
@@ -84,6 +95,8 @@ class ApplyPresetContinue(Operator):
         params.snapOrigin = 'CURSOR'  # Pivot at cursor
         params.offsetRef = 'PREVIOUS'  # But offsets from previous point
         params.axisScale = 'DEFAULT'
+        params.constrAxes = 'NONE'
+        params.snapToPlane = False
         return {'FINISHED'}
 
 
@@ -99,13 +112,15 @@ class ApplyPresetCustomAngle(Operator):
         params.snapOrigin = 'AXIS'  # Pivot at custom axis start
         params.offsetRef = 'PREVIOUS'  # Offsets from previous point
         params.axisScale = 'AXIS'
+        params.constrAxes = 'NONE'
+        params.snapToPlane = False
         return {'FINISHED'}
 
 
-class ApplyPresetSurfaceAlign(Operator):
-    """Surface Align: Align to mesh surface (normal and face center)"""
-    bl_idname = "bezier.preset_surface_align"
-    bl_label = "Surface Align"
+class ApplyPresetFaceAlign(Operator):
+    """Face Align: Align to face under cursor (normal and face center)"""
+    bl_idname = "bezier.preset_face_align"
+    bl_label = "Face Align"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -115,6 +130,24 @@ class ApplyPresetSurfaceAlign(Operator):
         params.offsetRef = 'PIVOT'
         params.axisScale = 'DEFAULT'
         params.constrAxes = 'shift-Z'
+        params.snapToPlane = False
+        return {'FINISHED'}
+
+
+class ApplyPresetSurfaceFollow(Operator):
+    """Surface (Follow Mesh): Snaps points and walks curve along surface of active mesh"""
+    bl_idname = "bezier.preset_surface_follow"
+    bl_label = "Surface (Follow Mesh)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        params = context.window_manager.bezierToolkitParams
+        params.snapOrient = 'SURFACE'
+        params.snapOrigin = 'CURSOR'
+        params.offsetRef = 'PIVOT'
+        params.axisScale = 'DEFAULT'
+        params.constrAxes = 'NONE'
+        params.snapToPlane = False
         return {'FINISHED'}
 
 
@@ -124,5 +157,6 @@ preset_operator_classes = [
     ApplyPresetFreeDraw,
     ApplyPresetContinue,
     ApplyPresetCustomAngle,
-    ApplyPresetSurfaceAlign,
+    ApplyPresetFaceAlign,
+    ApplyPresetSurfaceFollow,
 ]

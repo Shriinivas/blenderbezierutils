@@ -759,228 +759,233 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
 
         if params.snapOrient == 'SURFACE' and len(curvePts) >= 2:
             cached_bm = self.get_cached_bmesh(context.active_object)
-            
-            # Resolve face indices of the first and last points to the current view only if not already set (keep mesh-relative face indices stable during view rotation)
-            if len(curvePts[0]) <= 5 or curvePts[0][5] is None:
-                if len(curvePts[0]) <= 5:
-                    curvePts[0].append(find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, curvePts[0][1], None))
-                else:
-                    curvePts[0][5] = find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, curvePts[0][1], None)
-            
-            if len(curvePts[-1]) <= 5 or curvePts[-1][5] is None:
-                if len(curvePts[-1]) <= 5:
-                    curvePts[-1].append(find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, curvePts[-1][1], None))
-                else:
-                    curvePts[-1][5] = find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, curvePts[-1][1], None)
-            
-            # 1. Resolve the last segment of the drawn curve if it has not been resolved yet.
-            # We know it has not been resolved if the second-to-last point is not an inserted crossover point.
-            if len(curvePts) >= 2 and (len(curvePts[-2]) <= 6 or not curvePts[-2][6]):
-                end_idx = len(curvePts) - 1
-                start_idx = end_idx - 1
-                while start_idx > 0 and len(curvePts[start_idx]) > 6 and curvePts[start_idx][6]:
-                    start_idx -= 1
-                    
-                pt_start = curvePts[start_idx]
-                pt_end = curvePts[end_idx]
-                
-                # Resolve starting and ending face indices to the current view only if not already set (keep mesh-relative face indices stable during view rotation)
-                if len(pt_start) <= 5 or pt_start[5] is None:
-                    if len(pt_start) <= 5:
-                        pt_start.append(find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_start[1], None))
+            from ..drawing.primitives import resolve_surface_crossovers, Primitive2DDraw
+            if isinstance(self.drawObj, Primitive2DDraw):
+                if vectCmpWithMargin(curvePts[0][1], curvePts[-1][1]):
+                    autoclose = True
+                curvePts = resolve_surface_crossovers(curvePts, context.active_object, self.rmInfo.region, self.rmInfo.rv3d, params.surfaceMode, cached_bm)
+            else:
+                # Resolve face indices of the first and last points to the current view only if not already set (keep mesh-relative face indices stable during view rotation)
+                if len(curvePts[0]) <= 5 or curvePts[0][5] is None:
+                    if len(curvePts[0]) <= 5:
+                        curvePts[0].append(find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, curvePts[0][1], None))
                     else:
-                        pt_start[5] = find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_start[1], None)
+                        curvePts[0][5] = find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, curvePts[0][1], None)
                 
-                if len(pt_end) <= 5 or pt_end[5] is None:
-                    if len(pt_end) <= 5:
-                        pt_end.append(find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_end[1], None))
+                if len(curvePts[-1]) <= 5 or curvePts[-1][5] is None:
+                    if len(curvePts[-1]) <= 5:
+                        curvePts[-1].append(find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, curvePts[-1][1], None))
                     else:
-                        pt_end[5] = find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_end[1], None)
+                        curvePts[-1][5] = find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, curvePts[-1][1], None)
                 
-                pt_start[3] = 'FREE'
-                pt_start[4] = 'FREE'
-                pt_end[3] = 'FREE'
-                pt_end[4] = 'FREE'
-                
-                p_start = pt_start[1]
-                h_start = pt_start[2]
-                h_end = pt_end[0]
-                p_end = pt_end[1]
-                
-                face_start = pt_start[5]
-                face_end = pt_end[5]
-                
-                intersections, face_start, face_end = get_surface_intersection_points(
-                    context.active_object, p_start, h_start, h_end, p_end, face_start, face_end,
-                    self.rmInfo.region, self.rmInfo.rv3d, cached_bm
-                )
-                
-                if len(intersections) > 0:
-                    curvePts.pop()
-                    for p_int, face_prev, face_next, t_val in intersections:
-                        curvePts.append([p_int, p_int, p_int, 'FREE', 'FREE', face_next, True])
-                    if len(pt_end) > 5:
-                        pt_end[5] = intersections[-1][2]
-                    else:
-                        pt_end.append(intersections[-1][2])
-                    curvePts.append(pt_end)
-                    
-                    new_end_idx = len(curvePts) - 1
-                    t_vals = [0.0] + [item[3] for item in intersections] + [1.0]
-                    
-                    for sub_idx in range(len(intersections) + 1):
-                        idx_curr = start_idx + sub_idx
-                        pt_a = curvePts[idx_curr]
-                        pt_b = curvePts[idx_curr + 1]
+                # 1. Resolve the last segment of the drawn curve if it has not been resolved yet.
+                # We know it has not been resolved if the second-to-last point is not an inserted crossover point.
+                if len(curvePts) >= 2 and (len(curvePts[-2]) <= 6 or not curvePts[-2][6]):
+                    end_idx = len(curvePts) - 1
+                    start_idx = end_idx - 1
+                    while start_idx > 0 and len(curvePts[start_idx]) > 6 and curvePts[start_idx][6]:
+                        start_idx -= 1
                         
-                        r0, r1, r2, r3 = get_bezier_sub_segment(
-                            p_start, h_start, h_end, p_end,
-                            t_vals[sub_idx], t_vals[sub_idx+1]
-                        )
+                    pt_start = curvePts[start_idx]
+                    pt_end = curvePts[end_idx]
+                    
+                    # Resolve starting and ending face indices to the current view only if not already set (keep mesh-relative face indices stable during view rotation)
+                    if len(pt_start) <= 5 or pt_start[5] is None:
+                        if len(pt_start) <= 5:
+                            pt_start.append(find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_start[1], None))
+                        else:
+                            pt_start[5] = find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_start[1], None)
+                    
+                    if len(pt_end) <= 5 or pt_end[5] is None:
+                        if len(pt_end) <= 5:
+                            pt_end.append(find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_end[1], None))
+                        else:
+                            pt_end[5] = find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_end[1], None)
+                    
+                    pt_start[3] = 'FREE'
+                    pt_start[4] = 'FREE'
+                    pt_end[3] = 'FREE'
+                    pt_end[4] = 'FREE'
+                    
+                    p_start = pt_start[1]
+                    h_start = pt_start[2]
+                    h_end = pt_end[0]
+                    p_end = pt_end[1]
+                    
+                    face_start = pt_start[5]
+                    face_end = pt_end[5]
+                    
+                    intersections, face_start, face_end = get_surface_intersection_points(
+                        context.active_object, p_start, h_start, h_end, p_end, face_start, face_end,
+                        self.rmInfo.region, self.rmInfo.rv3d, cached_bm
+                    )
+                    
+                    if len(intersections) > 0:
+                        curvePts.pop()
+                        for p_int, face_prev, face_next, t_val in intersections:
+                            curvePts.append([p_int, p_int, p_int, 'FREE', 'FREE', face_next, True])
+                        if len(pt_end) > 5:
+                            pt_end[5] = intersections[-1][2]
+                        else:
+                            pt_end.append(intersections[-1][2])
+                        curvePts.append(pt_end)
                         
-                        face_idx = face_start if sub_idx == 0 else pt_a[5]
-                        if face_idx is not None:
+                        new_end_idx = len(curvePts) - 1
+                        t_vals = [0.0] + [item[3] for item in intersections] + [1.0]
+                        
+                        for sub_idx in range(len(intersections) + 1):
+                            idx_curr = start_idx + sub_idx
+                            pt_a = curvePts[idx_curr]
+                            pt_b = curvePts[idx_curr + 1]
+                            
+                            r0, r1, r2, r3 = get_bezier_sub_segment(
+                                p_start, h_start, h_end, p_end,
+                                t_vals[sub_idx], t_vals[sub_idx+1]
+                            )
+                            
+                            face_idx = face_start if sub_idx == 0 else pt_a[5]
+                            if face_idx is not None:
+                                poly = context.active_object.data.polygons[face_idx]
+                                normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
+                                normal_world.normalize()
+                                pt_a[2] = project_handle_to_face_plane(pt_a[1], r1, normal_world, self.rmInfo.region, self.rmInfo.rv3d)
+                                pt_b[0] = project_handle_to_face_plane(pt_b[1], r2, normal_world, self.rmInfo.region, self.rmInfo.rv3d)
+                            else:
+                                pt_a[2] = r1
+                                pt_b[0] = r2
+                        
+                        if params.surfaceMode == 'SMOOTH':
+                            for idx in range(start_idx + 1, new_end_idx):
+                                pt = curvePts[idx]
+                                v_left = (pt[0] - pt[1]).normalized()
+                                v_right = (pt[2] - pt[1]).normalized()
+                                t_avg = (v_right - v_left).normalized()
+                                l_left = (pt[0] - pt[1]).length
+                                l_right = (pt[2] - pt[1]).length
+                                pt[2] = pt[1] + t_avg * l_right
+                                pt[0] = pt[1] - t_avg * l_left
+                    else:
+                        if pt_start[5] is not None and pt_end[5] is not None:
+                            face_idx = pt_start[5]
                             poly = context.active_object.data.polygons[face_idx]
                             normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
                             normal_world.normalize()
-                            pt_a[2] = project_handle_to_face_plane(pt_a[1], r1, normal_world, self.rmInfo.region, self.rmInfo.rv3d)
-                            pt_b[0] = project_handle_to_face_plane(pt_b[1], r2, normal_world, self.rmInfo.region, self.rmInfo.rv3d)
+                            pt_start[2] = project_handle_to_face_plane(pt_start[1], pt_start[2], normal_world, self.rmInfo.region, self.rmInfo.rv3d)
+                            
+                            face_next_idx = pt_end[5]
+                            poly = context.active_object.data.polygons[face_next_idx]
+                            normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
+                            normal_world.normalize()
+                            pt_end[0] = project_handle_to_face_plane(pt_end[1], pt_end[0], normal_world, self.rmInfo.region, self.rmInfo.rv3d)
+                
+                # 2. Resolve the closing segment if cyclic
+                is_cyclic = autoclose or vectCmpWithMargin(curvePts[0][1], curvePts[-1][1])
+                if is_cyclic:
+                    # We resolve only the segment between the last point and the first point
+                    curvePts.append(curvePts[0][:])
+                    
+                    end_idx = len(curvePts) - 1
+                    start_idx = end_idx - 1
+                    
+                    pt_start = curvePts[start_idx]
+                    pt_end = curvePts[end_idx]
+                    
+                    # Resolve face indices to the current view only if not already set (keep mesh-relative face indices stable during view rotation)
+                    if len(pt_start) <= 5 or pt_start[5] is None:
+                        if len(pt_start) <= 5:
+                            pt_start.append(find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_start[1], None))
                         else:
-                            pt_a[2] = r1
-                            pt_b[0] = r2
+                            pt_start[5] = find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_start[1], None)
                     
-                    if params.surfaceMode == 'SMOOTH':
-                        for idx in range(start_idx + 1, new_end_idx):
-                            pt = curvePts[idx]
-                            v_left = (pt[0] - pt[1]).normalized()
-                            v_right = (pt[2] - pt[1]).normalized()
-                            t_avg = (v_right - v_left).normalized()
-                            l_left = (pt[0] - pt[1]).length
-                            l_right = (pt[2] - pt[1]).length
-                            pt[2] = pt[1] + t_avg * l_right
-                            pt[0] = pt[1] - t_avg * l_left
-                else:
-                    if pt_start[5] is not None and pt_end[5] is not None:
-                        face_idx = pt_start[5]
-                        poly = context.active_object.data.polygons[face_idx]
-                        normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
-                        normal_world.normalize()
-                        pt_start[2] = project_handle_to_face_plane(pt_start[1], pt_start[2], normal_world, self.rmInfo.region, self.rmInfo.rv3d)
-                        
-                        face_next_idx = pt_end[5]
-                        poly = context.active_object.data.polygons[face_next_idx]
-                        normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
-                        normal_world.normalize()
-                        pt_end[0] = project_handle_to_face_plane(pt_end[1], pt_end[0], normal_world, self.rmInfo.region, self.rmInfo.rv3d)
-            
-            # 2. Resolve the closing segment if cyclic
-            is_cyclic = autoclose or vectCmpWithMargin(curvePts[0][1], curvePts[-1][1])
-            if is_cyclic:
-                # We resolve only the segment between the last point and the first point
-                curvePts.append(curvePts[0][:])
-                
-                end_idx = len(curvePts) - 1
-                start_idx = end_idx - 1
-                
-                pt_start = curvePts[start_idx]
-                pt_end = curvePts[end_idx]
-                
-                # Resolve face indices to the current view only if not already set (keep mesh-relative face indices stable during view rotation)
-                if len(pt_start) <= 5 or pt_start[5] is None:
-                    if len(pt_start) <= 5:
-                        pt_start.append(find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_start[1], None))
-                    else:
-                        pt_start[5] = find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_start[1], None)
-                
-                if len(pt_end) <= 5 or pt_end[5] is None:
-                    if len(pt_end) <= 5:
-                        pt_end.append(find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_end[1], None))
-                    else:
-                        pt_end[5] = find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_end[1], None)
-                
-                pt_start[3] = 'FREE'
-                pt_start[4] = 'FREE'
-                pt_end[3] = 'FREE'
-                pt_end[4] = 'FREE'
-                
-                p_start = pt_start[1]
-                h_start = pt_start[2]
-                h_end = pt_end[0]
-                p_end = pt_end[1]
-                
-                face_start = pt_start[5]
-                face_end = pt_end[5]
-                
-                intersections, face_start, face_end = get_surface_intersection_points(
-                    context.active_object, p_start, h_start, h_end, p_end, face_start, face_end,
-                    self.rmInfo.region, self.rmInfo.rv3d, cached_bm
-                )
-                
-                if len(intersections) > 0:
-                    curvePts.pop()
-                    for p_int, face_prev, face_next, t_val in intersections:
-                        curvePts.append([p_int, p_int, p_int, 'FREE', 'FREE', face_next, True])
-                    if len(pt_end) > 5:
-                        pt_end[5] = intersections[-1][2]
-                    else:
-                        pt_end.append(intersections[-1][2])
-                    curvePts.append(pt_end)
+                    if len(pt_end) <= 5 or pt_end[5] is None:
+                        if len(pt_end) <= 5:
+                            pt_end.append(find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_end[1], None))
+                        else:
+                            pt_end[5] = find_visible_face_at_loc(context.active_object, self.rmInfo.region, self.rmInfo.rv3d, pt_end[1], None)
                     
-                    new_end_idx = len(curvePts) - 1
-                    t_vals = [0.0] + [item[3] for item in intersections] + [1.0]
+                    pt_start[3] = 'FREE'
+                    pt_start[4] = 'FREE'
+                    pt_end[3] = 'FREE'
+                    pt_end[4] = 'FREE'
                     
-                    for sub_idx in range(len(intersections) + 1):
-                        idx_curr = start_idx + sub_idx
-                        pt_a = curvePts[idx_curr]
-                        pt_b = curvePts[idx_curr + 1]
+                    p_start = pt_start[1]
+                    h_start = pt_start[2]
+                    h_end = pt_end[0]
+                    p_end = pt_end[1]
+                    
+                    face_start = pt_start[5]
+                    face_end = pt_end[5]
+                    
+                    intersections, face_start, face_end = get_surface_intersection_points(
+                        context.active_object, p_start, h_start, h_end, p_end, face_start, face_end,
+                        self.rmInfo.region, self.rmInfo.rv3d, cached_bm
+                    )
+                    
+                    if len(intersections) > 0:
+                        curvePts.pop()
+                        for p_int, face_prev, face_next, t_val in intersections:
+                            curvePts.append([p_int, p_int, p_int, 'FREE', 'FREE', face_next, True])
+                        if len(pt_end) > 5:
+                            pt_end[5] = intersections[-1][2]
+                        else:
+                            pt_end.append(intersections[-1][2])
+                        curvePts.append(pt_end)
                         
-                        r0, r1, r2, r3 = get_bezier_sub_segment(
-                            p_start, h_start, h_end, p_end,
-                            t_vals[sub_idx], t_vals[sub_idx+1]
-                        )
+                        new_end_idx = len(curvePts) - 1
+                        t_vals = [0.0] + [item[3] for item in intersections] + [1.0]
                         
-                        face_idx = face_start if sub_idx == 0 else pt_a[5]
-                        if face_idx is not None:
+                        for sub_idx in range(len(intersections) + 1):
+                            idx_curr = start_idx + sub_idx
+                            pt_a = curvePts[idx_curr]
+                            pt_b = curvePts[idx_curr + 1]
+                            
+                            r0, r1, r2, r3 = get_bezier_sub_segment(
+                                p_start, h_start, h_end, p_end,
+                                t_vals[sub_idx], t_vals[sub_idx+1]
+                            )
+                            
+                            face_idx = face_start if sub_idx == 0 else pt_a[5]
+                            if face_idx is not None:
+                                poly = context.active_object.data.polygons[face_idx]
+                                normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
+                                normal_world.normalize()
+                                pt_a[2] = project_handle_to_face_plane(pt_a[1], r1, normal_world, self.rmInfo.region, self.rmInfo.rv3d)
+                                pt_b[0] = project_handle_to_face_plane(pt_b[1], r2, normal_world, self.rmInfo.region, self.rmInfo.rv3d)
+                            else:
+                                pt_a[2] = r1
+                                pt_b[0] = r2
+                        
+                        if params.surfaceMode == 'SMOOTH':
+                            for idx in range(start_idx + 1, new_end_idx):
+                                pt = curvePts[idx]
+                                v_left = (pt[0] - pt[1]).normalized()
+                                v_right = (pt[2] - pt[1]).normalized()
+                                t_avg = (v_right - v_left).normalized()
+                                l_left = (pt[0] - pt[1]).length
+                                l_right = (pt[2] - pt[1]).length
+                                pt[2] = pt[1] + t_avg * l_right
+                                pt[0] = pt[1] - t_avg * l_left
+                    else:
+                        if pt_start[5] is not None and pt_end[5] is not None:
+                            face_idx = pt_start[5]
                             poly = context.active_object.data.polygons[face_idx]
                             normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
                             normal_world.normalize()
-                            pt_a[2] = project_handle_to_face_plane(pt_a[1], r1, normal_world, self.rmInfo.region, self.rmInfo.rv3d)
-                            pt_b[0] = project_handle_to_face_plane(pt_b[1], r2, normal_world, self.rmInfo.region, self.rmInfo.rv3d)
-                        else:
-                            pt_a[2] = r1
-                            pt_b[0] = r2
+                            pt_start[2] = project_handle_to_face_plane(pt_start[1], pt_start[2], normal_world, self.rmInfo.region, self.rmInfo.rv3d)
+                            
+                            face_next_idx = pt_end[5]
+                            poly = context.active_object.data.polygons[face_next_idx]
+                            normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
+                            normal_world.normalize()
+                            pt_end[0] = project_handle_to_face_plane(pt_end[1], pt_end[0], normal_world, self.rmInfo.region, self.rmInfo.rv3d)
                     
-                    if params.surfaceMode == 'SMOOTH':
-                        for idx in range(start_idx + 1, new_end_idx):
-                            pt = curvePts[idx]
-                            v_left = (pt[0] - pt[1]).normalized()
-                            v_right = (pt[2] - pt[1]).normalized()
-                            t_avg = (v_right - v_left).normalized()
-                            l_left = (pt[0] - pt[1]).length
-                            l_right = (pt[2] - pt[1]).length
-                            pt[2] = pt[1] + t_avg * l_right
-                            pt[0] = pt[1] - t_avg * l_left
-                else:
-                    if pt_start[5] is not None and pt_end[5] is not None:
-                        face_idx = pt_start[5]
-                        poly = context.active_object.data.polygons[face_idx]
-                        normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
-                        normal_world.normalize()
-                        pt_start[2] = project_handle_to_face_plane(pt_start[1], pt_start[2], normal_world, self.rmInfo.region, self.rmInfo.rv3d)
-                        
-                        face_next_idx = pt_end[5]
-                        poly = context.active_object.data.polygons[face_next_idx]
-                        normal_world = context.active_object.matrix_world.to_3x3() @ poly.normal
-                        normal_world.normalize()
-                        pt_end[0] = project_handle_to_face_plane(pt_end[1], pt_end[0], normal_world, self.rmInfo.region, self.rmInfo.rv3d)
-                
-                # Copy closing point left handle to the first point
-                curvePts[0][0] = curvePts[-1][0]
-                curvePts.pop()
-                
-            print("After resolving closing segment:")
-            for idx, pt in enumerate(curvePts):
-                print(f"  pt {idx}: L={pt[0]}, Co={pt[1]}, R={pt[2]}, Face={pt[5] if len(pt)>5 else None}")
+                    # Copy closing point left handle to the first point
+                    curvePts[0][0] = curvePts[-1][0]
+                    curvePts.pop()
+                    
+                print("After resolving closing segment:")
+                for idx, pt in enumerate(curvePts):
+                    print(f"  pt {idx}: L={pt[0]}, Co={pt[1]}, R={pt[2]}, Face={pt[5] if len(pt)>5 else None}")
             
         obj = createObjFromPts(curvePts, "3D", collection, autoclose, calcHdlTypes=calcHdlTypes)
 
@@ -1120,10 +1125,10 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                     print("After alignToNormal (world):")
                     for idx, bpt in enumerate(obj.data.splines[0].bezier_points):
                         print(f"  bpt {idx}: L={obj.matrix_world @ bpt.handle_left}, Co={obj.matrix_world @ bpt.co}, R={obj.matrix_world @ bpt.handle_right}")
-                if location is None:
+                if location is None and params.snapOrient != 'SURFACE':
                     location = getObjBBoxCenter(obj)
 
-            if location is not None:
+            if location is not None and params.snapOrient != 'SURFACE':
                 shiftOrigin(obj, location)
                 obj.location = location
                 bpy.context.evaluated_depsgraph_get().update()
@@ -3800,8 +3805,11 @@ def drawSettingsFT(self, context):
         ('REFERENCE', 'CURSOR', 'bezier.preset_continue', 'Continue'),
         ('GLOBAL', 'CURSOR', 'bezier.preset_free_draw', 'Free'),
         ('AXIS', 'AXIS', 'bezier.preset_custom_angle', 'Axis'),
-        ('FACE', 'FACE', 'bezier.preset_surface_align', 'Surface'),
+        ('FACE', 'FACE', 'bezier.preset_face_align', 'Face'),
     ]
+    if drawMode:
+        presets.append(('SURFACE', 'CURSOR', 'bezier.preset_surface_follow', 'Surface'))
+
     for orient, origin, op_id, label in presets:
         is_active = (current[0] == orient and current[1] == origin)
         row.operator(op_id, text=label, depress=is_active)

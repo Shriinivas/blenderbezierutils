@@ -64,6 +64,8 @@ TRANSFORM_PRESETS = [
      'Draw in screen-space plane with cursor as reference. Good for viewport-relative sketching.'),
     ('AXIS', 'REFERENCE', 'Custom Angle',
      'Use custom axis orientation with previous point origin. Right-click to define arbitrary angle. Perfect for isometric or angled work continuing from previous curve.'),
-    ('FACE', 'FACE', 'Surface Align',
-     'Align to mesh surface under cursor. Both orientation (normal) and origin (face center). Perfect for surface detailing.'),
+    ('FACE', 'FACE', 'Face Align',
+     'Align to face under cursor. Both orientation (normal) and origin (face center). Perfect for surface detailing.'),
+    ('SURFACE', 'CURSOR', 'Surface (Follow Mesh)',
+     'Project and walk the curve along the faces of the mesh. Points follow the surface and segments are split at crossed edges.'),
 ]

@@ -54,7 +54,9 @@ class Primitive2DDraw(BaseDraw):
         params = bpy.context.window_manager.bezierToolkitParams
         self.freeAxesN = self.parent.snapper.getFreeAxesNormalized()
 
-        if len(self.freeAxesN) > 2 and params.snapOrient in {
+        if params.snapOrient == 'SURFACE':
+            self.freeAxesN = [0, 1]
+        elif len(self.freeAxesN) > 2 and params.snapOrient in {
             "GLOBAL",
             "REFERENCE",
             "CURR_POS",
@@ -146,7 +148,10 @@ class Primitive2DDraw(BaseDraw):
 
     def getCurvePts(self, numSegs, axisIdxs, z=None):
         params = bpy.context.window_manager.bezierToolkitParams
-        tm = self.parent.snapper.tm if self.parent.snapper.tm is not None else Matrix()
+        if params.snapOrient == 'SURFACE':
+            tm = self.parent.rmInfo.rv3d.view_matrix
+        else:
+            tm = self.parent.snapper.tm if self.parent.snapper.tm is not None else Matrix()
 
         idx0, idx1, idx2 = axisIdxs
         startAngle = params.drawStartAngle
@@ -211,6 +216,21 @@ class Primitive2DDraw(BaseDraw):
         rmInfo = parent.rmInfo
         if self.freeAxesN is None:
             self.set2DAxes()
+
+        params = bpy.context.window_manager.bezierToolkitParams
+        if params.snapOrient == 'SURFACE' and self.bbStart is not None:
+            return self.parent.snapper.get3dLocSnap(
+                rmInfo,
+                SnapParams(
+                    parent.snapper,
+                    transType='VIEW',
+                    origType='REFERENCE',
+                    refLineOrig=self.bbStart,
+                    lastCo1Axis=True,
+                    freeAxesN=[0, 1],
+                    snapToPlane=True,
+                ),
+            )
 
         return self.parent.snapper.get3dLocSnap(
             rmInfo,
@@ -1333,10 +1353,37 @@ def resolve_surface_crossovers(curvePts, obj, region, rv3d, surfaceMode, cached_
         bm.edges.ensure_lookup_table()
 
     pts = [pt[:] for pt in curvePts]
+    
+    # Project original corner points visually on the surface
+    from ..utils.view_utils import getFaceUnderMouse
+    num_pts_to_proj = len(pts) - 1 if is_cyclic else len(pts)
+    for idx in range(num_pts_to_proj):
+        pt = pts[idx]
+        p_co = pt[1]
+        xy = getCoordFromLoc(region, rv3d, p_co)
+        if xy is not None and xy.x != 9000:
+            hit_loc, _, face_idx = getFaceUnderMouse(obj, region, rv3d, xy, 1000000)
+            if face_idx is not None:
+                orig_co = pt[1].copy()
+                pt[1] = hit_loc.copy()
+                if vectCmpWithMargin(pt[0], orig_co):
+                    pt[0] = hit_loc.copy()
+                if vectCmpWithMargin(pt[2], orig_co):
+                    pt[2] = hit_loc.copy()
+                if len(pt) > 5:
+                    pt[5] = face_idx
+                else:
+                    pt.append(face_idx)
+                    
+    if is_cyclic:
+        pts[-1] = pts[0][:]
+
     for pt in pts:
         if len(pt) > 4:
-            pt[3] = 'FREE'
-            pt[4] = 'FREE'
+            if pt[3] != 'VECTOR':
+                pt[3] = 'FREE'
+            if pt[4] != 'VECTOR':
+                pt[4] = 'FREE'
 
     if is_cyclic and not vectCmpWithMargin(pts[0][1], pts[-1][1]):
         pts.append(pts[0][:])
@@ -1406,7 +1453,7 @@ def resolve_surface_crossovers(curvePts, obj, region, rv3d, surfaceMode, cached_
                     pt[2] = pt[1] + t_avg * l_right
                     pt[0] = pt[1] - t_avg * l_left
         else:
-            if pt_curr[5] is not None and pt_next[5] is not None:
+            if len(pt_curr) > 5 and pt_curr[5] is not None and len(pt_next) > 5 and pt_next[5] is not None:
                 face_idx = pt_curr[5]
                 poly = obj.data.polygons[face_idx]
                 normal_world = obj.matrix_world.to_3x3() @ poly.normal

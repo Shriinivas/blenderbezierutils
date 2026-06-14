@@ -660,6 +660,12 @@ class Snapper:
         if origType == "AXIS":
             if self.customAxis.length() != 0:
                 return self.customAxis.axisPts[0]
+        elif origType == "REFERENCE":
+            if refLineOrig is not None:
+                return refLineOrig
+        elif origType == "CURR_POS":
+            if selCo is not None:
+                return selCo
         elif origType == "OBJECT" and obj is not None:
             return obj.location
         elif origType in {"FACE", "SURFACE"} and rmInfo is not None:
