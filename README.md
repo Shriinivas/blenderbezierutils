@@ -126,7 +126,8 @@ Quick-access buttons at the top of the toolbar for common configurations:
 - **Free** - Global orientation, cursor pivot, standard workflow
 - **Continue** - Reference orientation, offsets from previous point for smooth continuation
 - **Axis** - Custom axis orientation and snapping for isometric/angled work
-- **Surface** - Face-aligned orientation for drawing on mesh surfaces
+- **Face** - Face-aligned orientation (`Face Align`) for drawing relative to locked face planes
+- **Surface** - Surface-following mode (`Surface (Follow Mesh)`) that snaps points to the mesh and wraps curve segments to hug the mesh topology on finalization
 
 ## Pivot Point
 
@@ -172,6 +173,7 @@ Available when Constraining Axes has plane selection. Snaps point to plane of se
 - **Active Object** - Object local space
 - **Active Object Face** - Face normal under cursor
 - **View** - Current viewport view axes
+- **Surface (Follow Mesh)** - Snaps points to mesh surface and wraps curve segments to hug the mesh topology on finalization
 
 Affects constraining plane/axis and reference axis for angle snapping.
 

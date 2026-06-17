@@ -1096,10 +1096,6 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
     from mathutils.geometry import intersect_line_line_2d, intersect_line_line
     from bpy_extras.view3d_utils import region_2d_to_origin_3d, region_2d_to_vector_3d
     
-    print("\n--- INTERSECTION DEBUG ---")
-    print(f"p_start: {p_start}, p_end: {p_end}")
-    print(f"Original face_start: {face_start}, face_end: {face_end}")
-    
     M = 100
     pts_3d = []
     pts_2d = []
@@ -1109,10 +1105,6 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
         pts_3d.append(p_t)
         xy_t = getCoordFromLoc(region, rv3d, p_t)
         pts_2d.append(xy_t)
-        
-    print(f"Projected {len(pts_2d)} points. Start 2D: {pts_2d[0]}, End 2D: {pts_2d[-1]}")
-    if any(pt.x == 9000 for pt in pts_2d):
-        print("WARNING: Some projected curve points failed (returned 9000)!")
         
     # Resolve face_start/face_end locally to find the correct entry/exit faces
     if face_start is not None:
@@ -1125,8 +1117,6 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
     if face_end is None:
         face_end = find_visible_face_at_loc(obj, region, rv3d, p_end, face_end)
         
-    print(f"Resolved face_start: {face_start}, face_end: {face_end}")
-    
     if face_start is not None:
         # Check if the curve immediately leaves the mesh surface / goes outside the silhouette
         def is_point_in_polygon_2d(x, y, poly):
@@ -1184,13 +1174,11 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
         if found_face is not None:
             face_start = found_face
         else:
-            print("Start of segment immediately went outside the silhouette boundary!")
             face_start = None
             
     if face_start is None:
         if face_end is not None:
             # Start is outside, end is inside - trace backwards by reversing arguments recursively
-            print("Reversing intersection trace because face_start is None and face_end is not None")
             rev_intersections, resolved_face_end, resolved_face_start = get_surface_intersection_points(
                 obj, p_end, h_end, h_start, p_start, face_end, face_start, region, rv3d, bm
             )
@@ -1199,7 +1187,6 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
                 intersections.append((p_int, f_to, f_from, 1.0 - t_rev))
             return intersections, resolved_face_start, resolved_face_end
         else:
-            print("Returning [] because both face_start and face_end are None")
             return [], face_start, face_end
         
     curr_face_idx = face_start
@@ -1210,20 +1197,16 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
     max_steps = 150
     for step in range(max_steps):
         if curr_face_idx == face_end or curr_face_idx is None:
-            print(f"Ending trace loop: curr_face_idx={curr_face_idx}, face_end={face_end}")
             break
             
         bm_face = bm.faces[curr_face_idx]
         candidates = []
-        
-        print(f"Step {step}: curr_face_idx={curr_face_idx}")
         
         for bm_edge in bm_face.edges:
             v1 = obj.matrix_world @ bm_edge.verts[0].co
             v2 = obj.matrix_world @ bm_edge.verts[1].co
             xy1 = getCoordFromLoc(region, rv3d, v1)
             xy2 = getCoordFromLoc(region, rv3d, v2)
-            print(f"  Edge {bm_edge.index} (verts {bm_edge.verts[0].index}-{bm_edge.verts[1].index}): 2D {xy1} to {xy2}")
             
             for j in range(M):
                 t_A = j / M
@@ -1278,23 +1261,18 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
                             
         if len(candidates) > 0:
             valid_candidates = [c for c in candidates if c[0] > t_min + 1e-5]
-            print(f"  Step {step}: Found {len(candidates)} total candidates, {len(valid_candidates)} valid candidates > t_min={t_min:.5f}")
             if not valid_candidates:
-                print("  No valid candidates, breaking!")
                 break
             best = min(valid_candidates, key=lambda x: x[0])
             t_int, p_int, f_from, f_to = best
             intersections.append((p_int, f_from, f_to, t_int))
             t_min = t_int
-            print(f"  -> Moving to face {f_to} (t_min={t_min:.5f})")
             
             if f_to is None or f_to in visited:
-                print(f"  -> Loop or boundary detected! f_to={f_to}, visited={visited}")
                 break
             curr_face_idx = f_to
             visited.add(f_to)
         else:
-            print("  No candidates found on this face, breaking!")
             break
             
     if curr_face_idx != face_end:

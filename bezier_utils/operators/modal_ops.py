@@ -752,10 +752,6 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
         calcHdlTypes = (params.snapOrient != 'SURFACE')
         
         curvePts = [pt[:] for pt in self.drawObj.curvePts]
-        print("\n--- BEZIERUTILS DEBUG ---")
-        print("Original self.drawObj.curvePts:")
-        for idx, pt in enumerate(curvePts):
-            print(f"  pt {idx}: L={pt[0]}, Co={pt[1]}, R={pt[2]}, Face={pt[5] if len(pt)>5 else None}")
 
         if params.snapOrient == 'SURFACE' and len(curvePts) >= 2:
             cached_bm = self.get_cached_bmesh(context.active_object)
@@ -982,19 +978,8 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                     # Copy closing point left handle to the first point
                     curvePts[0][0] = curvePts[-1][0]
                     curvePts.pop()
-                    
-                print("After resolving closing segment:")
-                for idx, pt in enumerate(curvePts):
-                    print(f"  pt {idx}: L={pt[0]}, Co={pt[1]}, R={pt[2]}, Face={pt[5] if len(pt)>5 else None}")
             
         obj = createObjFromPts(curvePts, "3D", collection, autoclose, calcHdlTypes=calcHdlTypes)
-
-        print("After createObjFromPts (local):")
-        for idx, bpt in enumerate(obj.data.splines[0].bezier_points):
-            print(f"  bpt {idx}: L={bpt.handle_left}, Co={bpt.co}, R={bpt.handle_right}")
-        print("After createObjFromPts (world):")
-        for idx, bpt in enumerate(obj.data.splines[0].bezier_points):
-            print(f"  bpt {idx}: L={obj.matrix_world @ bpt.handle_left}, Co={obj.matrix_world @ bpt.co}, R={obj.matrix_world @ bpt.handle_right}")
 
         # Undo stack in case the user does not want to join
         if endObj is not None or startObj is not None:
@@ -1122,9 +1107,6 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 if params.snapOrient != 'SURFACE':
                     alignToNormal(obj)
                     bpy.context.evaluated_depsgraph_get().update()
-                    print("After alignToNormal (world):")
-                    for idx, bpt in enumerate(obj.data.splines[0].bezier_points):
-                        print(f"  bpt {idx}: L={obj.matrix_world @ bpt.handle_left}, Co={obj.matrix_world @ bpt.co}, R={obj.matrix_world @ bpt.handle_right}")
                 if location is None and params.snapOrient != 'SURFACE':
                     location = getObjBBoxCenter(obj)
 
@@ -1132,9 +1114,6 @@ class ModalFlexiDrawBezierOp(ModalDrawBezierOp):
                 shiftOrigin(obj, location)
                 obj.location = location
                 bpy.context.evaluated_depsgraph_get().update()
-                print("After shiftOrigin (world):")
-                for idx, bpt in enumerate(obj.data.splines[0].bezier_points):
-                    print(f"  bpt {idx}: L={obj.matrix_world @ bpt.handle_left}, Co={obj.matrix_world @ bpt.co}, R={obj.matrix_world @ bpt.handle_right}")
 
             params = bpy.context.window_manager.bezierToolkitParams
             copyProperties(params.copyPropsObj, obj)

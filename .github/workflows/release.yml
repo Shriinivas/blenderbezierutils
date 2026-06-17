@@ -58,7 +58,7 @@ jobs:
             4. Select the downloaded `bezier_utils.zip` file
             5. Check the 'Bézier Utilities' option in the add-ons dialog
 
-            ## What's New in v1.1.2
+            ## What's New in v1.2.0
 
             ### New Features
             - **Surface-Following (Curve on Mesh)** - Added a new **'Surface (Follow Mesh)'** transform orientation option. While drawing, control points snap to the mesh surface. Upon finalization, the segment paths are calculated, and crossover points are automatically inserted at mesh edges with projection-correct handle alignments.
