@@ -1092,7 +1092,7 @@ def find_closest_face_locally(obj, bm, p_co, start_face_idx):
     return best_face_idx
 
 
-def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_start, face_end, region, rv3d, bm):
+def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_start, face_end, region, rv3d, bm, is_reversed=False):
     from mathutils.geometry import intersect_line_line_2d, intersect_line_line
     from bpy_extras.view3d_utils import region_2d_to_origin_3d, region_2d_to_vector_3d
     
@@ -1177,10 +1177,10 @@ def get_surface_intersection_points(obj, p_start, h_start, h_end, p_end, face_st
             face_start = None
             
     if face_start is None:
-        if face_end is not None:
+        if face_end is not None and not is_reversed:
             # Start is outside, end is inside - trace backwards by reversing arguments recursively
             rev_intersections, resolved_face_end, resolved_face_start = get_surface_intersection_points(
-                obj, p_end, h_end, h_start, p_start, face_end, face_start, region, rv3d, bm
+                obj, p_end, h_end, h_start, p_start, face_end, face_start, region, rv3d, bm, is_reversed=True
             )
             intersections = []
             for p_int, f_from, f_to, t_rev in reversed(rev_intersections):
