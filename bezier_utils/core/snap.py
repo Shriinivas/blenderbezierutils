@@ -1038,7 +1038,8 @@ class Snapper:
                 or snapToPlane
                 or gridSnap
                 or self.snapDigits.hasVal()
-                or len(freeAxesN) < 3  # Axis constraint - apply even for first point
+                or len(freeAxesN) == 2  # Plane constraint - apply even for first point
+                or (len(freeAxesN) == 1 and inEdit)  # Single axis lock - only when editing / after first point
                 or (inEdit and angleSnap)
             ):
                 # snapToPlane means global constrain axes selection is a plane
@@ -1056,9 +1057,9 @@ class Snapper:
                     loc = tm @ offsetRefPt + delta
                     self.lastSnapTypes.add("keyboard")
                 else:
-                    # Special condition for lock to single axis
-                    # ~ if(len(freeAxesN) == 1 and refLineOrig != None):
-                    # ~ refCo = tm @ refLineOrig
+                    # Special condition for lock to single axis: anchor based on offsetRef
+                    if len(freeAxesN) == 1 and inEdit:
+                        refCo = tm @ offsetRefPt
                     if len(freeAxesN) == 2:
                         constrAxes = freeAxesN
                         loc = refCo.copy()
@@ -1089,7 +1090,7 @@ class Snapper:
                                 loc[axis] = (tm @ pt)[axis]
                         self.lastSnapTypes.add("axis2")
 
-                    if len(freeAxesN) == 1:
+                    if len(freeAxesN) == 1 and inEdit:
                         if lastCo1Axis:
                             refCo = self.lastSelCo  # TODO: More testing
                         axis = freeAxesN[0]
@@ -1290,6 +1291,7 @@ class Snapper:
             refLineOrig = snapParams.refLineOrig
             selCo = snapParams.selCo
             freeAxesN = snapParams.freeAxesN
+            inEdit = snapParams.inEdit
 
             transType = snapParams.transType
             origType = snapParams.origType
@@ -1314,15 +1316,19 @@ class Snapper:
                     (
                         refLineOrig is not None
                         or transType == "VIEW"
-                        or len(freeAxesN) == 1
+                        or (len(freeAxesN) == 1 and inEdit)
                     )
-                    or len(freeAxesN) > 0
+                    or len(freeAxesN) > 1
                 )
             ):
                 colors = [(0.6, 0.2, 0.2, 1), (0.2, 0.6, 0.2, 1), (0.2, 0.4, 0.6, 1)]
                 l = 2 * rmInfo.rv3d.view_distance
 
-                if self.lastSelCo is not None and len(freeAxesN) == 1:
+                if len(freeAxesN) == 1 and inEdit:
+                    orig = self.getOffsetRefPoint(
+                        rmInfo, bpy.context.object, origType, offsetRef, refLineOrig, selCo
+                    )
+                elif self.lastSelCo is not None and len(freeAxesN) == 1:
                     orig = self.lastSelCo
 
                 refCo = tm @ orig
