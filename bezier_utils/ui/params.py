@@ -29,19 +29,22 @@ def getConstrAxisTups(scene=None, context=None):
         6: ("shift-X", "YZ", "Constrain to YZ plane"),
     }
 
-    # Safe access to snapOrient to avoid issues during initialization
+    # Safe access to snapOrient and drawObjType to avoid issues during initialization
     try:
-        transType = bpy.context.window_manager.bezierToolkitParams.snapOrient
+        params = bpy.context.window_manager.bezierToolkitParams
+        transType = params.snapOrient
+        is_primitive = params.drawObjType != "BEZIER"
     except Exception:
         transType = "REFERENCE"  # Default if not yet initialized
+        is_primitive = False
 
-    # VIEW, REFERENCE, CURR_POS work with planes, not individual axes
-    if transType in {"VIEW", "REFERENCE", "CURR_POS"}:
+    # VIEW, REFERENCE, CURR_POS and primitives work with planes, not individual axes
+    if is_primitive or transType in {"VIEW", "REFERENCE", "CURR_POS"}:
         keyset = [0] + list(range(4, 7))  # NONE + planes only
     else:
         keyset = range(0, 7)  # All options
 
-    return [axesMap[key] for key in keyset]
+    return [axesMap[key] + (key,) for key in keyset]
 
 class BezierToolkitParams(bpy.types.PropertyGroup):
 

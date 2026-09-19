@@ -18,10 +18,21 @@ def get_preset_items(self, context):
     except Exception:
         is_draw = False
 
+    is_primitive = False
+    try:
+        params = context.window_manager.bezierToolkitParams
+        is_primitive = is_draw and params.drawObjType != 'BEZIER'
+    except Exception:
+        pass
+
     items = []
     for i, (orient, origin, name, desc) in enumerate(TRANSFORM_PRESETS):
-        if orient == 'SURFACE' and not is_draw:
-            continue
+        if is_primitive:
+            if orient not in {'GLOBAL', 'FACE', 'SURFACE', 'AXIS'}:
+                continue
+        else:
+            if orient == 'SURFACE' and not is_draw:
+                continue
         items.append((str(i), name, desc))
     return items
 

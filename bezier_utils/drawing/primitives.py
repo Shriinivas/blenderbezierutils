@@ -56,12 +56,15 @@ class Primitive2DDraw(BaseDraw):
 
         if params.snapOrient == 'SURFACE':
             self.freeAxesN = [0, 1]
-        elif len(self.freeAxesN) > 2 and params.snapOrient in {
-            "GLOBAL",
-            "REFERENCE",
-            "CURR_POS",
-        }:
-            self.freeAxesN = getClosestPlaneToView(self.parent.rmInfo.rv3d)
+        elif len(self.freeAxesN) > 2:
+            if params.snapOrient == "AXIS":
+                self.freeAxesN = [0, 1]
+            elif params.snapOrient in {
+                "GLOBAL",
+                "REFERENCE",
+                "CURR_POS",
+            }:
+                self.freeAxesN = getClosestPlaneToView(self.parent.rmInfo.rv3d)
 
     def getNumSegsLimits(self):
         return 2, 100

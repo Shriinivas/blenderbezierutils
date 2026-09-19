@@ -448,12 +448,76 @@ class ModalDrawBezierOp(ModalBaseFlexiOp):
     h = False
 
     drawObjMap = {}
+    _last_draw_type = "BEZIER"
+    _last_bezier_settings = None
+    _last_primitive_settings = None
 
     # static method
     def drawHandler():
         ModalBaseFlexiOp.drawHandlerBase()
 
     def updateDrawType(dummy, context):
+        try:
+            params = bpy.context.window_manager.bezierToolkitParams
+            prev_type = ModalDrawBezierOp._last_draw_type
+            curr_type = params.drawObjType
+
+            is_prev_bezier = (prev_type == "BEZIER")
+            is_curr_bezier = (curr_type == "BEZIER")
+
+            if is_prev_bezier and not is_curr_bezier:
+                # Switching from BEZIER (less restrictive) to Primitive (more restrictive):
+                # Save bezier state so it can be restored when returning
+                ModalDrawBezierOp._last_bezier_settings = {
+                    'snapOrient': params.snapOrient,
+                    'snapOrigin': params.snapOrigin,
+                    'offsetRef': params.offsetRef,
+                    'constrAxes': params.constrAxes,
+                    'axisScale': params.axisScale,
+                    'surfaceMode': params.surfaceMode,
+                    'snapToPlane': params.snapToPlane,
+                }
+                # Restore previous primitive state if it exists, else sanitize
+                if ModalDrawBezierOp._last_primitive_settings:
+                    for k, v in ModalDrawBezierOp._last_primitive_settings.items():
+                        try:
+                            setattr(params, k, v)
+                        except Exception:
+                            pass
+                else:
+                    if params.snapOrient not in {'GLOBAL', 'VIEW', 'OBJECT', 'FACE', 'SURFACE', 'AXIS'}:
+                        params.snapOrient = 'GLOBAL'
+                        params.snapOrigin = 'CURSOR'
+                    elif params.snapOrigin not in {'CURSOR', 'GLOBAL', 'OBJECT', 'FACE', 'AXIS'}:
+                        params.snapOrigin = 'CURSOR'
+                    params.axisScale = 'DEFAULT'
+                    params.snapToPlane = False
+                    if params.constrAxes in {'X', 'Y', 'Z'}:
+                        params.constrAxes = 'NONE'
+
+            elif not is_prev_bezier and is_curr_bezier:
+                # Switching from Primitive to BEZIER: save primitive state
+                ModalDrawBezierOp._last_primitive_settings = {
+                    'snapOrient': params.snapOrient,
+                    'snapOrigin': params.snapOrigin,
+                    'offsetRef': params.offsetRef,
+                    'constrAxes': params.constrAxes,
+                    'axisScale': params.axisScale,
+                    'surfaceMode': params.surfaceMode,
+                    'snapToPlane': params.snapToPlane,
+                }
+                # Restore previous bezier state
+                if ModalDrawBezierOp._last_bezier_settings:
+                    for k, v in ModalDrawBezierOp._last_bezier_settings.items():
+                        try:
+                            setattr(params, k, v)
+                        except Exception:
+                            pass
+
+            ModalDrawBezierOp._last_draw_type = curr_type
+        except Exception:
+            pass
+
         opObj = ModalDrawBezierOp.opObj
         if opObj is not None:
             opObj.setDrawObj()
@@ -3749,8 +3813,9 @@ def drawSettingsFT(self, context):
     )
     # toolGP.idname == 'flexi_bezier.grease_draw_tool')
     drawMode = (
-        context.mode == "OBJECT" and toolObj.idname == FlexiDrawBezierTool.bl_idname
+        context.mode == "OBJECT" and toolObj is not None and toolObj.idname == FlexiDrawBezierTool.bl_idname
     )
+    is_primitive = drawMode and params.drawObjType != "BEZIER"
     # toolObj.idname  == 'flexi_bezier.draw_tool')
     if drawMode or gpMode:
         if gpMode:
@@ -3780,14 +3845,22 @@ def drawSettingsFT(self, context):
     row = self.layout.row(align=True)
     row.scale_x = 0.9
     current = (params.snapOrient, params.snapOrigin)
-    presets = [
-        ('REFERENCE', 'CURSOR', 'bezier.preset_continue', 'Continue'),
-        ('GLOBAL', 'CURSOR', 'bezier.preset_free_draw', 'Free'),
-        ('AXIS', 'AXIS', 'bezier.preset_custom_angle', 'Axis'),
-        ('FACE', 'FACE', 'bezier.preset_face_align', 'Face'),
-    ]
-    if drawMode:
-        presets.append(('SURFACE', 'CURSOR', 'bezier.preset_surface_follow', 'Surface'))
+    if is_primitive:
+        presets = [
+            ('GLOBAL', 'CURSOR', 'bezier.preset_free_draw', 'Free'),
+            ('FACE', 'FACE', 'bezier.preset_face_align', 'Face'),
+            ('SURFACE', 'CURSOR', 'bezier.preset_surface_follow', 'Surface'),
+            ('AXIS', 'AXIS', 'bezier.preset_custom_angle', 'Axis'),
+        ]
+    else:
+        presets = [
+            ('REFERENCE', 'CURSOR', 'bezier.preset_continue', 'Continue'),
+            ('GLOBAL', 'CURSOR', 'bezier.preset_free_draw', 'Free'),
+            ('AXIS', 'AXIS', 'bezier.preset_custom_angle', 'Axis'),
+            ('FACE', 'FACE', 'bezier.preset_face_align', 'Face'),
+        ]
+        if drawMode:
+            presets.append(('SURFACE', 'CURSOR', 'bezier.preset_surface_follow', 'Surface'))
 
     for orient, origin, op_id, label in presets:
         is_active = (current[0] == orient and current[1] == origin)
@@ -3804,11 +3877,12 @@ def drawSettingsFT(self, context):
     row = self.layout.row(align=True)
     row.scale_x = 0.85
     row.prop(params, "constrAxes", text="")
-    row.prop(params, "axisScale", text="")
+    if not is_primitive or params.snapOrient == 'AXIS':
+        row.prop(params, "axisScale", text="")
     if params.snapOrient == 'SURFACE':
         row.prop(params, "surfaceMode", text="")
     # Only available for planes not axis
-    if showSnapToPlane(params):
+    if not is_primitive and showSnapToPlane(params):
         row.prop(params, "snapToPlane", text="Plane")
 
     # if((context.mode == 'OBJECT' and toolObj.idname  == 'flexi_bezier.draw_tool')):
